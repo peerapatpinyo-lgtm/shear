@@ -8,113 +8,77 @@ import connection_design as conn
 import report_generator as rep
 
 # ==========================================
-# 1. SETUP & STYLE (The Design System)
+# 1. SETUP & STYLE
 # ==========================================
 st.set_page_config(page_title="Beam Insight V12", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
-    /* Import Fonts: Sarabun (TH/EN) & Roboto Mono (Numbers/Code) */
-    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;700&family=Roboto+Mono:wght@400;500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&family=Roboto+Mono:wght@500&display=swap');
     
     html, body, [class*="css"] { 
         font-family: 'Sarabun', sans-serif; 
-        color: #2c3e50;
-    }
-    
-    /* --- COLOR PALETTE VARIABLES --- */
-    :root {
-        --primary: #2c3e50;
-        --accent: #3498db;
-        --success: #10b981; /* Soft Emerald */
-        --warning: #f59e0b; /* Amber */
-        --info: #3b82f6;    /* Blue */
-        --bg-light: #f8fafc;
-        --border-color: #e2e8f0;
     }
 
-    /* --- 1. METRIC CARD (Professional) --- */
-    .metric-card-final {
+    /* --- 1. Metric Card (Design เดิมแต่ Clean ขึ้น) --- */
+    .metric-card-clean {
         background: white;
-        border-radius: 12px;
-        padding: 24px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        border: 1px solid #e0e0e0;
         height: 100%;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        transition: transform 0.2s ease;
     }
-    .metric-card-final:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
-    }
+    
+    .mc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .mc-title { font-weight: 600; color: #555; font-size: 16px; display: flex; gap: 8px; }
+    .mc-percent { font-family: 'Roboto Mono', monospace; font-size: 26px; font-weight: 700; }
 
-    .m-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
-    .m-title { 
-        font-weight: 600; color: #64748b; font-size: 15px; 
-        text-transform: uppercase; letter-spacing: 0.5px;
-        display: flex; align-items: center; gap: 8px; 
-    }
-    .m-percent { font-family: 'Roboto Mono', monospace; font-size: 28px; font-weight: 700; line-height: 1; }
-
-    /* Values Row */
-    .m-values { 
+    .mc-values { 
         display: flex; justify-content: space-between; align-items: flex-end; 
-        margin-bottom: 12px; font-family: 'Roboto Mono', monospace;
+        font-family: 'Roboto Mono', monospace; color: #333; margin-bottom: 8px; font-size: 14px;
     }
-    .val-group { display: flex; flex-direction: column; }
-    .val-label { font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; font-family: 'Sarabun', sans-serif;}
-    .val-num { font-size: 18px; font-weight: 600; color: #334155; }
-    .val-limit { font-size: 18px; color: #cbd5e1; }
+    .mc-label { font-size: 12px; color: #999; font-family: 'Sarabun'; margin-bottom: 2px; }
 
-    /* Progress Bar */
-    .m-bar-bg { background-color: #f1f5f9; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 16px; }
-    .m-bar-fill { height: 100%; border-radius: 4px; }
+    .mc-bar-bg { background-color: #f0f0f0; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
+    .mc-bar-fill { height: 100%; border-radius: 4px; }
 
-    /* Footer / Check Equation */
-    .m-check { 
-        background-color: #f8fafc; border-radius: 6px; padding: 8px 12px; 
-        font-size: 12px; color: #64748b; text-align: center; 
-        border: 1px solid #e2e8f0; font-family: 'Roboto Mono', monospace;
-        display: flex; justify-content: center; align-items: center; gap: 8px;
+    /* Footer: สมการเช็คความถูกต้อง */
+    .mc-footer { 
+        background-color: #fafafa; border-top: 1px solid #eee; 
+        padding-top: 8px; margin-top: 5px;
+        font-size: 12px; color: #777; text-align: center; 
+        font-family: 'Roboto Mono', monospace;
     }
-    .m-check span { color: #94a3b8; }
 
-    /* --- 2. CALCULATION BOX (Paper Style) --- */
+    /* --- 2. Calculation Box (กรอบสมการ) --- */
     .calc-box {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-left: 4px solid var(--accent);
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        height: 100%;
+        background-color: #fff;
+        border: 1px solid #ddd;
+        border-left-width: 5px; /* แถบสีด้านซ้าย */
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 10px;
     }
     .calc-title {
-        font-weight: 700; color: #1e293b; margin-bottom: 15px;
-        font-size: 16px; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;
+        font-weight: 600; color: #333; margin-bottom: 10px;
+        border-bottom: 1px dotted #ccc; padding-bottom: 5px;
     }
 
-    /* --- 3. MAIN HIGHLIGHT CARD --- */
+    /* --- 3. Highlight Card --- */
     .highlight-card { 
-        background: linear-gradient(to right, #ffffff, #f8fafc);
-        padding: 30px; border-radius: 16px; 
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); 
-        margin-bottom: 30px; 
+        background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+        padding: 25px; border-radius: 12px; border: 1px solid #ddd; border-left: 6px solid #2c3e50;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.03); margin-bottom: 20px; 
     }
-    .big-num { font-family: 'Roboto Mono', monospace; font-weight: 700; }
-    
-    /* Global Adjustments */
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] { border-radius: 4px; padding-top: 8px; padding-bottom: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. INPUTS
+# 2. INPUTS (Code Logic เดิม)
 # ==========================================
 steel_db = {
     "H 150x75x5x7":     {"h": 150, "b": 75,  "tw": 5,   "tf": 7,   "Ix": 666,    "Zx": 88.8,  "w": 14.0},
@@ -130,27 +94,27 @@ steel_db = {
 
 with st.sidebar:
     st.title("Beam Insight V12")
-    st.caption("Engineered for Precision")
+    st.caption("Standard Edition")
     st.divider()
     
-    st.markdown("### 1. Method")
-    method = st.radio("Design Code", ["ASD (Allowable Stress)", "LRFD (Limit State)"], label_visibility="collapsed")
+    st.header("1. Design Method")
+    method = st.radio("Standard", ["ASD (Allowable Stress)", "LRFD (Limit State)"])
     is_lrfd = "LRFD" in method
     
     st.divider()
-    st.markdown("### 2. Beam")
-    sec_name = st.selectbox("Section Size", list(steel_db.keys()), index=5)
+    st.header("2. Beam Settings")
+    sec_name = st.selectbox("Select Section", list(steel_db.keys()), index=5)
     user_span = st.number_input("Span Length (m)", min_value=1.0, value=6.0, step=0.5)
-    fy = st.number_input("Yield Strength (ksc)", 2400)
-    defl_ratio = st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1)
+    fy = st.number_input("Fy (ksc)", 2400)
+    defl_ratio = st.selectbox("Defl. Limit", ["L/300", "L/360", "L/400"], index=1)
     
     st.divider()
-    st.markdown("### 3. Connection")
-    bolt_size = st.selectbox("Bolt Diameter", ["M16", "M20", "M22", "M24"], index=1)
-    design_mode = st.radio("Load Basis:", ["Actual Load (from Span)", "Fixed % Capacity"])
+    st.header("3. Connection Settings")
+    bolt_size = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
+    design_mode = st.radio("Connection Design:", ["Actual Load (from Span)", "Fixed % Capacity"])
     
     if design_mode == "Fixed % Capacity":
-        target_pct = st.slider("Target Usage %", 50, 100, 75, 5)
+        target_pct = st.slider("Target % Usage", 50, 100, 75, 5)
     else:
         target_pct = None
 
@@ -158,7 +122,7 @@ with st.sidebar:
     defl_lim_val = int(defl_ratio.split("/")[1])
 
 # ==========================================
-# 3. CORE LOGIC
+# 3. CORE CALCULATION
 # ==========================================
 p = steel_db[sec_name]
 h_cm, tw_cm = p['h']/10, p['tw']/10
@@ -200,141 +164,141 @@ else:
     V_design = V_cap * (target_pct / 100)
 
 # ==========================================
-# 4. DISPLAY
+# 4. UI DISPLAY
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Analysis Dashboard", "🔩 Connection", "💾 Data Table", "📝 Report"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Calculation Report"])
 
 with tab1:
-    st.markdown(f"### Capacity Analysis: **{sec_name}**")
+    st.subheader(f"Capacity Analysis: {sec_name}")
     
-    # Colors for Status
-    if user_cause == "Shear": c_stat = "#10b981"; 
-    elif user_cause == "Moment": c_stat = "#f59e0b"; 
-    else: c_stat = "#3b82f6";
-    
-    # --- 1. Highlight Card ---
+    # --- 1. Highlight Card (ไม่ย้าย) ---
+    cause_color = "#27ae60" # Default Green
+    if user_cause == "Moment": cause_color = "#f39c12" # Orange
+    if user_cause == "Shear": cause_color = "#c0392b" # Red
+
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <span style="color:#64748b; font-size:14px; text-transform:uppercase; letter-spacing:1px;">Maximum {label_load}</span><br>
-                <span class="big-num" style="color:#1e293b; font-size:42px;">{user_safe_load:,.0f}</span> 
-                <span style="font-size:18px; color:#94a3b8; font-weight:500;">kg/m</span>
+                <span style="color:#555;">Max {label_load}</span><br>
+                <span style="font-size:38px; font-weight:bold; color:#2c3e50;">{user_safe_load:,.0f}</span> <span style="font-size:20px; color:#777;">kg/m</span>
             </div>
             <div style="text-align: right;">
-                <span style="color:#64748b; font-size:14px; text-transform:uppercase;">Control Factor</span><br>
-                <span style="font-size: 18px; font-weight:700; color:{c_stat}; background:{c_stat}15; padding: 6px 16px; border-radius:30px;">
-                    {user_cause}
-                </span>
+                <span style="color:#555;">Control Factor</span><br>
+                <span style="font-size: 20px; font-weight:bold; color:{cause_color}; background-color:rgba(0,0,0,0.05); padding: 5px 15px; border-radius:20px;">{user_cause}</span>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 2. Calculation Details (Standardized Math) ---
-    with st.expander(f"Show Calculation Steps (Standardized)", expanded=True):
+    # --- 2. Calculation Details (จัดรูปแบบสมการให้เหมือนกันเป๊ะ 3 ขั้นตอน) ---
+    with st.expander(f"🕵️‍♂️ ดูรายการคำนวณ (Calculation Details)", expanded=True):
         c1, c2, c3 = st.columns(3)
         L_cm_disp = user_span * 100
         
-        # Helper for consistent latex color/bold
-        def latex_result(val, unit): return fr"\mathbf{{{val:,.0f}}} \; \text{{{unit}}}"
-
         with c1:
-            st.markdown(f'<div class="calc-box" style="border-left-color: #10b981;"><div class="calc-title">1. Shear Check</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="calc-box" style="border-left-color: #27ae60;"><div class="calc-title">1. Shear Control</div>', unsafe_allow_html=True)
+            # 1. Formula
             st.latex(r''' w = \frac{2 \times V_{cap}}{L} \times 100 ''')
+            # 2. Substitution
             st.latex(fr''' w = \frac{{2 \times {V_cap:,.0f}}}{{{L_cm_disp:,.0f}}} \times 100 ''')
-            st.latex(fr''' w = {latex_result(w_shear, 'kg/m')} ''')
+            # 3. Result
+            st.latex(fr''' w = \mathbf{{{w_shear:,.0f}}} \; kg/m ''')
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c2:
-            st.markdown(f'<div class="calc-box" style="border-left-color: #f59e0b;"><div class="calc-title">2. Moment Check</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="calc-box" style="border-left-color: #f39c12;"><div class="calc-title">2. Moment Control</div>', unsafe_allow_html=True)
+            # 1. Formula
             st.latex(r''' w = \frac{8 \times M_{cap}}{L^2} \times 100 ''')
+            # 2. Substitution
             st.latex(fr''' w = \frac{{8 \times {M_cap:,.0f}}}{{{L_cm_disp:,.0f}^2}} \times 100 ''')
-            st.latex(fr''' w = {latex_result(w_moment, 'kg/m')} ''')
+            # 3. Result
+            st.latex(fr''' w = \mathbf{{{w_moment:,.0f}}} \; kg/m ''')
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c3:
-            st.markdown(f'<div class="calc-box" style="border-left-color: #3b82f6;"><div class="calc-title">3. Deflection Check</div>', unsafe_allow_html=True)
-            st.latex(r''' w = \frac{384 E I \Delta_{allow}}{5 L^4} \times 100 ''')
+            st.markdown(f'<div class="calc-box" style="border-left-color: #2980b9;"><div class="calc-title">3. Deflection Control</div>', unsafe_allow_html=True)
+            # 1. Formula
+            st.latex(r''' w = \frac{384 E I \Delta}{5 L^4} \times 100 ''')
+            # 2. Substitution (ใช้ e format สำหรับ E เพื่อไม่ให้ยาวเกิน)
             st.latex(fr''' w = \frac{{384 \times {E_mod:.2e} \times {Ix} \times {delta_allow:.2f}}}{{5 \times {L_cm_disp:,.0f}^4}} \times 100 ''')
-            st.latex(fr''' w = {latex_result(w_defl, 'kg/m')} ''')
+            # 3. Result
+            st.latex(fr''' w = \mathbf{{{w_defl:,.0f}}} \; kg/m ''')
             st.markdown("</div>", unsafe_allow_html=True)
+            
+    st.markdown("---")
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # --- 3. METRIC CARDS (Refined) ---
+    # --- 3. METRIC CARDS (Layout เดิม + แก้ Footer ตามสั่ง) ---
     cm1, cm2, cm3 = st.columns(3)
     
-    def create_card_polished(icon, title, actual, limit, unit, color_hex, decimal=0):
+    def create_card(icon, title, actual, limit, unit, color, decimal=0):
         pct = (actual / limit) * 100
         width_css = f"{min(pct, 100):.1f}"
+        fmt_val = f",.{decimal}f"
         
         # Color Logic
-        c_final = "#ef4444" if pct > 100 else color_hex
-        fmt = f",.{decimal}f"
-        
+        bar_color = color
+        if pct > 100: bar_color = "#c0392b" # Red warning
+
         return f"""
-        <div class="metric-card-final">
-            <div>
-                <div class="m-header">
-                    <div class="m-title"><span style="font-size:18px;">{icon}</span> {title}</div>
-                    <div class="m-percent" style="color:{c_final};">{pct:.1f}%</div>
+        <div class="metric-card-clean" style="border-top: 4px solid {bar_color};">
+            <div class="mc-header">
+                <div class="mc-title"><span>{icon}</span> {title}</div>
+                <div class="mc-percent" style="color:{bar_color};">{pct:.1f}%</div>
+            </div>
+            
+            <div class="mc-values">
+                <div style="text-align:left;">
+                    <div class="mc-label">ACTUAL</div>
+                    <div><b>{actual:{fmt_val}}</b></div>
                 </div>
-                
-                <div class="m-values">
-                    <div class="val-group">
-                        <span class="val-label">Actual Load</span>
-                        <span class="val-num">{actual:{fmt}}</span>
-                    </div>
-                    <div class="val-group" style="text-align:right;">
-                        <span class="val-label">Capacity</span>
-                        <span class="val-limit">{limit:{fmt}} <small style="font-size:12px;">{unit}</small></span>
-                    </div>
-                </div>
-                
-                <div class="m-bar-bg">
-                    <div class="m-bar-fill" style="width:{width_css}%; background-color:{c_final};"></div>
+                <div style="text-align:right;">
+                    <div class="mc-label">LIMIT</div>
+                    <div style="color:#888;">{limit:{fmt_val}} <small>{unit}</small></div>
                 </div>
             </div>
             
-            <div class="m-check">
-                <span style="font-family:'Sarabun';">Check:</span> 
-                {actual:{fmt}} ÷ {limit:{fmt}} = <b>{pct:.1f}%</b>
+            <div class="mc-bar-bg">
+                <div class="mc-bar-fill" style="width:{width_css}%; background-color:{bar_color};"></div>
+            </div>
+            
+            <div class="mc-footer">
+                {actual:{fmt_val}} ÷ {limit:{fmt_val}} = <b>{pct:.1f}%</b>
             </div>
         </div>
         """
     
     with cm1:
-        st.markdown(create_card_polished("✂️", "Shear (V)", V_actual, V_cap, "kg", "#10b981"), unsafe_allow_html=True) # Green
+        st.markdown(create_card("✂️", "Shear (V)", V_actual, V_cap, "kg", "#27ae60"), unsafe_allow_html=True)
     with cm2:
-        st.markdown(create_card_polished("🔄", "Moment (M)", M_actual, M_cap/100, "kg.m", "#f59e0b"), unsafe_allow_html=True) # Amber
+        st.markdown(create_card("🔄", "Moment (M)", M_actual, M_cap/100, "kg.m", "#f39c12"), unsafe_allow_html=True)
     with cm3:
-        st.markdown(create_card_polished("📏", "Deflection", delta_actual, delta_allow, "cm", "#3b82f6", decimal=2), unsafe_allow_html=True) # Blue
+        st.markdown(create_card("📏", "Deflection", delta_actual, delta_allow, "cm", "#2980b9", decimal=2), unsafe_allow_html=True)
 
-    # --- 4. Chart (Minimalist) ---
+    # --- 4. Chart (Standard) ---
     st.markdown("<br>", unsafe_allow_html=True)
     g_spans = np.linspace(2, 15, 100)
     g_data = [get_capacity(l) for l in g_spans]
     
     fig = go.Figure()
-    # Colors updated to match palette
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[1] for x in g_data], mode='lines', name=f'{label_cap_m}', line=dict(color='#f59e0b', dash='dash')))
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[0] for x in g_data], mode='lines', name=f'{label_cap_v}', line=dict(color='#10b981', dash='dash')))
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in g_data], mode='lines', name=f'Capacity Envelope', line=dict(color='#3b82f6', width=3), fill='tozeroy', fillcolor='rgba(59, 130, 246, 0.05)'))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[1] for x in g_data], mode='lines', name=f'{label_cap_m} Limit', line=dict(color='#f39c12', dash='dot')))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[0] for x in g_data], mode='lines', name=f'{label_cap_v} Limit', line=dict(color='#27ae60', dash='dot')))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in g_data], mode='lines', name=f'Max {label_load}', line=dict(color='#2c3e50', width=3), fill='tozeroy', fillcolor='rgba(44, 62, 80, 0.1)'))
     fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers', 
-                             marker=dict(color='#1e293b', size=15, symbol='circle', line=dict(width=3, color='white')), 
-                             name='Selected Span'))
+                             marker=dict(color='#c0392b', size=14, symbol='star', line=dict(width=2, color='white')), 
+                             name='Current Design'))
     
     fig.update_layout(
-        title=dict(text="Load Capacity Curves", font=dict(size=18, color='#64748b')),
-        height=400, 
-        margin=dict(t=50, b=40, l=60, r=40),
+        title="Span vs Capacity Chart",
+        xaxis_title="Span Length (m)",
+        yaxis_title=f"Load Capacity (kg/m)",
+        height=450, 
+        margin=dict(t=40, b=40, l=60, r=40),
         plot_bgcolor='white',
-        paper_bgcolor='white',
-        xaxis=dict(showgrid=True, gridcolor='#f1f5f9', title="Span (m)"),
-        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', title="Load (kg/m)"),
+        xaxis=dict(showgrid=True, gridcolor='#eee'),
+        yaxis=dict(showgrid=True, gridcolor='#eee'),
         hovermode="x unified",
-        legend=dict(orientation="h", y=1.05, x=1, xanchor="right")
+        legend=dict(orientation="h", y=1.02, x=1, xanchor="right")
     )
     st.plotly_chart(fig, use_container_width=True)
 
@@ -342,7 +306,7 @@ with tab2:
     req_bolt_result, v_bolt_result = conn.render_connection_tab(V_design, bolt_size, method, is_lrfd, p)
 
 with tab3:
-    st.markdown("### Reference Load Table")
+    st.subheader("Reference Load Table")
     t_spans = np.arange(2, 15.5, 0.5)
     t_data = [get_capacity(l) for l in t_spans]
     df_res = pd.DataFrame({"Span (m)": t_spans, f"Max {label_load}": [x[3] for x in t_data], "Control": [x[4] for x in t_data]})
