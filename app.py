@@ -5,26 +5,24 @@ import plotly.graph_objects as go
 import math
 
 # ==========================================
-# 1. SETUP & CUSTOM STYLES
+# 1. SETUP & STYLES
 # ==========================================
-st.set_page_config(page_title="ProStructure: Capacity Based Design", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="ProStructure: Calculation Report", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
-    .big-metric { font-size: 32px; font-weight: bold; color: #154360; }
-    .sub-metric { font-size: 16px; color: #7f8c8d; }
-    .card { background-color: #ffffff; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; border-left: 5px solid #2980b9; }
-    .card-conn { background-color: #fdfefe; padding: 20px; border-radius: 10px; border: 1px solid #d5d8dc; border-left: 5px solid #e67e22; }
-    .rec-box { background-color: #d4efdf; padding: 10px; border-radius: 5px; color: #1e8449; font-weight: bold; text-align: center; }
-    h3 { color: #2c3e50; }
+    .report-box { background-color: #fdfefe; border: 1px solid #d5d8dc; padding: 20px; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 14px; margin-top: 10px; }
+    .header-main { color: #154360; border-bottom: 2px solid #154360; padding-bottom: 5px; margin-bottom: 15px; }
+    .pass-tag { background-color: #d4efdf; color: #1e8449; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+    .fail-tag { background-color: #fadbd8; color: #943126; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+    .metric-card { background-color: #ebf5fb; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #a9cce3; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA & CALCULATIONS
+# 2. DATA & INPUTS
 # ==========================================
 def get_sys_data():
-    # Simulated SYS Table
     data = [
         ("H 100x50x5x7", 100, 50, 5, 7, 378, 76.5),
         ("H 150x75x5x7", 150, 75, 5, 7, 666, 88.8),
@@ -42,254 +40,227 @@ def get_sys_data():
     ]
     return pd.DataFrame(data, columns=["Section", "h", "b", "tw", "tf", "Ix", "Zx"])
 
-# Sidebar Inputs
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.title("⚙️ Parameters")
     df = get_sys_data()
     sec_name = st.selectbox("Select Section", df['Section'], index=6) # H400
     
-    st.subheader("Material (ksc)")
-    Fy = st.number_input("Yield (Fy)", value=2400)
-    Fu = st.number_input("Ultimate (Fu)", value=4000)
-    E = 2.04e6
+    st.subheader("Material")
+    Fy = st.number_input("Fy (ksc)", value=2400)
+    Fu = st.number_input("Fu (ksc)", value=4000)
+    E = 2040000
 
     # Props
     p = df[df['Section'] == sec_name].iloc[0]
     h, tw, tf, Ix, Zx = p['h'], p['tw'], p['tf'], p['Ix'], p['Zx']
     
-    st.info(f"**Props:** A={p['h']*p['tw']/100:.1f}cm², Ix={Ix:,}, Zx={Zx:,}")
+    st.info(f"""
+    **{sec_name}**
+    h={h}, tw={tw}, tf={tf} mm
+    Ix={Ix:,} cm⁴, Zx={Zx:,} cm³
+    """)
 
 # ==========================================
-# 3. BEAM REVERSE ANALYSIS
+# 3. BEAM CALCULATION (REVERSE)
 # ==========================================
-st.title("🏗️ Structural Capacity Dashboard")
+st.title("🏗️ Structural Calculation Report")
+st.caption("Automated Calculation Sheet based on Capacity Design")
 
-# 1. Main Slider for Span
-st.markdown("### 1️⃣ Span Configuration")
-span = st.slider("Select Span Length (m)", 1.0, 20.0, 6.0, 0.5)
+# Inputs
+c1, c2 = st.columns([1, 2])
+with c1:
+    span = st.number_input("Design Span Length (m)", 1.0, 20.0, 6.0, step=0.5)
+with c2:
+    st.markdown(f"### Target Section: **{sec_name}**")
+    st.markdown("Calculating Max Allowable Reaction ($V_{max}$) based on Governing Failure Modes...")
 
-# 2. Calculation Core (Reverse Engineering)
+# Calculations
 L_cm = span * 100
-d_m = h / 1000
+h_cm, tw_cm = h/10, tw/10
+Aw = h_cm * tw_cm
 
-# Limits Calculation
-# A. Shear Yield (Constant)
-Aw = (h/10) * (tw/10)
-V_max_shear = 0.6 * Fy * Aw
-w_max_shear = (2 * V_max_shear) / L_cm * 100 # Convert back to kg/m
+# 1. Shear
+V_cap_shear = 0.6 * Fy * Aw
 
-# B. Bending (Allowable Moment)
+# 2. Moment
 M_allow = 0.6 * Fy * Zx
-w_max_moment = (8 * M_allow) / (L_cm**2) * 100
-V_max_moment = (w_max_moment * span) / 2
+V_cap_moment = (4 * M_allow) / L_cm
 
-# C. Deflection (L/240)
-# Delta = 5wL^4/384EI = L/240 -> w = (384EI)/(2400*L^3) * 5? No.
-# w = (384 E I Delta) / (5 L^4) -> w = (384 E I (L/240)) / (5 L^4) = (384 E I) / (1200 L^3)
-w_max_defl = (384 * E * Ix) / (1200 * (L_cm**3)) * 100 # kg/m
-V_max_defl = (w_max_defl * span) / 2
+# 3. Deflection
+V_cap_defl = (384 * E * Ix) / (2400 * (L_cm**2))
 
-# Find Governor
-limits = {
-    "Shear Limit": (w_max_shear, V_max_shear),
-    "Moment Limit": (w_max_moment, V_max_moment),
-    "Deflection (L/240)": (w_max_defl, V_max_defl)
-}
+# Governing
+V_design = min(V_cap_shear, V_cap_moment, V_cap_defl)
+if V_design == V_cap_shear: gov = "Shear Yielding"
+elif V_design == V_cap_moment: gov = "Bending Moment"
+else: gov = "Deflection Limit (L/240)"
 
-# The SAFE Load is the minimum of all limits
-safe_w = min(w_max_shear, w_max_moment, w_max_defl)
-safe_v = min(V_max_shear, V_max_moment, V_max_defl)
-
-# Identify Governor
-if safe_w == w_max_shear: gov = "Shear Capacity"
-elif safe_w == w_max_moment: gov = "Bending Moment"
-else: gov = "Deflection (L/240)"
+w_equivalent = (2 * V_design) / span
 
 # ==========================================
-# 4. DISPLAY DASHBOARD
+# TAB 1: BEAM ANALYSIS & REPORT
 # ==========================================
-col_dash1, col_dash2 = st.columns([1, 2])
+tab1, tab2 = st.tabs(["📊 1. Beam Analysis & Report", "🔩 2. Connection Design Report"])
 
-with col_dash1:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown(f"### 🛡️ Max Capacity at {span}m")
+with tab1:
+    # --- RESULT METRICS ---
+    col_res1, col_res2, col_res3 = st.columns(3)
+    col_res1.markdown(f"""<div class="metric-card"><h3>{V_design:,.0f} kg</h3><p>Max Reaction (V)</p></div>""", unsafe_allow_html=True)
+    col_res2.markdown(f"""<div class="metric-card"><h3>{w_equivalent:,.0f} kg/m</h3><p>Max Uniform Load (w)</p></div>""", unsafe_allow_html=True)
+    col_res3.markdown(f"""<div class="metric-card"><h3>{gov}</h3><p>Controlled By</p></div>""", unsafe_allow_html=True)
     
-    st.markdown('<div class="sub-metric">Max Uniform Load (w)</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="big-metric">{safe_w:,.0f} kg/m</div>', unsafe_allow_html=True)
+    col_g, col_r = st.columns([1.5, 1])
     
-    st.markdown("---")
-    
-    st.markdown('<div class="sub-metric">Max Reaction (V_design)</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="big-metric" style="color:#d35400">{safe_v:,.0f} kg</div>', unsafe_allow_html=True)
-    
-    st.markdown(f"**Controlled by:** `{gov}`")
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Recommendation Box
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown("### 💡 Efficiency Guide")
-    st.write("ช่วง Load ที่ใช้งานแล้วคุ้มค่า (50-70%):")
-    st.markdown(f"""
-    <div class="rec-box">
-    {safe_w*0.5:,.0f} - {safe_w*0.7:,.0f} kg/m
-    </div>
-    """, unsafe_allow_html=True)
-    st.caption("หาก Load จริงน้อยกว่านี้ แสดงว่าหน้าตัดใหญ่เกินความจำเป็น (Over Design)")
-    st.markdown('</div>', unsafe_allow_html=True)
+    # --- GRAPH ---
+    with col_g:
+        st.subheader("📈 Capacity Envelope")
+        L_vals = np.linspace(0.5, 20, 100)
+        L_vals_cm = L_vals * 100
+        
+        v1 = np.full_like(L_vals, V_cap_shear)
+        v2 = (4 * M_allow) / L_vals_cm
+        v3 = (384 * E * Ix) / (2400 * (L_vals_cm**2))
+        v_safe = np.minimum(np.minimum(v1, v2), v3)
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=L_vals, y=v_safe, fill='tozeroy', name='Design Envelope', line=dict(color='#2980b9', width=3)))
+        fig.add_trace(go.Scatter(x=L_vals, y=v1, name='Shear Limit', line=dict(dash='dot', color='green')))
+        fig.add_trace(go.Scatter(x=L_vals, y=v2, name='Moment Limit', line=dict(dash='dot', color='orange')))
+        fig.add_trace(go.Scatter(x=L_vals, y=v3, name='Deflection Limit', line=dict(dash='dot', color='red')))
+        
+        # Current Point
+        fig.add_trace(go.Scatter(x=[span], y=[V_design], mode='markers', marker=dict(size=12, color='red'), name='Current Design'))
+        
+        # Optimal Range
+        d_m = h/1000
+        fig.add_vrect(x0=15*d_m, x1=20*d_m, fillcolor="green", opacity=0.1, annotation_text="Optimal Span")
 
-with col_dash2:
-    # --- GRAPH LOGIC ---
-    L_range = np.linspace(1, 20, 100)
-    L_range_cm = L_range * 100
-    
-    # Calculate curves for all spans
-    # 1. Shear (Constant V -> w varies)
-    curve_v_shear = np.full_like(L_range, V_max_shear)
-    
-    # 2. Moment (V = 4M/L)
-    curve_v_moment = (4 * M_allow) / L_range_cm
-    
-    # 3. Deflection (V = 384EI / 2400 L^2)
-    curve_v_defl = (384 * E * Ix) / (2400 * (L_range_cm**2))
-    
-    curve_safe = np.minimum(np.minimum(curve_v_shear, curve_v_moment), curve_v_defl)
-    
-    fig = go.Figure()
-    
-    # Plot Envelope
-    fig.add_trace(go.Scatter(x=L_range, y=curve_safe, fill='tozeroy', 
-                             name='Safe Operation Zone', line=dict(color='#2980b9', width=3)))
-    
-    # Plot Limits (Dashed)
-    fig.add_trace(go.Scatter(x=L_range, y=curve_v_shear, name='Shear Limit', line=dict(dash='dot', color='green')))
-    fig.add_trace(go.Scatter(x=L_range, y=curve_v_moment, name='Moment Limit', line=dict(dash='dot', color='orange')))
-    fig.add_trace(go.Scatter(x=L_range, y=curve_v_defl, name='Defl. Limit', line=dict(dash='dot', color='red')))
-    
-    # Highlight Current Point
-    fig.add_trace(go.Scatter(x=[span], y=[safe_v], mode='markers+text', 
-                             marker=dict(size=15, color='#c0392b'),
-                             text=[f"V={safe_v/1000:.1f}t"], textposition="top right",
-                             name='Current Design'))
-    
-    # Highlight Optimal Ratio (15d - 20d)
-    opt_min, opt_max = 15*d_m, 20*d_m
-    fig.add_vrect(x0=opt_min, x1=opt_max, fillcolor="green", opacity=0.1, annotation_text="Optimal Span")
+        fig.update_layout(height=450, hovermode="x unified", xaxis_title="Span (m)", yaxis_title="Max V (kg)",
+                          xaxis=dict(rangeslider=dict(visible=True))) # ZOOMABLE
+        st.plotly_chart(fig, use_container_width=True)
 
-    fig.update_layout(title="Reaction Capacity Envelope ($V_{max}$)", 
-                      xaxis_title="Span Length (m)", yaxis_title="Max Reaction Force (kg)",
-                      height=450, hovermode="x unified", xaxis=dict(rangeslider=dict(visible=True)))
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-# ==========================================
-# 5. CONNECTION DESIGN (AUTO LINKED)
-# ==========================================
-st.markdown("---")
-st.markdown("### 2️⃣ Connection Design (Auto-Linked)")
-st.markdown("ระบบดึงค่า **Max Reaction** จากด้านบนมาออกแบบจุดต่อให้อัตโนมัติ")
-
-col_conn_setup, col_conn_res = st.columns([1, 2])
-
-with col_conn_setup:
-    st.markdown('<div class="card-conn">', unsafe_allow_html=True)
-    st.markdown("#### 🔧 Bolt & Weld Config")
-    
-    # Input
-    bolt_grade = st.selectbox("Bolt Grade", ["A325", "A307"])
-    dia = st.selectbox("Diameter (mm)", [12, 16, 20, 22, 24], index=2)
-    rows = st.number_input("No. of Rows", 2, 8, 3)
-    t_plate = st.selectbox("Plate T (mm)", [6, 9, 12, 16], index=1)
-    w_size = st.selectbox("Weld Size (mm)", [4, 6, 8, 10], index=1)
-    
-    st.markdown("---")
-    st.caption(f"Design Load ($V_u$): {safe_v:,.0f} kg")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col_conn_res:
-    # --- CALCULATION ENGINE ---
-    # Params
-    db = dia/10
-    Ab = math.pi * (db/2)**2
-    Fv = 3720 if bolt_grade == "A325" else 1900
-    
-    # 1. Bolt Shear
-    Rn_bolt = rows * Ab * Fv
-    
-    # 2. Bearing (Min of Web or Plate)
-    Rn_bear_web = rows * (1.2 * Fu * db * (tw/10))
-    Rn_bear_plt = rows * (1.2 * Fu * db * (t_plate/10))
-    Rn_bear = min(Rn_bear_web, Rn_bear_plt)
-    
-    # 3. Block Shear (Auto Geometry)
-    s = 3 * dia; lev = 1.5 * dia; leh = 40
-    Agv = ((lev + (rows-1)*s)/10) * (t_plate/10)
-    Anv = Agv - (rows-0.5)*((dia+2)/10)*(t_plate/10)
-    Ant = ((leh - 0.5*(dia+2))/10) * (t_plate/10)
-    
-    R_bs1 = 0.6*Fy*Agv + 1.0*Fu*Ant
-    R_bs2 = 0.6*Fu*Anv + 1.0*Fu*Ant
-    Rn_block = min(R_bs1, R_bs2)
-    
-    # 4. Weld (Simplified)
-    # L_weld = Plate Height -> 2 sides
-    L_weld = (lev + (rows-1)*s + lev)/10
-    Rn_weld = 2 * L_weld * 0.707 * (w_size/10) * (0.3 * 4900) # 0.3Fu approx for ASD
-    
-    # Check
-    capacities = {
-        "Bolt Shear": Rn_bolt,
-        "Bearing Strength": Rn_bear,
-        "Block Shear": Rn_block,
-        "Weld Strength": Rn_weld
-    }
-    
-    min_cap = min(capacities.values())
-    ratio = safe_v / min_cap
-    is_pass = safe_v <= min_cap
-
-    # --- RENDER RESULTS ---
-    c1, c2 = st.columns([2, 1])
-    
-    with c1:
-        st.subheader("Capacity Checks")
-        for k, v in capacities.items():
-            # Progress bar logic
-            u_ratio = safe_v / v
-            bar_color = "red" if u_ratio > 1.0 else ("green" if u_ratio < 0.8 else "orange")
-            
-            st.write(f"**{k}** : {v:,.0f} kg")
-            st.progress(min(u_ratio, 1.0))
-            if u_ratio > 1.0:
-                st.caption(f"❌ Failed (Over by {(u_ratio-1)*100:.1f}%)")
-    
-    with c2:
-        st.subheader("Summary")
-        if is_pass:
+    # --- CALCULATION SHEET ---
+    with col_r:
+        st.subheader("📝 Detailed Calculation Sheet")
+        with st.container():
             st.markdown(f"""
-            <div style="background-color:#d4efdf; padding:20px; border-radius:10px; text-align:center; border:2px solid #27ae60;">
-                <h1 style="color:#27ae60; margin:0;">PASS</h1>
-                <h3>✅ Safe</h3>
-                <p>Ratio: {ratio:.2f}</p>
+            <div class="report-box">
+            <b>1. Web Shear Capacity (อ้างอิง AISC 360)</b><br>
+            A_w = d * t_w = {h_cm:.1f} * {tw_cm:.1f} = {Aw:.2f} cm²<br>
+            V_n = 0.6 * F_y * A_w<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;= 0.6 * {Fy} * {Aw:.2f}<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;= <b>{V_cap_shear:,.0f} kg</b> (Constant)<br>
+            <br>
+            <b>2. Bending Moment Control</b><br>
+            M_all = 0.6 * F_y * Z_x<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= 0.6 * {Fy} * {Zx}<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= {M_allow:,.0f} kg.cm<br>
+            V_max = (4 * M_all) / L<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= (4 * {M_allow:,.0f}) / {L_cm}<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <b>{V_cap_moment:,.0f} kg</b><br>
+            <br>
+            <b>3. Deflection Control (L/240)</b><br>
+            Formula: V = (384 * E * I) / (2400 * L²)<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= (384 * {E} * {Ix}) / (2400 * {L_cm}²)<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= <b>{V_cap_defl:,.0f} kg</b><br>
+            <br>
+            <b>GOVERNING LOAD:</b><br>
+            V_design = MIN({V_cap_shear:,.0f}, {V_cap_moment:,.0f}, {V_cap_defl:,.0f})<br>
+            <span style="color:blue; font-weight:bold;">V_design = {V_design:,.0f} kg</span>
             </div>
             """, unsafe_allow_html=True)
-        else:
-            fail_item = min(capacities, key=capacities.get)
+
+# ==========================================
+# TAB 2: CONNECTION REPORT
+# ==========================================
+with tab2:
+    st.markdown('<h3 class="header-main">🔩 Shear Tab Connection Design</h3>', unsafe_allow_html=True)
+    
+    col_in, col_calc = st.columns([1, 2])
+    
+    with col_in:
+        st.info(f"Design Load ($V_u$) from Tab 1: **{V_design:,.0f} kg**")
+        
+        # Config
+        bolt_grade = st.selectbox("Bolt Grade", ["A325", "A307"])
+        dia = st.selectbox("Diameter (mm)", [12, 16, 20, 22, 24], index=2)
+        rows = st.number_input("Rows (n)", 2, 8, 3)
+        tp_mm = st.selectbox("Plate Thick (mm)", [6, 9, 12, 16], index=1)
+        w_size = st.selectbox("Weld Size (mm)", [4, 6, 8, 10], index=1)
+        
+        # Geometry
+        s = 3 * dia
+        lev = 1.5 * dia
+        leh = 40
+        st.write("---")
+        st.write(f"**Geometry:** Pitch={s}, Le_v={lev}, Le_h={leh}")
+
+    with col_calc:
+        # --- CALC CODE ---
+        db = dia/10
+        Ab = math.pi*(db/2)**2
+        Fv = 3720 if bolt_grade == "A325" else 1900
+        
+        # 1. Bolt Shear
+        Rn_bolt = rows * Ab * Fv
+        
+        # 2. Bearing
+        Rn_bear_w = rows * (1.2*Fu*db*(tw/10))
+        Rn_bear_p = rows * (1.2*Fu*db*(tp_mm/10))
+        Rn_bear = min(Rn_bear_w, Rn_bear_p)
+        
+        # 3. Block Shear
+        Agv = ((lev + (rows-1)*s)/10) * (tp_mm/10)
+        Anv = Agv - (rows-0.5)*((dia+2)/10)*(tp_mm/10)
+        Ant = ((leh - 0.5*(dia+2))/10) * (tp_mm/10)
+        
+        bs1 = 0.6*Fy*Agv + 1.0*Fu*Ant
+        bs2 = 0.6*Fu*Anv + 1.0*Fu*Ant
+        Rn_block = min(bs1, bs2)
+        
+        # 4. Weld
+        L_weld = (lev + (rows-1)*s + lev)/10
+        Rn_weld = 2 * L_weld * 0.707 * (w_size/10) * (0.3 * 4900)
+        
+        capacities = {"Bolt Shear": Rn_bolt, "Bearing": Rn_bear, "Block Shear": Rn_block, "Weld": Rn_weld}
+        min_cap = min(capacities.values())
+        status = "PASSED" if min_cap >= V_design else "FAILED"
+        status_color = "#d4efdf" if status == "PASSED" else "#fadbd8"
+        text_color = "#1e8449" if status == "PASSED" else "#943126"
+
+        # --- REPORT DISPLAY ---
+        st.markdown(f"""
+        <div style="background-color:{status_color}; padding:15px; border-radius:5px; border:1px solid {text_color}; text-align:center; margin-bottom:15px;">
+            <h2 style="color:{text_color}; margin:0;">{status}</h2>
+            Capacity: {min_cap:,.0f} kg (Ratio: {V_design/min_cap:.2f})
+        </div>
+        """, unsafe_allow_html=True)
+        
+        with st.expander("📋 Show Detailed Calculation Steps (รายการคำนวณ)", expanded=True):
             st.markdown(f"""
-            <div style="background-color:#fadbd8; padding:20px; border-radius:10px; text-align:center; border:2px solid #c0392b;">
-                <h1 style="color:#c0392b; margin:0;">FAIL</h1>
-                <h3>❌ Unsafe</h3>
-                <p>Increase {fail_item}!</p>
+            <div class="report-box">
+            <b>1. Bolt Shear Capacity</b><br>
+            Ab = π * ({db:.2f}/2)² = {Ab:.2f} cm²<br>
+            Rn = n * Ab * Fv = {rows} * {Ab:.2f} * {Fv}<br>
+            &nbsp;&nbsp;&nbsp;= <b>{Rn_bolt:,.0f} kg</b><br>
+            
+            <br>
+            <b>2. Bearing Capacity</b><br>
+            Rn_web = n * 1.2 * Fu * d * tw = {rows} * 1.2 * {Fu} * {db:.2f} * {tw/10:.2f} = {Rn_bear_w:,.0f}<br>
+            Rn_plt = n * 1.2 * Fu * d * tp = {rows} * 1.2 * {Fu} * {db:.2f} * {tp_mm/10:.2f} = {Rn_bear_p:,.0f}<br>
+            &nbsp;&nbsp;&nbsp;= <b>{Rn_bear:,.0f} kg</b><br>
+            <br>
+            <b>3. Block Shear Capacity</b><br>
+            Agv={Agv:.2f}, Anv={Anv:.2f}, Ant={Ant:.2f} cm²<br>
+            R1 = 0.6FyAgv + FuAnt = 0.6*{Fy}*{Agv:.2f} + {Fu}*{Ant:.2f} = {bs1:,.0f}<br>
+            R2 = 0.6FuAnv + FuAnt = 0.6*{Fu}*{Anv:.2f} + {Fu}*{Ant:.2f} = {bs2:,.0f}<br>
+            &nbsp;&nbsp;&nbsp;= <b>{Rn_block:,.0f} kg</b><br>
+            
+            <br>
+            <b>4. Weld Capacity</b><br>
+            L_weld = {L_weld:.2f} cm<br>
+            Rn = 2 * L * 0.707 * s * 0.3Fexx<br>
+            &nbsp;&nbsp;&nbsp;= 2 * {L_weld:.2f} * 0.707 * {w_size/10} * (0.3*4900)<br>
+            &nbsp;&nbsp;&nbsp;= <b>{Rn_weld:,.0f} kg</b>
             </div>
             """, unsafe_allow_html=True)
-            
-    # Theory / Diagram Context
-    with st.expander("📚 View Failure Modes & Diagrams"):
-        col_img1, col_img2 = st.columns(2)
-        with col_img1:
-             st.markdown("**Block Shear Failure Path:**")
-             st.markdown("การวิบัติแบบฉีกขาดผ่านรูเจาะ (Tension Rupture + Shear Yield)")
-             st.markdown("") # Placeholder per instructions
-        with col_img2:
-             st.markdown("**Bolt Shear Failure:**")
-             st.markdown("การวิบัติของสลักเกลียวจากการถูกตัดขาด (Single Shear)")
-             st.markdown("") # Placeholder per instructions
