@@ -5,51 +5,54 @@ import plotly.graph_objects as go
 import math
 
 # ==========================================
-# 1. PROFESSIONAL UI STYLE
+# 1. STYLE CONFIGURATION (Engineering Report)
 # ==========================================
-st.set_page_config(page_title="ProStructure: Insight & Report", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="ProStructure: Ultimate Report", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
-    /* Main Layout */
-    .main-header {
-        font-family: 'Helvetica Neue', sans-serif;
-        color: #154360;
-        border-left: 6px solid #d35400;
-        padding-left: 15px;
+    /* Paper Style for Calculation Sheet */
+    .calc-sheet {
+        background-color: #ffffff;
+        padding: 30px;
+        border: 1px solid #dcdcdc;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        border-radius: 5px;
+        font-family: 'Sarabun', sans-serif;
         margin-bottom: 20px;
     }
-    .card {
-        background-color: #ffffff;
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        border: 1px solid #e0e0e0;
+    .topic-header {
+        color: #154360;
+        border-bottom: 2px solid #154360;
+        padding-bottom: 5px;
         margin-bottom: 15px;
-    }
-    .metric-value {
-        font-size: 28px;
         font-weight: bold;
-        color: #2c3e50;
+        font-size: 20px;
     }
-    .metric-label {
-        font-size: 14px;
-        color: #7f8c8d;
+    .sub-header {
+        color: #2980b9;
+        font-weight: bold;
+        margin-top: 15px;
+        font-size: 16px;
     }
-    /* Status Badges */
-    .status-optimal { background-color: #d4efdf; color: #1e8449; padding: 4px 10px; border-radius: 15px; font-size: 12px; font-weight: bold; }
-    .status-warn { background-color: #fcf3cf; color: #b7950b; padding: 4px 10px; border-radius: 15px; font-size: 12px; font-weight: bold; }
-    .status-crit { background-color: #fadbd8; color: #943126; padding: 4px 10px; border-radius: 15px; font-size: 12px; font-weight: bold; }
-    
-    /* Progress Bar Custom */
-    .stProgress > div > div > div > div {
-        background-color: #2980b9;
+    .highlight-box {
+        background-color: #eaf2f8;
+        padding: 15px;
+        border-left: 5px solid #2980b9;
+        margin: 10px 0;
+    }
+    .metric-card {
+        background-color: #fdfefe;
+        border: 1px solid #e0e0e0;
+        padding: 15px;
+        border-radius: 8px;
+        text-align: center;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA & LOGIC ENGINE
+# 2. INPUT DATA
 # ==========================================
 def get_sys_data():
     data = [
@@ -69,207 +72,213 @@ def get_sys_data():
     ]
     return pd.DataFrame(data, columns=["Section", "h", "b", "tw", "tf", "Ix", "Zx"])
 
-# --- SIDEBAR INPUTS ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2666/2666505.png", width=50)
-    st.markdown("### ⚙️ Engineer Control")
-    
+    st.header("⚙️ Project Parameters")
     df = get_sys_data()
     sec_name = st.selectbox("Select Section", df['Section'], index=6)
     
-    st.markdown("---")
-    st.caption("Material (ksc)")
-    col_mat1, col_mat2 = st.columns(2)
-    Fy = col_mat1.number_input("Fy", value=2400, label_visibility="collapsed")
-    Fu = col_mat2.number_input("Fu", value=4000, label_visibility="collapsed")
+    st.subheader("Material (ksc)")
+    Fy = st.number_input("Yield (Fy)", value=2400)
+    Fu = st.number_input("Ultimate (Fu)", value=4000)
     E_val = 2.04e6
     
-    # Props extraction
+    st.subheader("Geometry")
+    span = st.slider("Span Length (m)", 1.0, 25.0, 6.0, 0.5)
+
+    # Props
     p = df[df['Section'] == sec_name].iloc[0]
     h, tw, tf, Ix, Zx = p['h'], p['tw'], p['tf'], p['Ix'], p['Zx']
-    
-    st.info(f"Depth (d): {h} mm\nWeight: Check Table")
 
-# --- MAIN CALCULATION LOGIC ---
-st.markdown(f"<h1 class='main-header'>Structural Capacity Insight: {sec_name}</h1>", unsafe_allow_html=True)
-
-# 1. Define Span & Calculate Limits
-col_slider, col_opt = st.columns([2, 1])
-with col_slider:
-    span = st.slider("Select Span Length (m)", 1.0, 25.0, 6.0, 0.5)
-
-# 2. Optimal Span Logic (L/d Ratio)
+# ==========================================
+# 3. CALCULATION CORE
+# ==========================================
+L_cm = span * 100
 d_m = h / 1000
 ratio_L_d = span / d_m
-opt_min, opt_max = 15, 20
-range_min, range_max = opt_min * d_m, opt_max * d_m
 
-# Determine Status
-if ratio_L_d < 15:
-    span_status = "Deep / Short Span"
-    span_color = "status-warn"
-    span_desc = "คานลึกเกินไปสำหรับช่วงนี้ (Shear อาจจะคุม แต่น้ำหนักมากเกินจำเป็น)"
-elif 15 <= ratio_L_d <= 20:
-    span_status = "✨ Optimal Span"
-    span_color = "status-optimal"
-    span_desc = "ช่วงความยาวเหมาะสม (สมดุลระหว่าง Strength และ Stiffness)"
-else:
-    span_status = "Slender / Long Span"
-    span_color = "status-crit"
-    span_desc = "คานชะลูดเกินไป (Deflection จะเป็นตัวควบคุมหลัก)"
-
-with col_opt:
-    st.markdown(f"""
-    <div class='card' style='text-align:center; padding:10px;'>
-        <div style='font-size:12px; color:#7f8c8d;'>Current L/d Ratio</div>
-        <div style='font-size:24px; font-weight:bold;'>{ratio_L_d:.1f}</div>
-        <span class='{span_color}'>{span_status}</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-# 3. Reverse Calculate Capacity
-L_cm = span * 100
-Aw = (h/10)*(tw/10)
-
-# Limit 1: Shear
+# 1. Shear (Vn = 0.6FyAw)
+Aw = (h/10) * (tw/10)
 V_shear = 0.6 * Fy * Aw
 
-# Limit 2: Moment
-M_all = 0.6 * Fy * Zx
-V_moment = (4 * M_all) / L_cm
+# 2. Moment (V from M_allow)
+M_allow = 0.6 * Fy * Zx
+V_moment = (4 * M_allow) / L_cm
 
-# Limit 3: Deflection
+# 3. Deflection (V from L/240)
 V_defl = (384 * E_val * Ix) / (2400 * (L_cm**2))
 
 # Governing
 V_design = min(V_shear, V_moment, V_defl)
-if V_design == V_shear: gov_mode = "Shear"
-elif V_design == V_moment: gov_mode = "Moment"
-else: gov_mode = "Deflection"
-
-w_equivalent = (2 * V_design) / span
+if V_design == V_shear: gov = "Shear (แรงเฉือนคุม)"
+elif V_design == V_moment: gov = "Moment (โมเมนต์คุม)"
+else: gov = "Deflection (ระยะแอ่นคุม)"
 
 # ==========================================
-# 3. INSIGHT DASHBOARD
+# 4. DASHBOARD & GRAPH
 # ==========================================
-col_d1, col_d2 = st.columns([1, 1.5])
+st.title(f"🏗️ Design Analysis: {sec_name}")
 
-with col_d1:
-    st.markdown("### 📊 Capacity Breakdown")
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    
-    # Logic to show % used relative to the Governing Load
-    # หมายความว่า ถ้าเราใส่ Load เท่ากับ V_design ตัวที่คุมจะ = 100% ตัวอื่นจะ < 100%
-    per_shear = (V_design / V_shear) * 100
-    per_moment = (V_design / V_moment) * 100
-    per_defl = (V_design / V_defl) * 100
-    
-    st.write(f"**1. Shear Limit:** {V_shear:,.0f} kg")
-    st.progress(per_shear/100)
-    st.caption(f"Utilization: {per_shear:.1f}%")
-    
-    st.write(f"**2. Moment Limit:** {V_moment:,.0f} kg")
-    st.progress(per_moment/100)
-    st.caption(f"Utilization: {per_moment:.1f}%")
-    
-    st.write(f"**3. Deflection Limit:** {V_defl:,.0f} kg")
-    st.progress(per_defl/100)
-    st.caption(f"Utilization: {per_defl:.1f}%")
-    
-    st.markdown("---")
-    st.markdown(f"**Governing Mode:** <span style='color:#d35400; font-weight:bold'>{gov_mode}</span>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+# --- Top Metrics ---
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Max Reaction (V)", f"{V_design:,.0f} kg")
+c2.metric("Span Length", f"{span} m")
+c3.metric("L/d Ratio", f"{ratio_L_d:.1f}", delta="Optimal: 15-20" if 15<=ratio_L_d<=20 else "Check Span")
+c4.metric("Governing Mode", gov)
 
-with col_d2:
-    st.markdown("### 🧠 Smart Analysis: Why this Span?")
-    st.markdown(f"""
-    <div class='card'>
-        <p><b>ช่วงความยาวแนะนำ (Economical Range):</b> {range_min:.2f} - {range_max:.2f} m</p>
-        <p style='font-size:14px;'>
-        วิศวกรโครงสร้างใช้กฎ <b>Rule of Thumb (L/d = 15-20)</b> ในการเลือกหน้าตัดเบื้องต้น:
-        </p>
-        <ul>
-            <li><b>ถ้า Span < {range_min:.2f} m:</b> หน้าตัดจะใหญ่เกินความจำเป็น (Waste) เพราะแรงเฉือนรับได้สบาย แต่ไม่ได้ใช้ศักยภาพการดัดเต็มที่</li>
-            <li><b>ถ้า Span > {range_max:.2f} m:</b> หน้าตัดจะเริ่ม "ตกท้องช้าง" (Deflection) เป็นตัวคุม ทำให้ต้องเผื่อขนาดเหล็กใหญ่ขึ้นมากเพื่อแก้เรื่องการแอ่นตัว ทั้งที่รับแรงได้อยู่</li>
-        </ul>
-        <div style='background-color:#eaf2f8; padding:10px; border-radius:5px; border-left:4px solid #2980b9;'>
-            <b>คำแนะนำสำหรับ {sec_name} @ {span} m:</b><br>
-            {span_desc}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+col_graph, col_insight = st.columns([2, 1])
+
+with col_graph:
+    st.subheader("📈 Load Capacity Envelope (กราฟแสดงการรับแรง)")
+    # Graph Data
+    L_vals = np.linspace(1, 25, 100)
+    L_cm_vals = L_vals * 100
+    
+    v1 = np.full_like(L_vals, V_shear)
+    v2 = (4 * M_allow) / L_cm_vals
+    v3 = (384 * E_val * Ix) / (2400 * (L_cm_vals**2))
+    v_min = np.minimum(np.minimum(v1, v2), v3)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=L_vals, y=v1, name='Shear Limit', line=dict(dash='dot', color='green')))
+    fig.add_trace(go.Scatter(x=L_vals, y=v2, name='Moment Limit', line=dict(dash='dot', color='orange')))
+    fig.add_trace(go.Scatter(x=L_vals, y=v3, name='Deflection Limit', line=dict(dash='dot', color='red')))
+    fig.add_trace(go.Scatter(x=L_vals, y=v_min, name='Design Capacity', fill='tozeroy', line=dict(color='#154360', width=3)))
+    
+    # Current Point
+    fig.add_trace(go.Scatter(x=[span], y=[V_design], mode='markers', marker=dict(size=12, color='red'), name='Current Selection'))
+    
+    fig.update_layout(height=400, hovermode="x unified", xaxis_title="Span (m)", yaxis_title="Max Load (kg)", margin=dict(l=0,r=0,t=0,b=0))
+    st.plotly_chart(fig, use_container_width=True)
+
+with col_insight:
+    st.subheader("📊 % Utilization")
+    st.caption("เทียบกับ Load ที่รับได้สูงสุดในแต่ละกรณี")
+    
+    p_shear = V_design / V_shear
+    p_moment = V_design / V_moment
+    p_defl = V_design / V_defl
+    
+    st.write(f"**Shear:** {(p_shear*100):.1f}%")
+    st.progress(p_shear)
+    
+    st.write(f"**Moment:** {(p_moment*100):.1f}%")
+    st.progress(p_moment)
+    
+    st.write(f"**Deflection:** {(p_defl*100):.1f}%")
+    st.progress(p_defl)
+    
+    if ratio_L_d > 20:
+        st.warning("⚠️ **Slender Beam:** คานยาวเกินไป Deflection จึงเป็นตัวคุม (กราฟเส้นสีแดงต่ำสุด)")
+    elif ratio_L_d < 15:
+        st.info("ℹ️ **Deep Beam:** คานสั้น Shear รับได้สบาย แต่น้ำหนักเหล็กอาจมากเกินจำเป็น")
+    else:
+        st.success("✅ **Optimal Span:** ช่วงความยาวเหมาะสม คุ้มค่าทางเศรษฐศาสตร์")
 
 # ==========================================
-# 4. CONNECTION DESIGN (INTERACTIVE)
+# 5. DETAILED CALCULATION REPORT
 # ==========================================
 st.markdown("---")
-st.subheader("🔩 Connection Design & Status")
+tab1, tab2 = st.tabs(["📄 1. Detailed Calculation Sheet (รายการคำนวณ)", "🔩 2. Connection Design (ออกแบบจุดต่อ)"])
 
-c1, c2, c3 = st.columns([1, 2, 1])
-
-with c1:
-    st.markdown("**Bolt Config**")
-    dia = st.selectbox("Diameter", [12, 16, 20, 22, 24], index=2)
-    rows = st.number_input("Rows", 2, 8, 3)
-    grade = st.selectbox("Grade", ["A325", "A307"])
+with tab1:
+    st.markdown('<div class="calc-sheet">', unsafe_allow_html=True)
+    st.markdown('<div class="topic-header">CALCULATION REPORT: BEAM CAPACITY</div>', unsafe_allow_html=True)
     
-with c2:
-    st.markdown("**Plate & Weld**")
-    pl_t = st.selectbox("Plate T (mm)", [6, 9, 10, 12, 16], index=1)
-    w_sz = st.selectbox("Weld (mm)", [4, 6, 8], index=1)
-    
-    # Calc Logic
-    db = dia/10; Ab = math.pi*(db/2)**2
-    Fv = 3720 if grade == "A325" else 1900
-    
-    # 1. Bolt Shear
-    Rn_bolt = rows * Ab * Fv
-    # 2. Bearing (Simplified min)
-    Rn_bear = rows * 1.2 * Fu * db * min(tw/10, pl_t/10)
-    # 3. Weld
-    # Assume 2 lines of weld length 1.5d + (n-1)3d + 1.5d approx plate height
-    L_weld = (1.5*dia + (rows-1)*3*dia + 1.5*dia)/10
-    Rn_weld = 2 * L_weld * 0.707 * (w_sz/10) * (0.3 * 4900)
-    
-    min_conn = min(Rn_bolt, Rn_bear, Rn_weld)
-    conn_ratio = (V_design / min_conn) * 100
-    
-    # Display Result as Bar
-    st.write(f"**Load ($V_u$):** {V_design:,.0f} kg vs **Capacity:** {min_conn:,.0f} kg")
-    
-    bar_color = "red" if conn_ratio > 100 else ("orange" if conn_ratio > 80 else "green")
-    st.markdown(f"""
-    <div style="width:100%; background-color:#e0e0e0; border-radius:10px;">
-        <div style="width:{min(conn_ratio, 100)}%; background-color:{bar_color}; height:20px; border-radius:10px; text-align:right; padding-right:5px; color:white; font-size:12px; font-weight:bold;">
-            {conn_ratio:.1f}%
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with c3:
-    if conn_ratio <= 100:
-        st.success("✅ PASS")
-    else:
-        st.error("❌ FAIL")
-    st.caption("Controlling: " + ("Bolt Shear" if min_conn == Rn_bolt else ("Bearing" if min_conn == Rn_bear else "Weld")))
-
-# ==========================================
-# 5. DETAILED REPORT (Expandable)
-# ==========================================
-with st.expander("📄 Click to View Detailed Calculation Sheet (รายการคำนวณละเอียด)"):
-    col_sheet_l, col_sheet_r = st.columns(2)
-    
-    with col_sheet_l:
-        st.markdown("**1. Beam Limits Analysis**")
-        st.latex(rf"V_{{shear}} = 0.6 F_y A_w = {V_shear:,.0f} \ kg")
-        st.latex(rf"V_{{moment}} = \frac{{4 M_{{all}}}}{{L}} = {V_moment:,.0f} \ kg")
-        st.latex(rf"V_{{defl}} = \frac{{384 E I}}{{2400 L^2}} = {V_defl:,.0f} \ kg")
-        st.markdown(f"**Governing Load:** {V_design:,.0f} kg")
+    col_l, col_r = st.columns(2)
+    with col_l:
+        st.markdown("**1. Properties**")
+        st.write(f"Section: {sec_name}")
+        st.latex(rf"d={h}mm, t_w={tw}mm, I_x={Ix:,}cm^4, Z_x={Zx:,}cm^3")
+        st.write(f"Design Span (L): {span} m")
+        st.write(f"Material: Fy={Fy} ksc, E={E_val:,.0f} ksc")
         st.markdown("")
+
+    with col_r:
+         st.markdown(f"**Governing Load: {V_design:,.0f} kg**")
+         st.caption(f"Controlled by: {gov}")
+    
+    st.markdown("---")
+    
+    # CASE 1: SHEAR
+    st.markdown('<div class="sub-header">2. Shear Capacity Calculation (แรงเฉือน)</div>', unsafe_allow_html=True)
+    st.markdown("**Reference:** AISC ASD (Allowable Stress Design)")
+    st.write("สูตร: $V_n = 0.6 \cdot F_y \cdot A_w$")
+    st.markdown("**Substitution (แทนค่า):**")
+    st.latex(rf"A_w = d \times t_w = {h/10} \times {tw/10} = {Aw:.2f} \ cm^2")
+    st.latex(rf"V_{{shear}} = 0.6 \times {Fy} \times {Aw:.2f} = \mathbf{{{V_shear:,.0f}}} \ kg")
+    
+    # CASE 2: MOMENT
+    st.markdown('<div class="sub-header">3. Bending Moment Capacity (โมเมนต์ดัด)</div>', unsafe_allow_html=True)
+    st.write("สูตรโมเมนต์ที่ยอมให้: $M_{all} = 0.66 \cdot F_y \cdot Z_x$ (Compact) or $0.6 \cdot F_y \cdot Z_x$ (Non-Compact)")
+    st.write("*Note: ใช้ Conservative value ที่ 0.6Fy*")
+    st.latex(rf"M_{{all}} = 0.6 \times {Fy} \times {Zx} = {M_allow:,.0f} \ kg \cdot cm")
+    st.write("แปลงเป็น Reaction Force ($V$) สำหรับ Simple Beam, Uniform Load:")
+    st.latex(r"M = \frac{w L^2}{8} = \frac{(wL)L}{8} = \frac{2V \cdot L}{8} = \frac{VL}{4} \rightarrow V = \frac{4M}{L}")
+    st.markdown("**Substitution (แทนค่า):**")
+    st.latex(rf"V_{{moment}} = \frac{{4 \times {M_allow:,.0f}}}{{{L_cm}}} = \mathbf{{{V_moment:,.0f}}} \ kg")
+    st.markdown("
+
+[Image of simply supported beam bending moment diagram]
+")
+    
+    # CASE 3: DEFLECTION
+    st.markdown('<div class="sub-header">4. Deflection Limit (ระยะแอ่นตัว)</div>', unsafe_allow_html=True)
+    st.write("Limit: $\delta_{max} = L/240$")
+    st.write("Formula for Uniform Load: $\delta = \\frac{5wL^4}{384EI}$")
+    st.write("Substitute $w = 2V/L$ into formula and solve for $V$:")
+    st.latex(r"V = \frac{384 \cdot E \cdot I}{2400 \cdot L^2}")
+    st.markdown("**Substitution (แทนค่า):**")
+    st.latex(rf"V_{{defl}} = \frac{{384 \times {E_val:.0f} \times {Ix}}}{{2400 \times {L_cm}^2}} = \mathbf{{{V_defl:,.0f}}} \ kg")
+    
+    st.markdown('<div class="highlight-box">', unsafe_allow_html=True)
+    st.markdown(f"**CONCLUSION:** The Beam is limited by **{gov}**")
+    st.markdown(f"**Max Allowable Reaction = {V_design:,.0f} kg**")
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ==========================================
+# 6. CONNECTION DESIGN
+# ==========================================
+with tab2:
+    st.markdown('<div class="calc-sheet">', unsafe_allow_html=True)
+    st.markdown('<div class="topic-header">CONNECTION DESIGN: SHEAR TAB</div>', unsafe_allow_html=True)
+    
+    c_in, c_cal = st.columns([1, 2])
+    
+    with c_in:
+        st.info(f"**Design Load ($V_u$):** {V_design:,.0f} kg")
+        dia = st.selectbox("Bolt Dia (mm)", [12, 16, 20, 22, 24], index=2)
+        rows = st.number_input("Rows (n)", 2, 8, 3)
+        tp = st.selectbox("Plate Thick (mm)", [6, 9, 12, 16], index=1)
+        weld = st.selectbox("Weld Size (mm)", [4, 6, 8], index=1)
+    
+    with c_cal:
+        # Calcs
+        db = dia/10
+        Ab = math.pi*(db/2)**2
+        Fv = 3720 # A325
         
-    with col_sheet_r:
-        st.markdown("**2. Connection Limits**")
-        st.latex(rf"\phi R_{{bolt}} = {Rn_bolt:,.0f} \ kg \ ({(V_design/Rn_bolt)*100:.1f}\%)")
-        st.latex(rf"\phi R_{{bearing}} = {Rn_bear:,.0f} \ kg \ ({(V_design/Rn_bear)*100:.1f}\%)")
-        st.latex(rf"\phi R_{{weld}} = {Rn_weld:,.0f} \ kg \ ({(V_design/Rn_weld)*100:.1f}\%)")
+        # 1. Bolt Shear
+        Rn_bolt = rows * Ab * Fv
+        
+        # 2. Bearing (Min of web/plate)
+        Rn_bear = min(rows*1.2*Fu*db*(tw/10), rows*1.2*Fu*db*(tp/10))
+        
+        # 3. Weld
+        L_w = (1.5*dia + (rows-1)*3*dia + 1.5*dia)/10
+        Rn_weld = 2 * L_w * 0.707 * (weld/10) * (0.3*4900)
+        
+        min_conn = min(Rn_bolt, Rn_bear, Rn_weld)
+        status = "PASSED" if min_conn >= V_design else "FAILED"
+        color = "green" if status == "PASSED" else "red"
+        
+        st.markdown(f"### Status: <span style='color:{color}'>{status}</span>", unsafe_allow_html=True)
+        st.markdown(f"**Capacity: {min_conn:,.0f} kg** (Ratio: {V_design/min_conn:.2f})")
+        
+        st.markdown("**Calculation Breakdown:**")
+        st.latex(rf"1. \ Bolt \ Shear: {rows} \times {Ab:.2f} \times {Fv} = {Rn_bolt:,.0f} \ kg")
         st.markdown("")
+        st.latex(rf"2. \ Bearing: min(Web, Plt) = {Rn_bear:,.0f} \ kg")
+        st.latex(rf"3. \ Weld: 2 \times {L_w:.1f} \times 0.707 \times {weld/10} \times 1470 = {Rn_weld:,.0f} \ kg")
+        
+    st.markdown('</div>', unsafe_allow_html=True)
