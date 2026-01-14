@@ -20,7 +20,7 @@ st.markdown("""
         font-family: 'Sarabun', sans-serif; 
     }
 
-    /* --- 1. Metric Card (Design เดิมแต่ Clean ขึ้น) --- */
+    /* --- 1. Metric Card --- */
     .metric-card-clean {
         background: white;
         border-radius: 10px;
@@ -46,19 +46,20 @@ st.markdown("""
     .mc-bar-bg { background-color: #f0f0f0; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
     .mc-bar-fill { height: 100%; border-radius: 4px; }
 
-    /* Footer: สมการเช็คความถูกต้อง */
+    /* Footer: สมการเช็คความถูกต้อง (แก้ไขใหม่) */
     .mc-footer { 
         background-color: #fafafa; border-top: 1px solid #eee; 
         padding-top: 8px; margin-top: 5px;
-        font-size: 12px; color: #777; text-align: center; 
+        font-size: 13px; color: #555; text-align: center; 
         font-family: 'Roboto Mono', monospace;
+        letter-spacing: -0.5px;
     }
 
-    /* --- 2. Calculation Box (กรอบสมการ) --- */
+    /* --- 2. Calculation Box --- */
     .calc-box {
         background-color: #fff;
         border: 1px solid #ddd;
-        border-left-width: 5px; /* แถบสีด้านซ้าย */
+        border-left-width: 5px;
         padding: 15px;
         border-radius: 5px;
         margin-bottom: 10px;
@@ -78,7 +79,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. INPUTS (Code Logic เดิม)
+# 2. INPUTS
 # ==========================================
 steel_db = {
     "H 150x75x5x7":     {"h": 150, "b": 75,  "tw": 5,   "tf": 7,   "Ix": 666,    "Zx": 88.8,  "w": 14.0},
@@ -171,7 +172,7 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail"
 with tab1:
     st.subheader(f"Capacity Analysis: {sec_name}")
     
-    # --- 1. Highlight Card (ไม่ย้าย) ---
+    # --- 1. Highlight Card ---
     cause_color = "#27ae60" # Default Green
     if user_cause == "Moment": cause_color = "#f39c12" # Orange
     if user_cause == "Shear": cause_color = "#c0392b" # Red
@@ -191,44 +192,35 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 2. Calculation Details (จัดรูปแบบสมการให้เหมือนกันเป๊ะ 3 ขั้นตอน) ---
+    # --- 2. Calculation Details ---
     with st.expander(f"🕵️‍♂️ ดูรายการคำนวณ (Calculation Details)", expanded=True):
         c1, c2, c3 = st.columns(3)
         L_cm_disp = user_span * 100
         
         with c1:
             st.markdown(f'<div class="calc-box" style="border-left-color: #27ae60;"><div class="calc-title">1. Shear Control</div>', unsafe_allow_html=True)
-            # 1. Formula
             st.latex(r''' w = \frac{2 \times V_{cap}}{L} \times 100 ''')
-            # 2. Substitution
             st.latex(fr''' w = \frac{{2 \times {V_cap:,.0f}}}{{{L_cm_disp:,.0f}}} \times 100 ''')
-            # 3. Result
             st.latex(fr''' w = \mathbf{{{w_shear:,.0f}}} \; kg/m ''')
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c2:
             st.markdown(f'<div class="calc-box" style="border-left-color: #f39c12;"><div class="calc-title">2. Moment Control</div>', unsafe_allow_html=True)
-            # 1. Formula
             st.latex(r''' w = \frac{8 \times M_{cap}}{L^2} \times 100 ''')
-            # 2. Substitution
             st.latex(fr''' w = \frac{{8 \times {M_cap:,.0f}}}{{{L_cm_disp:,.0f}^2}} \times 100 ''')
-            # 3. Result
             st.latex(fr''' w = \mathbf{{{w_moment:,.0f}}} \; kg/m ''')
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c3:
             st.markdown(f'<div class="calc-box" style="border-left-color: #2980b9;"><div class="calc-title">3. Deflection Control</div>', unsafe_allow_html=True)
-            # 1. Formula
             st.latex(r''' w = \frac{384 E I \Delta}{5 L^4} \times 100 ''')
-            # 2. Substitution (ใช้ e format สำหรับ E เพื่อไม่ให้ยาวเกิน)
             st.latex(fr''' w = \frac{{384 \times {E_mod:.2e} \times {Ix} \times {delta_allow:.2f}}}{{5 \times {L_cm_disp:,.0f}^4}} \times 100 ''')
-            # 3. Result
             st.latex(fr''' w = \mathbf{{{w_defl:,.0f}}} \; kg/m ''')
             st.markdown("</div>", unsafe_allow_html=True)
             
     st.markdown("---")
 
-    # --- 3. METRIC CARDS (Layout เดิม + แก้ Footer ตามสั่ง) ---
+    # --- 3. METRIC CARDS ---
     cm1, cm2, cm3 = st.columns(3)
     
     def create_card(icon, title, actual, limit, unit, color, decimal=0):
@@ -240,6 +232,7 @@ with tab1:
         bar_color = color
         if pct > 100: bar_color = "#c0392b" # Red warning
 
+        # FIXED: Footer now shows explicit percentage calculation: (A / B) * 100 = %
         return f"""
         <div class="metric-card-clean" style="border-top: 4px solid {bar_color};">
             <div class="mc-header">
@@ -263,7 +256,7 @@ with tab1:
             </div>
             
             <div class="mc-footer">
-                {actual:{fmt_val}} ÷ {limit:{fmt_val}} = <b>{pct:.1f}%</b>
+                ({actual:{fmt_val}} / {limit:{fmt_val}}) × 100 = <b>{pct:.1f}%</b>
             </div>
         </div>
         """
@@ -275,7 +268,7 @@ with tab1:
     with cm3:
         st.markdown(create_card("📏", "Deflection", delta_actual, delta_allow, "cm", "#2980b9", decimal=2), unsafe_allow_html=True)
 
-    # --- 4. Chart (Standard) ---
+    # --- 4. Chart ---
     st.markdown("<br>", unsafe_allow_html=True)
     g_spans = np.linspace(2, 15, 100)
     g_data = [get_capacity(l) for l in g_spans]
