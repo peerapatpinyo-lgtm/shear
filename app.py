@@ -7,7 +7,7 @@ import math
 # ==========================================
 # 1. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V6.3", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight Final Fix", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
@@ -16,8 +16,8 @@ st.markdown("""
     .metric-box { text-align: center; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-top: 3px solid #3498db; }
     .big-num { font-size: 24px; font-weight: bold; color: #17202a; }
     .sub-text { font-size: 14px; color: #7f8c8d; margin-top: 5px; }
-    .report-box { background-color: #ffffff; border: 1px solid #ddd; padding: 20px; border-radius: 5px; margin-bottom: 15px; border-left: 5px solid #2980b9; }
-    h4 { margin-top: 20px; }
+    .report-line { font-family: 'Courier New', monospace; font-size: 16px; margin-bottom: 5px; }
+    .report-header { font-weight: bold; font-size: 18px; margin-top: 20px; color: #2c3e50; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -37,8 +37,8 @@ steel_db = {
 }
 
 with st.sidebar:
-    st.title("Beam Insight V6.3")
-    st.caption("Perfect LaTeX Report")
+    st.title("Beam Insight Final")
+    st.caption("Clean Calculation Mode")
     st.divider()
     
     st.header("1. Beam Settings")
@@ -78,7 +78,7 @@ dia_mm = int(bolt_size[1:])
 dia_cm = dia_mm/10
 b_area = 3.14 if bolt_size=="M20" else (2.01 if bolt_size=="M16" else 3.8)
 v_bolt_shear = 1000 * b_area 
-v_bolt_bear = 1.2 * 4000 * dia_cm * tw_cm # Bearing on Web
+v_bolt_bear = 1.2 * 4000 * dia_cm * tw_cm
 v_bolt = min(v_bolt_shear, v_bolt_bear)
 
 # Function to calculate capacity at any span
@@ -87,7 +87,6 @@ def get_capacity(L_m):
     w_s = (2 * V_cap) / L_cm * 100
     w_m = (8 * M_cap) / (L_cm**2) * 100
     w_d = ((L_cm/defl_lim_val) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100
-    
     w_gov = min(w_s, w_m, w_d)
     cause = "Shear" if w_gov == w_s else ("Moment" if w_gov == w_m else "Deflection")
     return w_s, w_m, w_d, w_gov, cause
@@ -102,14 +101,11 @@ delta_allow = (user_span*100) / defl_lim_val
 # 3.2 Determine Connection Design Load
 if design_mode == "Actual Load (from Span)":
     V_design = V_actual
-    design_note = f"Design from Actual Load @ Span {user_span}m"
-    design_usage = (V_actual / V_cap) * 100
+    design_note = f"Actual Load @ Span {user_span}m"
 else:
     V_design = V_cap * (target_pct / 100)
-    design_note = f"Design from Fixed Target: {target_pct}% of Capacity"
-    design_usage = target_pct
+    design_note = f"Target {target_pct}% of Capacity"
 
-# Bolt Count Logic
 req_bolt = math.ceil(V_design / v_bolt)
 if req_bolt % 2 != 0: req_bolt += 1 
 if req_bolt < 2: req_bolt = 2
@@ -131,7 +127,6 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail"
 # --- TAB 1: BEAM ANALYSIS ---
 with tab1:
     st.subheader(f"Capacity Analysis: {sec_name} @ {user_span} m.")
-    
     cause_color = "#e74c3c" if user_cause == "Shear" else ("#f39c12" if user_cause == "Moment" else "#27ae60")
     st.markdown(f"""
     <div class="highlight-card">
@@ -145,144 +140,83 @@ with tab1:
                 <span style="font-size: 18px; font-weight:bold; color:{cause_color};">{user_cause}</span>
             </div>
         </div>
-    </div>
+    </div><br>
     """, unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns(3)
     shear_pct = (V_actual / V_cap) * 100
     moment_pct = ((M_actual*100) / M_cap) * 100 
     defl_pct = (delta_actual / delta_allow) * 100
     
-    with c1:
-        st.markdown(f"""<div class="metric-box" style="border-top-color: #e74c3c;"><div class="sub-text">Shear (V)</div><div class="big-num">{V_actual:,.0f} kg</div><div class="sub-text">Usage: <b>{shear_pct:.0f}%</b></div><div style="background:#eee; height:6px; width:100%; margin-top:5px;"><div style="background:#e74c3c; width:{shear_pct}%; height:100%;"></div></div></div>""", unsafe_allow_html=True)
-    with c2:
-        st.markdown(f"""<div class="metric-box" style="border-top-color: #f39c12;"><div class="sub-text">Moment (M)</div><div class="big-num">{M_actual:,.0f} kg.m</div><div class="sub-text">Usage: <b>{moment_pct:.0f}%</b></div><div style="background:#eee; height:6px; width:100%; margin-top:5px;"><div style="background:#f39c12; width:{moment_pct}%; height:100%;"></div></div></div>""", unsafe_allow_html=True)
-    with c3:
-        st.markdown(f"""<div class="metric-box" style="border-top-color: #27ae60;"><div class="sub-text">Deflection</div><div class="big-num">{delta_actual:.2f} cm</div><div class="sub-text">Usage: <b>{defl_pct:.0f}%</b></div><div style="background:#eee; height:6px; width:100%; margin-top:5px;"><div style="background:#27ae60; width:{min(defl_pct,100)}%; height:100%;"></div></div></div>""", unsafe_allow_html=True)
+    with c1: st.metric("Shear (V)", f"{V_actual:,.0f} kg", f"{shear_pct:.0f}% Used", delta_color="inverse")
+    with c2: st.metric("Moment (M)", f"{M_actual:,.0f} kg.m", f"{moment_pct:.0f}% Used", delta_color="inverse")
+    with c3: st.metric("Deflection", f"{delta_actual:.2f} cm", f"{defl_pct:.0f}% Used", delta_color="inverse")
 
-    st.markdown("#### 📈 Capacity Curve")
+    st.markdown("#### Capacity Curve")
     g_spans = np.linspace(2, 15, 100)
     g_data = [get_capacity(l) for l in g_spans]
-    
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[1] for x in g_data], mode='lines', name='Moment Limit', line=dict(color='orange', dash='dot')))
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[0] for x in g_data], mode='lines', name='Shear Limit', line=dict(color='red', dash='dot')))
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[2] for x in g_data], mode='lines', name='Defl. Limit', line=dict(color='green', dash='dot')))
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in g_data], mode='lines', name='Safe Load', line=dict(color='#2E86C1', width=3), fill='tozeroy', fillcolor='rgba(46, 134, 193, 0.1)'))
-    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers+text', marker=dict(color='black', size=12, symbol='star'), text=["Current"], textposition="top right", name='Selected'))
-    
-    fig.update_layout(xaxis_title="Span (m)", yaxis_title="Load (kg/m)", height=400, margin=dict(t=20, b=20))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in g_data], mode='lines', name='Safe Load', fill='tozeroy'))
+    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers', marker=dict(color='red', size=10), name='Current'))
     st.plotly_chart(fig, use_container_width=True)
 
 # --- TAB 2: CONNECTION ---
 with tab2:
-    st.subheader(f"🔩 Connection Design ({bolt_size})")
-    
+    st.subheader(f"🔩 Connection: {req_bolt} x {bolt_size} Bolts")
     c_info, c_draw = st.columns([1, 1.5])
-    
     with c_info:
-        st.markdown(f"""
-        <div class="conn-card">
-            <h4 style="margin:0; color:#b7950b;">📋 Design Criteria</h4>
-            <div style="margin-top:10px;"><b>Mode:</b> {design_mode}</div>
-            <div style="margin-top:5px;"><b>Design Shear (Vu):</b> <span style="font-size:20px; font-weight:bold; color:#d35400;">{V_design:,.0f} kg</span></div>
-            <div style="font-size:14px; color:#555;">(Equivalent to {design_usage:.1f}% of Section Capacity)</div>
-            <hr>
-            <div><b>Single Bolt Cap ({bolt_size}):</b> {v_bolt:,.0f} kg</div>
-            <div><b>Required Bolts:</b> {V_design/v_bolt:.2f} → <b style="color:blue;">{req_bolt} pcs</b></div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        status_color = "green" if layout_ok else "red"
-        status_text = "PASSED (Fits in Web)" if layout_ok else "FAILED (Too Tight/Overlap)"
-        
-        st.markdown(f"""
-        <div style="margin-top:20px; padding:10px; border-left:5px solid {status_color}; background:#eee;">
-            <b>Layout Check:</b> <span style="color:{status_color}; font-weight:bold;">{status_text}</span><br>
-            <small>Requires {req_height:.0f} mm space (Available {avail_height:.0f} mm)</small>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if not layout_ok:
-            st.warning("⚠️ น็อตเยอะเกินไปจนล้นเอวคาน แนะนำให้ขยายขนาดน็อต หรือเปลี่ยนหน้าตัด")
-
-    with c_draw:
-        fig_c = go.Figure()
-        fig_c.add_shape(type="rect", x0=-p['b']/2, y0=0, x1=p['b']/2, y1=p['h'], line=dict(color="RoyalBlue"), fillcolor="rgba(173, 216, 230, 0.2)")
-        fig_c.add_shape(type="rect", x0=-p['b']/2, y0=0, x1=p['b']/2, y1=p['tf'], fillcolor="RoyalBlue", line_width=0)
-        fig_c.add_shape(type="rect", x0=-p['b']/2, y0=p['h']-p['tf'], x1=p['b']/2, y1=p['h'], fillcolor="RoyalBlue", line_width=0)
-        
-        cy = p['h'] / 2
-        start_y = cy - ((n_rows-1)*pitch)/2
-        gage = 60 if p['h'] < 200 else (100 if p['h'] > 400 else 80)
-        
-        bx, by = [], []
-        for r in range(n_rows):
-            y_pos = start_y + r*pitch
-            bx.extend([-gage/2, gage/2])
-            by.extend([y_pos, y_pos])
-            
-        fig_c.add_trace(go.Scatter(x=bx, y=by, mode='markers', marker=dict(size=14, color='#e74c3c', line=dict(width=2, color='black')), name='Bolts'))
-        
-        fig_c.update_layout(title="Front View Layout", xaxis=dict(visible=False, range=[-p['b'], p['b']]), yaxis=dict(visible=False, scaleanchor="x"), width=400, height=500, margin=dict(l=20, r=20, t=30, b=20), plot_bgcolor='white')
-        st.plotly_chart(fig_c)
+        st.info(f"Design Load (Vu) = {V_design:,.0f} kg ({design_note})")
+        st.write(f"Bolt Capacity = {v_bolt:,.0f} kg/bolt")
+        if layout_ok:
+            st.success(f"✅ Layout OK (Height: {req_height:.0f} mm)")
+        else:
+            st.error(f"❌ Layout Failed (Need {req_height:.0f} mm)")
 
 # --- TAB 3: LOAD TABLE ---
 with tab3:
-    st.subheader("Reference Load Table")
-    t_spans = np.arange(2, 15.5, 0.5)
+    t_spans = np.arange(2, 12.5, 0.5)
     t_data = [get_capacity(l) for l in t_spans]
     df_res = pd.DataFrame({
-        "Span (m)": t_spans,
-        "Max Load (kg/m)": [x[3] for x in t_data],
-        "Limited By": [x[4] for x in t_data],
-        "V_actual (kg)": [x[3]*l/2 for l, x in zip(t_spans, t_data)],
-        "Shear Usage (%)": [(x[3]*l/2 / V_cap)*100 for l, x in zip(t_spans, t_data)]
+        "Span (m)": t_spans, "Max Load (kg/m)": [x[3] for x in t_data], "Control": [x[4] for x in t_data]
     })
-    st.dataframe(df_res.style.format("{:.1f}", subset=["Span (m)", "Shear Usage (%)"]).format("{:,.0f}", subset=["Max Load (kg/m)", "V_actual (kg)"]), use_container_width=True, height=500)
+    st.dataframe(df_res, use_container_width=True)
 
-# --- TAB 4: CALCULATION REPORT (LaTeX Exact Match) ---
+# --- TAB 4: CALCULATION REPORT (FIXED) ---
 with tab4:
-    st.title("📝 Detailed Calculation Report")
+    st.title("📝 Calculation Report")
     
-    st.markdown("#### 1. Section & Material Properties")
+    # 1. Section Properties
+    st.markdown('<div class="report-header">1. Section Properties</div>', unsafe_allow_html=True)
+    st.code(f"""
+Section: {sec_name}
+Aw = {h_cm} x {tw_cm} = {Aw:.2f} cm2
+Zx = {Zx} cm3
+Ix = {Ix} cm4
+Fy = {fy} ksc
+    """.strip())
+
+    # 2. Capacity Calculations (Direct Math Format)
+    st.markdown('<div class="report-header">2. Allowable Capacity</div>', unsafe_allow_html=True)
     
-    # ใช้วงเล็บปีกกา 2 ชั้น {{ }} ใน f-string เพื่อแสดงผล LaTeX { } จริงๆ
-    st.markdown(f"""
-    <div class="report-box">
-        <b>Section:</b> {sec_name} <br>
-        $A_w = h_{{web}} \\times t_w = {h_cm:.1f} \\times {tw_cm:.1f} = {Aw:.2f} \\text{{ cm}}^2$ <br>
-        $Z_x = {Zx} \\text{{ cm}}^3, \\quad I_x = {Ix} \\text{{ cm}}^4$ <br>
-        $F_y = {fy} \\text{{ ksc}}, \\quad F_u = 4000 \\text{{ ksc}}$
-    </div>
-    """, unsafe_allow_html=True)
+    st.write("**Shear Capacity (V_allow):**")
+    st.code(f"= 0.4 x {fy} x {Aw:.2f} = {V_cap:,.0f} kg")
     
-    st.markdown("#### 2. Capacity Limits (Allowable Stress Design)")
+    st.write("**Moment Capacity (M_allow):**")
+    st.code(f"= 0.6 x {fy} x {Zx} = {M_cap:,.0f} kg.cm")
+
+    # 3. Connection Design
+    st.markdown('<div class="report-header">3. Connection Design</div>', unsafe_allow_html=True)
     
-    c_rep1, c_rep2 = st.columns(2)
-    with c_rep1:
-        # แสดงผล Vallow ตามรูปแบบที่ต้องการ
-        st.latex(r"V_{allow} = 0.4 F_y A_w")
-        st.latex(rf"= 0.4 \times {fy} \times {Aw:.2f} = \mathbf{{{V_cap:,.0f}}} \text{{ kg}}")
-    with c_rep2:
-        st.latex(r"M_{allow} = 0.6 F_y Z_x")
-        st.latex(rf"= 0.6 \times {fy} \times {Zx} = \mathbf{{{M_cap:,.0f}}} \text{{ kg.cm}}")
+    st.write(f"**Bolt Capacity ({bolt_size}):**")
+    st.code(f"""
+Shear   = 1000 x {b_area} = {v_bolt_shear:,.0f} kg
+Bearing = 1.2 x 4000 x {dia_cm} x {tw_cm} = {v_bolt_bear:,.0f} kg
+Use Min = {v_bolt:,.0f} kg/bolt
+    """.strip())
     
-    st.markdown("#### 3. Current Load Analysis")
-    st.write(f"At Span **L = {user_span} m**, Max Safe Load = **{user_safe_load:,.0f} kg/m**")
-    st.info(f"Controls by: **{user_cause}**")
-    
-    st.markdown("#### 4. Connection Design")
-    st.markdown(f"""
-    <div class="report-box">
-        <b>Bolt Capacity ({bolt_size}):</b> <br>
-        1. Shear: $F_v \cdot A_b = 1000 \cdot {b_area} = {v_bolt_shear:,.0f}$ kg <br>
-        2. Bearing: $1.2 F_u d t_w = 1.2(4000)({dia_cm})({tw_cm}) = {v_bolt_bear:,.0f}$ kg <br>
-        <b>Use min: $\phi R_n = {v_bolt:,.0f}$ kg/bolt</b>
-        <hr>
-        <b>Required Bolts:</b> <br>
-        $V_{{design}} = {V_design:,.0f}$ kg <br>
-        $N = {V_design:,.0f} / {v_bolt:,.0f} = {V_design/v_bolt:.2f} \\rightarrow$ <b>{req_bolt} bolts</b>
-    </div>
-    """, unsafe_allow_html=True)
+    st.write("**Required Bolts:**")
+    st.code(f"""
+V_design = {V_design:,.0f} kg
+Bolts    = {V_design:,.0f} / {v_bolt:,.0f} = {V_design/v_bolt:.2f}
+Use      = {req_bolt} bolts
+    """.strip())
