@@ -24,39 +24,39 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; 
     }
 
-    /* Metric Box */
+    /* Metric Box (Updated for Bar & Calc) */
     .metric-box { 
-        text-align: center; padding: 15px; background: white; 
-        border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
-        border-top: 5px solid #ccc; height: 100%;
+        padding: 20px; background: white; 
+        border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); 
+        border: 1px solid #e0e6e9; height: 100%;
+        position: relative; overflow: hidden;
     }
-    .metric-title { font-size: 16px; font-weight: 700; color: #555; margin-bottom: 5px; text-transform: uppercase; }
-    .metric-value { font-size: 24px; font-weight: 800; color: #2c3e50; }
-    .metric-sub { font-size: 13px; color: #7f8c8d; margin-top: 5px; font-family: 'Courier New', monospace; }
-    .metric-badge { 
-        display: inline-block; padding: 2px 8px; border-radius: 4px; 
-        font-size: 12px; font-weight: bold; margin-top: 5px;
+    .metric-header {
+        display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
     }
+    .metric-title { font-size: 16px; font-weight: 700; color: #555; text-transform: uppercase; }
+    .metric-value { font-size: 26px; font-weight: 800; color: #2c3e50; }
+    .metric-limit { font-size: 13px; color: #888; }
     
-    /* Math/Calc Box Style (ใช้ร่วมกันทั้ง App) */
-    .math-card {
-        background-color: #fdfefe;
-        border: 1px solid #e0e6e9;
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 10px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-        height: 100%; /* ให้ความสูงเท่ากัน */
-    }
-    .math-header {
-        font-weight: bold;
-        color: #2e86c1;
-        margin-bottom: 8px;
-        border-bottom: 2px solid #f2f4f4;
-        padding-bottom: 5px;
+    /* Progress Bar Style */
+    .prog-bg { background-color: #f0f2f5; height: 10px; border-radius: 5px; margin: 12px 0; overflow: hidden; }
+    .prog-fill { height: 100%; border-radius: 5px; transition: width 0.5s ease; }
+    
+    /* Calc Source Mini-Box */
+    .calc-mini { 
+        background-color: #f8f9fa; border: 1px dashed #bdc3c7; border-radius: 6px; 
+        padding: 8px; font-family: 'Courier New', monospace; font-size: 12px; color: #555; 
+        text-align: center; margin-top: 8px;
     }
 
-    /* Report & Connection Styles */
+    /* Math/Calc Box Style (Main Expander) */
+    .math-card {
+        background-color: #fdfefe; border: 1px solid #e0e6e9; border-radius: 8px;
+        padding: 15px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); height: 100%;
+    }
+    .math-header { font-weight: bold; color: #2e86c1; margin-bottom: 8px; border-bottom: 2px solid #f2f4f4; padding-bottom: 5px; }
+
+    /* Global */
     .report-paper { background-color: #ffffff; padding: 40px; border: 1px solid #e5e7e9; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border-radius: 2px; max-width: 900px; margin: auto; }
     .report-header { font-size: 20px; font-weight: 800; color: #1a5276; margin-top: 25px; border-bottom: 2px solid #a9cce3; padding-bottom: 8px; }
     .report-line { font-family: 'Courier New', monospace; font-size: 16px; margin-bottom: 8px; color: #2c3e50; border-bottom: 1px dotted #eee; }
@@ -81,7 +81,7 @@ steel_db = {
 
 with st.sidebar:
     st.title("Beam Insight V12")
-    st.caption("Modular Edition (Complete)")
+    st.caption("Modular Edition")
     st.divider()
     
     st.header("1. Design Method")
@@ -207,47 +207,76 @@ with tab1:
             
     st.markdown("---")
 
-    # --- 3. Metrics (Complete Data) ---
+    # --- 3. Metrics (With Bar & Calc) ---
     cm1, cm2, cm3 = st.columns(3)
     
-    # Shear Box
-    v_pct = V_actual/V_cap*100
-    v_bg = "#fadbd8" if v_pct > 100 else "#eafaf1"
-    v_txt = "#943126" if v_pct > 100 else "#1e8449"
-    with cm1: 
-        st.markdown(f"""
-        <div class="metric-box" style="border-top-color: #e74c3c; background-color: {v_bg};">
-            <div class="metric-title">Shear (V)</div>
-            <div class="metric-value" style="color:{v_txt}">{V_actual:,.0f} <small>kg</small></div>
-            <div class="metric-sub">Limit: {V_cap:,.0f} kg</div>
-            <div class="metric-badge" style="background-color:rgba(0,0,0,0.1); color:{v_txt};">Usage: {v_pct:.0f}%</div>
-        </div>""", unsafe_allow_html=True)
+    # --- Helper to create HTML for Metric Box ---
+    def create_metric_card(title, actual, limit, unit, color_base):
+        pct = (actual / limit) * 100
+        bar_color = color_base if pct <= 100 else "#e74c3c"
+        bar_width = min(pct, 100)
+        
+        return f"""
+        <div class="metric-box" style="border-top: 4px solid {bar_color};">
+            <div class="metric-header">
+                <span class="metric-title">{title}</span>
+                <span style="background:{bar_color}20; color:{bar_color}; padding:2px 8px; border-radius:4px; font-weight:bold; font-size:12px;">{pct:.0f}%</span>
+            </div>
+            
+            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                <div>
+                    <div class="metric-value" style="color:{bar_color};">{actual:,.0f} <small style="font-size:14px; color:#999;">{unit}</small></div>
+                    <div class="metric-limit">Limit: {limit:,.0f} {unit}</div>
+                </div>
+            </div>
+            
+            <div class="prog-bg">
+                <div class="prog-fill" style="width:{bar_width}%; background-color:{bar_color};"></div>
+            </div>
+            
+            <div class="calc-mini">
+                ({actual:,.0f} / {limit:,.0f}) × 100 = <b>{pct:.1f}%</b>
+            </div>
+        </div>
+        """
     
-    # Moment Box
-    m_pct = M_actual*100/M_cap*100
-    m_bg = "#fdebd0" if m_pct > 100 else "#eafaf1"
-    m_txt = "#b9770e" if m_pct > 100 else "#1e8449"
-    with cm2: 
-        st.markdown(f"""
-        <div class="metric-box" style="border-top-color: #f39c12; background-color: {m_bg};">
-            <div class="metric-title">Moment (M)</div>
-            <div class="metric-value" style="color:{m_txt}">{M_actual:,.0f} <small>kg.m</small></div>
-            <div class="metric-sub">Limit: {M_cap/100:,.0f} kg.m</div>
-            <div class="metric-badge" style="background-color:rgba(0,0,0,0.1); color:{m_txt};">Usage: {m_pct:.0f}%</div>
-        </div>""", unsafe_allow_html=True)
+    # 3.1 Shear Box
+    with cm1:
+        st.markdown(create_metric_card("Shear (V)", V_actual, V_cap, "kg", "#27ae60"), unsafe_allow_html=True)
+        
+    # 3.2 Moment Box (Convert Limit from kg.cm to kg.m for display consistency)
+    with cm2:
+        st.markdown(create_metric_card("Moment (M)", M_actual, M_cap/100, "kg.m", "#f39c12"), unsafe_allow_html=True)
+        
+    # 3.3 Deflection Box (Special handling for float decimals)
+    d_pct = (delta_actual / delta_allow) * 100
+    d_color = "#2980b9" if d_pct <= 100 else "#e74c3c"
+    d_width = min(d_pct, 100)
     
-    # Deflection Box
-    d_pct = delta_actual/delta_allow*100
-    d_bg = "#e8f8f5"
-    d_txt = "#2e86c1"
-    with cm3: 
+    with cm3:
         st.markdown(f"""
-        <div class="metric-box" style="border-top-color: #27ae60; background-color: {d_bg};">
-            <div class="metric-title">Deflection</div>
-            <div class="metric-value" style="color:{d_txt}">{delta_actual:.2f} <small>cm</small></div>
-            <div class="metric-sub">Allow (L/{defl_lim_val}): {delta_allow:.2f} cm</div>
-            <div class="metric-badge" style="background-color:rgba(0,0,0,0.1); color:{d_txt};">Usage: {d_pct:.0f}%</div>
-        </div>""", unsafe_allow_html=True)
+        <div class="metric-box" style="border-top: 4px solid {d_color};">
+            <div class="metric-header">
+                <span class="metric-title">Deflection</span>
+                <span style="background:{d_color}20; color:{d_color}; padding:2px 8px; border-radius:4px; font-weight:bold; font-size:12px;">{d_pct:.0f}%</span>
+            </div>
+            
+             <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                <div>
+                    <div class="metric-value" style="color:{d_color};">{delta_actual:.2f} <small style="font-size:14px; color:#999;">cm</small></div>
+                    <div class="metric-limit">Limit: {delta_allow:.2f} cm</div>
+                </div>
+            </div>
+
+            <div class="prog-bg">
+                <div class="prog-fill" style="width:{d_width}%; background-color:{d_color};"></div>
+            </div>
+            
+            <div class="calc-mini">
+                ({delta_actual:.2f} / {delta_allow:.2f}) × 100 = <b>{d_pct:.1f}%</b>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # --- 4. Graph ---
     st.markdown("<br>", unsafe_allow_html=True)
@@ -256,7 +285,7 @@ with tab1:
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=g_spans, y=[x[1] for x in g_data], mode='lines', name=f'{label_cap_m} Limit', line=dict(color='#f39c12', dash='dot')))
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[0] for x in g_data], mode='lines', name=f'{label_cap_v} Limit', line=dict(color='#e74c3c', dash='dot')))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[0] for x in g_data], mode='lines', name=f'{label_cap_v} Limit', line=dict(color='#27ae60', dash='dot')))
     fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in g_data], mode='lines', name=f'Max {label_load}', line=dict(color='#2E86C1', width=3), fill='tozeroy', fillcolor='rgba(46, 134, 193, 0.1)'))
     fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers', 
                              marker=dict(color='#17202a', size=14, symbol='star', line=dict(width=2, color='white')), 
