@@ -5,24 +5,20 @@ import plotly.graph_objects as go
 import math
 
 # ==========================================
-# 1. SETUP & STYLE
+# 1. SETUP
 # ==========================================
-st.set_page_config(page_title="Structure Master Pro", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Structural Insight Pro", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
-    .big-card { background-color: #f0f8ff; padding: 20px; border-radius: 10px; border: 1px solid #add8e6; margin-bottom: 10px;}
-    .opt-card { background-color: #d4efdf; padding: 20px; border-radius: 10px; border-left: 5px solid #27ae60; }
-    .warn-card { background-color: #fdedec; padding: 20px; border-radius: 10px; border-left: 5px solid #c0392b; }
-    .metric-val { font-size: 24px; font-weight: bold; color: #154360; }
-    .metric-lbl { font-size: 14px; color: #566573; }
-    .pass { color: green; font-weight: bold; }
-    .fail { color: red; font-weight: bold; }
+    .math-card { background-color: #f8f9fa; border-left: 5px solid #2e86c1; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
+    .limit-label { font-weight: bold; font-size: 14px; }
+    .shear-highlight { background-color: #fadbd8; border-left: 5px solid #c0392b; padding: 15px; border-radius: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATABASE
+# 2. DATABASE & INPUTS
 # ==========================================
 steel_db = {
     "H 150x75x5x7":     {"h": 150, "b": 75,  "tw": 5,   "tf": 7,   "Ix": 666,    "Zx": 88.8,  "w": 14.0},
@@ -35,242 +31,179 @@ steel_db = {
     "H 500x200x10x16": {"h": 500, "b": 200, "tw": 10,  "tf": 16,  "Ix": 47800,  "Zx": 1910,  "w": 89.6},
 }
 
-# ==========================================
-# 3. SIDEBAR (Global Inputs)
-# ==========================================
 with st.sidebar:
-    st.header("1. เลือกหน้าตัดคาน (Main Input)")
-    sec_name = st.selectbox("Section Size", list(steel_db.keys()), index=5)
+    st.header("⚙️ Parameters")
+    sec_name = st.selectbox("เลือกหน้าตัด (Section)", list(steel_db.keys()), index=3)
     p = steel_db[sec_name]
     
     st.info(f"""
-    **{sec_name}**
-    * Weight: {p['w']} kg/m
-    * Depth: {p['h']} mm
-    * Web: {p['tw']} mm
+    **{sec_name}** properties:
+    * Depth (h): {p['h']} mm
+    * Web (tw): {p['tw']} mm
+    * Area Web (Aw): {p['h']*p['tw']/100:.2f} cm²
+    * Ix: {p['Ix']:,} cm⁴
+    * Zx: {p['Zx']:,} cm³
     """)
     
-    st.markdown("---")
-    st.header("2. วัสดุ (Material)")
-    fy = st.number_input("Fy (ksc)", 2400)
-    fu = st.number_input("Fu (ksc)", 4000)
+    fy = 2400
     E_mod = 2.04e6
 
 # ==========================================
-# 4. CALCULATION: BEAM CAPACITY
+# 3. CALCULATION ENGINE
 # ==========================================
-# Properties
-h_cm, tw_cm = p['h']/10, p['tw']/10
-Ix, Zx = p['Ix'], p['Zx']
+# Constants
+h_cm = p['h']/10
+tw_cm = p['tw']/10
 Aw = h_cm * tw_cm
+Ix, Zx = p['Ix'], p['Zx']
 
-# Limits
-M_allow = 0.6 * fy * Zx
-V_allow_web = 0.4 * fy * Aw
+# 1. Constant Capacities
+V_allow_web = 0.4 * fy * Aw  # kg (Web Shear Strength)
+M_allow = 0.6 * fy * Zx      # kg.cm (Bending Strength)
 
-# Optimal Range (15d - 20d)
-opt_min = 15 * (p['h']/1000)
-opt_max = 20 * (p['h']/1000)
-
-# Generate Curve Data
+# 2. Curve Generation
 spans = np.linspace(2, 16, 100)
-w_gov, gov_cause = [], []
+curve_shear = []
+curve_moment = []
+curve_defl = []
+curve_safe = []
 
 for L in spans:
     L_cm = L * 100
-    ws = (2 * V_allow_web) / L_cm * 100 # Shear Limit Load
-    wm = (8 * M_allow) / (L_cm**2) * 100 # Moment Limit Load
-    wd = ((L_cm / 360) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100 # Deflection Limit (L/360)
     
-    min_w = min(ws, wm, wd)
-    w_gov.append(min_w)
+    # Formula 1: Load limited by Shear
+    # V = wL/2 -> w = 2V/L
+    ws = (2 * V_allow_web) / L_cm * 100 # kg/m
     
-    if min_w == ws: gov_cause.append("Shear")
-    elif min_w == wm: gov_cause.append("Moment")
-    else: gov_cause.append("Deflection")
+    # Formula 2: Load limited by Moment
+    # M = wL^2/8 -> w = 8M/L^2
+    wm = (8 * M_allow) / (L_cm**2) * 100 # kg/m
+    
+    # Formula 3: Load limited by Deflection (L/360)
+    # delta = 5wL^4 / 384EI -> w = ...
+    wd = ((L_cm / 360) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100 # kg/m
+    
+    curve_shear.append(ws)
+    curve_moment.append(wm)
+    curve_defl.append(wd)
+    curve_safe.append(min(ws, wm, wd))
 
 # ==========================================
-# 5. UI TABS
+# 4. UI DISPLAY
 # ==========================================
-st.title("🏗️ Structural Beam & Connection Studio")
+st.title("🏗️ Beam Limit Analysis: เจาะลึกที่มาของตัวเลข")
 
-tab1, tab2 = st.tabs(["📊 1. หา Span & Load ที่เหมาะสม", "🛠️ 2. ออกแบบรายละเอียดจุดต่อ (Detailing)"])
+tab1, tab2 = st.tabs(["📊 กราฟวิเคราะห์ (Analysis)", "📝 รายละเอียดจุดต่อ (Detailing)"])
 
-# ==========================================
-# TAB 1: BEAM SELECTION & OPTIMAL SPAN
-# ==========================================
 with tab1:
-    st.subheader(f"วิเคราะห์ขีดความสามารถ: {sec_name}")
+    col_chart, col_explain = st.columns([1.8, 1.2])
     
-    col_main1, col_main2 = st.columns([1, 2])
-    
-    with col_main1:
-        # Optimal Recommendation
-        st.markdown(f"""
-        <div class="opt-card">
-            <h3 style="margin:0">✅ Optimal Span</h3>
-            <div class="metric-val">{opt_min:.1f} - {opt_max:.1f} m</div>
-            <div class="metric-lbl">ช่วงความยาวที่แนะนำ (L/d = 15-20)</div>
-        </div>
-        """, unsafe_allow_html=True)
+    with col_chart:
+        st.subheader("📉 กราฟเส้น Limit (Shear vs Moment vs Deflection)")
         
-        st.write("")
-        # Span Slider
-        st.markdown("👇 **เลือกความยาวคานที่จะใช้จริง:**")
-        user_span = st.slider("Span Length (m)", 2.0, 16.0, (opt_min+opt_max)/2, 0.5)
-        
-        # Get Values
-        idx = (np.abs(spans - user_span)).argmin()
-        safe_load = w_gov[idx]
-        reaction = safe_load * user_span / 2
-        cause = gov_cause[idx]
-        
-        st.markdown(f"""
-        <div class="big-card">
-            <div class="metric-lbl">Safe Uniform Load</div>
-            <div class="metric-val">{safe_load:,.0f} kg/m</div>
-            <div class="metric-lbl">Limited by: <b>{cause}</b></div>
-            <hr>
-            <div class="metric-lbl">End Reaction (V)</div>
-            <div class="metric-val" style="color:#d35400">{reaction:,.0f} kg</div>
-            <div class="metric-lbl">ใช้ค่านี้ไปออกแบบจุดต่อใน Tab 2</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col_main2:
-        # THE GRAPH
-        st.markdown("##### 📈 กราฟแสดงความสามารถรับน้ำหนัก (Safe Load Capacity)")
         fig = go.Figure()
         
-        # Safe Zone
-        fig.add_trace(go.Scatter(x=spans, y=w_gov, fill='tozeroy', mode='lines', 
-                                 name='Safe Load', line=dict(color='#2E86C1', width=3)))
+        # 1. Shear Limit Line (RED)
+        fig.add_trace(go.Scatter(
+            x=spans, y=curve_shear, mode='lines', 
+            name='1. Shear Limit (Web)', 
+            line=dict(color='#e74c3c', width=2, dash='dash')
+        ))
         
-        # Highlight Optimal Zone
-        fig.add_vrect(x0=opt_min, x1=opt_max, fillcolor="green", opacity=0.1, 
-                      annotation_text="Optimal Zone", annotation_position="top")
+        # 2. Moment Limit Line (ORANGE)
+        fig.add_trace(go.Scatter(
+            x=spans, y=curve_moment, mode='lines', 
+            name='2. Moment Limit', 
+            line=dict(color='#f39c12', width=2, dash='dash')
+        ))
         
-        # User Point
-        fig.add_trace(go.Scatter(x=[user_span], y=[safe_load], mode='markers', 
-                                 marker=dict(size=12, color='red', line=dict(width=2, color='white')),
-                                 name='Selected Span'))
+        # 3. Deflection Limit Line (GREEN)
+        fig.add_trace(go.Scatter(
+            x=spans, y=curve_defl, mode='lines', 
+            name='3. Deflection Limit (L/360)', 
+            line=dict(color='#27ae60', width=2, dash='dash')
+        ))
         
-        fig.update_layout(xaxis_title="Span Length (m)", yaxis_title="Safe Uniform Load (kg/m)", 
-                          hovermode="x unified", height=450)
+        # 4. Safe Zone (FILLED)
+        fig.add_trace(go.Scatter(
+            x=spans, y=curve_safe, mode='lines', 
+            name='✅ Safe Capacity', 
+            fill='tozeroy', fillcolor='rgba(46, 134, 193, 0.1)',
+            line=dict(color='#2E86C1', width=4)
+        ))
+
+        # Layout
+        fig.update_layout(
+            xaxis_title="ความยาวคาน (m)",
+            yaxis_title="รับน้ำหนักปลอดภัย (kg/m)",
+            hovermode="x unified",
+            height=500,
+            yaxis=dict(range=[0, max(curve_safe)*1.5]),
+            legend=dict(orientation="h", y=1.1)
+        )
         st.plotly_chart(fig, use_container_width=True)
+        
+        # Slider for interaction
+        sel_span = st.slider("🔍 เลือก Span เพื่อดูการคำนวณด้านขวา (m)", 2.0, 15.0, 4.0, 0.5)
 
-# ==========================================
-# TAB 2: DETAILED CONNECTION (THE DEEP DIVE)
-# ==========================================
-with tab2:
-    st.subheader("🛠️ Connection Design Studio")
-    
-    # ดึงค่า Reaction จาก Tab 1 มาเป็นค่าตั้งต้น (แต่แก้ได้)
-    col_inp1, col_inp2 = st.columns(2)
-    
-    with col_inp1:
-        st.markdown("#### A. Load & Bolts")
-        vu_input = st.number_input("Design Shear (kg) [ดึงมาจาก Tab 1]", value=float(reaction), step=100.0)
-        bolt_grade = st.selectbox("Bolt Grade", ["A325 (N)", "A307", "A490"], index=0)
-        bolt_dia = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
+    with col_explain:
+        # Calculate specific values for selected span
+        idx = (np.abs(spans - sel_span)).argmin()
+        val_s = curve_shear[idx]
+        val_m = curve_moment[idx]
+        val_d = curve_defl[idx]
         
-    with col_inp2:
-        st.markdown("#### B. Plate & Geometry")
-        n_rows = st.number_input("จำนวนแถวน็อต (Rows)", 2, 10, 3)
-        plate_t = st.selectbox("ความหนา Plate (mm)", [6, 9, 12, 16, 20], index=1)
-        # Auto calc geometry suggestion
-        d_mm = int(bolt_dia[1:])
-        pitch = st.number_input("ระยะห่าง (Pitch) mm", value=3*d_mm)
-        edge_v = st.number_input("ระยะขอบตั้ง (Lev) mm", value=1.5*d_mm)
-        edge_h = st.number_input("ระยะขอบนอน (Leh) mm", value=40)
-
-    st.markdown("---")
-    
-    # --- ENGINEERING CALCULATION (Hidden Logic) ---
-    # Props
-    db = d_mm / 10
-    dh = db + 0.2
-    tp = plate_t / 10
-    
-    # 1. Bolt Shear
-    fv = 3720 if "A325" in bolt_grade else 1900
-    rn_bolt = n_rows * (3.14*(db/2)**2) * fv
-    
-    # 2. Bearing (Web & Plate)
-    rn_bear_web = n_rows * (1.2 * fu * db * tw_cm)
-    rn_bear_pl = n_rows * (1.2 * fu * db * tp)
-    
-    # 3. Block Shear (Web)
-    s, ev, eh = pitch/10, edge_v/10, edge_h/10
-    L_gv = ev + (n_rows-1)*s
-    L_nv = L_gv - (n_rows-0.5)*dh
-    L_nt = eh - 0.5*dh
-    
-    def block_shear(Fy, Fu, t, Agv, Anv, Ant):
-        return min(0.6*Fu*Anv + 1.0*Fu*Ant, 0.6*Fy*Agv + 1.0*Fu*Ant)
+        st.subheader(f"🧮 แกะสูตรที่ Span {sel_span} เมตร")
+        st.write("คานตัวนี้รับน้ำหนักได้สูงสุดเท่าไร? มาดูตัวเลขจริงกัน:")
         
-    rn_bs_web = block_shear(fy, fu, tw_cm, L_gv*tw_cm, L_nv*tw_cm, L_nt*tw_cm)
-    rn_bs_pl = block_shear(2400, 4000, tp, L_gv*tp, L_nv*tp, L_nt*tp) # Plate SS400
-    
-    # 4. Plate Yield/Rupture
-    H_pl = L_gv + ev
-    rn_pl_yield = 0.6 * 2400 * H_pl * tp
-    rn_pl_rup = 0.6 * 4000 * (H_pl - n_rows*dh) * tp
-    
-    # Collect Results
-    checks = {
-        "Bolt Shear": rn_bolt,
-        "Bearing (Web)": rn_bear_web,
-        "Bearing (Plate)": rn_bear_pl,
-        "Block Shear (Web)": rn_bs_web,
-        "Block Shear (Plate)": rn_bs_pl,
-        "Plate Yield": rn_pl_yield,
-        "Plate Rupture": rn_pl_rup
-    }
-    min_cap = min(checks.values())
-    limit_mode = min(checks, key=checks.get)
-    
-    # --- DISPLAY RESULTS ---
-    col_res_L, col_res_R = st.columns([1.5, 1])
-    
-    with col_res_L:
-        st.markdown("### 📋 Detailed Check List")
-        
-        # Loop to show bars
-        for mode, cap in checks.items():
-            ratio = vu_input / cap
-            is_pass = ratio <= 1.0
-            color = "#27ae60" if is_pass else "#c0392b"
-            icon = "✅" if is_pass else "❌"
-            
-            st.markdown(f"""
-            <div style="margin-bottom:10px;">
-                <div style="display:flex; justify-content:space-between;">
-                    <span>{icon} <b>{mode}</b></span>
-                    <span>Cap: {cap:,.0f} kg</span>
-                </div>
-                <div style="width:100%; background:#eee; height:8px; border-radius:4px;">
-                    <div style="width:{min(ratio*100, 100)}%; background:{color}; height:100%; border-radius:4px;"></div>
-                </div>
-                <small style="color:#777">Demand: {vu_input:,.0f} kg | Ratio: {ratio:.2f}</small>
-            </div>
-            """, unsafe_allow_html=True)
-            
-    with col_res_R:
-        st.markdown("### 🏁 Conclusion")
-        status = "PASSED" if min_cap >= vu_input else "FAILED"
-        bg_col = "#d4efdf" if status=="PASSED" else "#fadbd8"
-        
+        # --- 1. SHEAR EXPLANATION (HIGHLIGHT) ---
+        st.markdown('<div class="limit-label" style="color:#c0392b;">1. ขีดจำกัดแรงเฉือน (Shear Limit)</div>', unsafe_allow_html=True)
         st.markdown(f"""
-        <div style="background-color:{bg_col}; padding:20px; border-radius:10px; text-align:center; border: 1px solid #ccc;">
-            <h2 style="margin:0; color:{'green' if status=='PASSED' else 'red'}">{status}</h2>
-            <hr>
-            <div class="metric-lbl">Governing Capacity</div>
-            <div class="metric-val">{min_cap:,.0f} kg</div>
-            <div class="metric-lbl">Controlled by: <b>{limit_mode}</b></div>
+        <div class="shear-highlight">
+            <b>ที่มา:</b> เอวคาน (Web) ต้องไม่ขาด<br>
+            <b>พื้นที่รับแรง ($A_w$):</b> {p['h']/10} cm x {p['tw']/10} cm = <b>{Aw:.2f} cm²</b><br>
+            <b>แรงเฉือนสูงสุดที่รับได้ ($V_{{max}}$):</b><br>
+            $0.4 \\times F_y \\times A_w = 0.4 \\times 2400 \\times {Aw:.2f}$<br>
+            $= \\mathbf{{{V_allow_web:,.0f}}}$ <b>kg</b> (ค่าคงที่)<br>
+            <hr style="margin:5px 0; border-top:1px solid #d98880;">
+            <b>แปลงเป็น Uniform Load ($w_{{shear}}$):</b><br>
+            จากสูตร $V = wL/2 \Rightarrow w = 2V/L$<br>
+            $w = (2 \\times {V_allow_web:,.0f}) / {sel_span}$<br>
+            $= \\mathbf{{{val_s:,.0f}}}$ <b>kg/m</b>
         </div>
         """, unsafe_allow_html=True)
         
-        with st.expander("ℹ️ Help: Block Shear คือ?"):
-            st.write("การวิบัติโดยที่เนื้อเหล็กฉีกหลุดออกมาเป็นก้อน (สี่เหลี่ยม) มักเกิดเมื่อใช้ Bolts หลายตัวแต่เหล็กบาง")
-            st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Block_shear_failure.svg/300px-Block_shear_failure.svg.png", caption="Block Shear Concept")
+        # --- 2. MOMENT EXPLANATION ---
+        st.markdown('<div class="limit-label" style="color:#d35400;">2. ขีดจำกัดโมเมนต์ (Moment Limit)</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="math-card" style="border-left-color: #f39c12;">
+            <b>ที่มา:</b> คานต้องไม่คราก (Yield) จากการดัด<br>
+            <b>โมเมนต์ต้านทาน ($M_{{allow}}$):</b><br>
+            $0.6 \\times 2400 \\times {Zx} = \\mathbf{{{M_allow:,.0f}}}$ <b>kg.cm</b><br>
+            <b>แปลงเป็น Uniform Load ($w_{{moment}}$):</b><br>
+            จากสูตร $M = wL^2/8 \Rightarrow w = 8M/L^2$<br>
+            $w = (8 \\times {M_allow:,.0f}) / ({sel_span} \\times 100)^2 \\times 100$<br>
+            $= \\mathbf{{{val_m:,.0f}}}$ <b>kg/m</b>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # --- 3. DEFLECTION EXPLANATION ---
+        st.markdown('<div class="limit-label" style="color:#27ae60;">3. ขีดจำกัดการแอ่นตัว (Deflection Limit)</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="math-card" style="border-left-color: #27ae60;">
+            <b>ที่มา:</b> แอ่นไม่เกิน L/360 ({sel_span*100/360:.2f} cm)<br>
+            $= \\mathbf{{{val_d:,.0f}}}$ <b>kg/m</b>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # CONCLUSION
+        final_val = min(val_s, val_m, val_d)
+        gov_mode = "Shear" if final_val==val_s else ("Moment" if final_val==val_m else "Deflection")
+        st.info(f"🏆 **สรุป:** ค่าน้อยที่สุดคือ **{final_val:,.0f} kg/m** (ควบคุมโดย {gov_mode})")
+
+# ==========================================
+# TAB 2: PLACEHOLDER FOR DETAILING
+# ==========================================
+with tab2:
+    st.info("หน้านี้สำหรับออกแบบ Connection Detail (น็อต/เพลท) ตาม Reaction ที่ได้จาก Tab 1")
+    st.metric("Design Reaction (V) from Tab 1", f"{final_val * sel_span / 2:,.0f} kg")
