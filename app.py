@@ -177,7 +177,7 @@ with tab1:
         st.markdown("**1. Properties**")
         st.write(f"Section: {sec_name}")
         st.latex(rf"d={h}mm, t_w={tw}mm, I_x={Ix:,}cm^4, Z_x={Zx:,}cm^3")
-        st.markdown("")
+        st.write("")
 
     with col_r:
          st.markdown(f"**Governing Load: {V_design:,.0f} kg**")
@@ -192,7 +192,7 @@ with tab1:
     st.markdown('<div class="sub-header">3. Moment Capacity (โมเมนต์ดัด)</div>', unsafe_allow_html=True)
     st.latex(rf"M_{{all}} = 0.6 \times {Fy} \times {Zx} = {M_allow:,.0f} \ kg \cdot cm")
     st.latex(rf"V_{{moment}} = \frac{{4 \times {M_allow:,.0f}}}{{{L_cm}}} = \mathbf{{{V_moment:,.0f}}} \ kg")
-    st.markdown("
+    st.write("
 
 [Image of bending moment diagram simply supported beam]
 ")
@@ -236,16 +236,14 @@ with tab2:
         status = "PASSED" if min_conn >= V_design else "FAILED"
         color = "green" if status == "PASSED" else "red"
         
-        # FIX: ใช้ Triple Quotes (""") เพื่อรองรับ HTML หลายบรรทัด
-        st.markdown(f"""
-        ### Status: <span style='color:{color}'>{status}</span>
-        """, unsafe_allow_html=True)
+        # แก้ไขบรรทัดนี้ให้เป็น Single line f-string เพื่อป้องกัน Syntax Error
+        st.markdown(f"### Status: <span style='color:{color}'>{status}</span>", unsafe_allow_html=True)
         
         st.write(f"**Capacity: {min_conn:,.0f} kg** (Ratio: {V_design/min_conn:.2f})")
         
         st.markdown("**Calculation Breakdown:**")
         st.latex(rf"1. \ Bolt \ Shear: {rows} \times {Ab:.2f} \times {Fv} = {Rn_bolt:,.0f} \ kg")
-        st.markdown("")
+        st.write("")
         st.latex(rf"2. \ Bearing: min(Web, Plt) = {Rn_bear:,.0f} \ kg")
         st.latex(rf"3. \ Weld: 2 \times {L_w:.1f} \times 0.707 \times {weld/10} \times 1470 = {Rn_weld:,.0f} \ kg")
         
