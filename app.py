@@ -36,197 +36,237 @@ steel_db = {
     "H 900x300x16x28": {"h": 900, "b": 300, "tw": 16,  "tf": 28,  "Ix": 404000, "Zx": 9000,  "w": 243},
 }
 
-st.set_page_config(page_title="H-Beam Analyzer", layout="wide", page_icon="🏗️")
-st.markdown("""<style>.metric-card {background-color: #f0f2f6; border-left: 5px solid #ff4b4b; padding: 15px; border-radius: 5px; margin-bottom: 10px;}</style>""", unsafe_allow_html=True)
+st.set_page_config(page_title="Smart Beam Designer", layout="wide", page_icon="🏗️")
+st.markdown("""<style>.metric-card {background-color: #f8f9fa; border: 1px solid #ddd; padding: 15px; border-radius: 8px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05);}</style>""", unsafe_allow_html=True)
 
 # ==========================================
-# 2. INPUT SIDEBAR
+# 2. CORE CALCULATION ENGINE (Combined Load)
 # ==========================================
-with st.sidebar:
-    st.header("1. Beam Configuration")
-    section_name = st.selectbox("Select Section", list(steel_db.keys()))
-    props = steel_db[section_name]
-    st.info(f"📏 **{section_name}**\n\nWeight: {props['w']} kg/m\nIx: {props['Ix']:,} | Zx: {props['Zx']:,}")
-    
-    load_type = st.radio("Load Type", ["Point Load (P)", "Uniform Load (w)"])
-    
-    st.divider()
-    st.header("2. Geometry & Bracing")
-    current_L = st.number_input("Span Length (L) [m]", value=6.0, step=0.5, min_value=1.0)
-    unbraced_L = st.number_input("Unbraced Length (Lb) [m]", value=0.0, step=0.5, help="0 = Fully Braced")
-
-    st.divider()
-    st.header("3. Material & Design")
-    fy = st.number_input("Fy (ksc)", value=2400)
-    E_val = st.number_input("E (ksc)", value=2040000)
-    Fb_ratio = st.slider("Fb Ratio", 0.4, 0.7, 0.60)
-    defl_limit = st.selectbox("Deflection Limit", [200, 240, 300, 360, 400], index=2)
-    unit_price = st.number_input("Price (THB/kg)", value=32.0)
-
-# ==========================================
-# 3. CALCULATION ENGINE
-# ==========================================
-def analyze_beam(L_m, props, Fy, E, Fb_r, Fv_r=0.4, def_lim=300, load_mode="Point", Lb_m=0):
+def analyze_mixed_load(L_m, props, Fy, E, Fb_r, Fv_r, def_lim, P_load, U_load, Lb_m):
+    """
+    Calculates actual stress ratios (Demand/Capacity) for mixed loads (Point + UDL + Self-Weight)
+    """
     L_cm = L_m * 100
     h_cm, tw_cm = props['h']/10, props['tw']/10
     Ix, Zx, w_kgm = props['Ix'], props['Zx'], props['w']
     
-    # --- Capacities ---
+    # --- 1. Capacities ---
+    # Shear Cap
     Aw = h_cm * tw_cm
-    V_max_cap = (Fv_r * Fy) * Aw 
+    V_allow = (Fv_r * Fy) * Aw 
     
+    # Moment Cap (LTB Included)
     real_Lb = min(Lb_m, L_m) if Lb_m > 0 else 0
     Lb_limit = 15 * (props['b'] / 1000)
     
     if real_Lb <= Lb_limit:
         Fb_use = Fb_r * Fy
-        ltb_msg = "Compact (OK)"
+        ltb_msg = "Compact"
     else:
         reduc = (Lb_limit / real_Lb) ** 2
         Fb_use = max((Fb_r * Fy) * reduc, 0.2*Fy)
-        ltb_msg = f"Slender (Reduc. {(1-reduc)*100:.0f}%)"
+        ltb_msg = "Slender"
         
-    M_max_cap = Fb_use * Zx 
+    M_allow = Fb_use * Zx 
     Delta_allow = L_cm / def_lim 
     
-    # --- Self Weight ---
-    V_sw = (w_kgm * L_m) / 2
-    M_sw = (w_kgm * L_m**2 / 8) * 100
-    w_cm = w_kgm / 100
-    D_sw = (5 * w_cm * L_cm**4) / (384 * E * Ix)
+    # --- 2. Demand (Load Calculation) ---
+    # Self-Weight is added to U_load
+    w_total_kgm = U_load + w_kgm 
     
-    # --- Solve Net Load ---
-    if "Point" in load_mode:
-        P_shear = 2 * (V_max_cap - V_sw)
-        P_moment = 4 * (M_max_cap - M_sw) / L_cm
-        P_defl = (48 * E * Ix * (Delta_allow - D_sw)) / (L_cm**3)
-    else: 
-        P_shear = (2 * V_max_cap) - (w_kgm * L_m)
-        P_moment = ((8 * M_max_cap) / L_cm) - (w_kgm * L_m)
-        P_defl = ((384 * E * Ix * (Delta_allow - D_sw)) * 5) / (5 * L_cm**3)
-
-    safe_load = max(0, min(P_shear, P_moment, P_defl))
+    # Max Shear (V) - at supports
+    V_actual = (P_load / 2) + (w_total_kgm * L_m / 2)
     
-    if safe_load == P_shear: gov = "Shear"
-    elif safe_load == P_moment: gov = "Moment"
+    # Max Moment (M) - at center (Superposition)
+    M_point = (P_load * L_m) / 4
+    M_udl = (w_total_kgm * L_m**2) / 8
+    M_actual_kgm = M_point + M_udl
+    M_actual_kgcm = M_actual_kgm * 100
+    
+    # Max Deflection (D) - Superposition
+    # Point Load Deflection
+    D_point = (P_load * (L_cm**3)) / (48 * E * Ix)
+    # UDL Deflection (convert w to kg/cm)
+    w_total_kgcm = w_total_kgm / 100
+    D_udl = (5 * w_total_kgcm * (L_cm**4)) / (384 * E * Ix)
+    D_actual = D_point + D_udl
+    
+    # --- 3. Ratios & Result ---
+    ratio_shear = V_actual / V_allow
+    ratio_moment = M_actual_kgcm / M_allow
+    ratio_defl = D_actual / Delta_allow
+    
+    max_ratio = max(ratio_shear, ratio_moment, ratio_defl)
+    is_pass = max_ratio <= 1.0
+    
+    if max_ratio == ratio_shear: gov = "Shear"
+    elif max_ratio == ratio_moment: gov = "Moment"
     else: gov = "Deflection"
     
     return {
-        "Safe_Load": safe_load / 1000,
+        "Pass": is_pass,
+        "Max_Ratio": max_ratio,
         "Gov": gov,
-        "Caps": {"Shear": P_shear/1000, "Moment": P_moment/1000, "Deflect": P_defl/1000},
-        "LTB_Msg": ltb_msg,
-        "Self_Weight": (w_kgm * L_m),
-        "Cost": (w_kgm * L_m) * unit_price
+        "V_act": V_actual, "V_all": V_allow,
+        "M_act": M_actual_kgcm/100, "M_all": M_allow/100, # Show in kg.m
+        "D_act": D_actual, "D_all": Delta_allow,
+        "LTB": ltb_msg,
+        "Weight": w_kgm * L_m
     }
 
 # ==========================================
-# 4. MAIN DISPLAY (TABS)
+# 3. SIDEBAR & INPUTS
 # ==========================================
-res = analyze_beam(current_L, props, fy, E_val, Fb_ratio, 0.4, defl_limit, load_type, unbraced_L)
+with st.sidebar:
+    st.title("⚙️ Design Inputs")
+    
+    st.subheader("1. Load Configuration")
+    P_input = st.number_input("Point Load (kg)", value=1000.0, step=100.0)
+    U_input = st.number_input("Superimposed UDL (kg/m)", value=500.0, step=50.0, help="ไม่รวมน้ำหนักคาน (โปรแกรมคิดให้)")
+    L_input = st.number_input("Span Length (m)", value=6.0, step=0.5)
+    Lb_input = st.number_input("Unbraced Length (Lb)", value=0.0, help="0 = Fully Braced")
+    
+    st.subheader("2. Parameters")
+    fy = st.number_input("Fy (ksc)", value=2400)
+    E_val = 2040000
+    def_lim = st.selectbox("Deflection Limit", [200, 240, 300, 360, 400], index=2)
+    
+    st.markdown("---")
+    st.subheader("3. Select Check Mode")
+    mode = st.radio("Mode", ["Manual Check", "🤖 Auto-Optimizer"])
 
-st.title("🏗️ Ultimate H-Beam Analyzer")
+# ==========================================
+# 4. MAIN INTERFACE
+# ==========================================
+st.title("🏗️ Smart Beam Designer")
 
-# --- Tabs Setup ---
-tab1, tab2 = st.tabs(["📊 Dashboard & Recommendation", "📈 Compare & Economical Span"])
+if mode == "Manual Check":
+    # --- Manual Section Selection ---
+    col_sel, col_info = st.columns([1, 2])
+    with col_sel:
+        section_name = st.selectbox("Select Section to Check", list(steel_db.keys()))
+    with col_info:
+        props = steel_db[section_name]
+        st.info(f"Checking: **{section_name}** (W={props['w']} kg/m)")
+        
+    res = analyze_mixed_load(L_input, props, fy, E_val, 0.6, 0.4, def_lim, P_input, U_input, Lb_input)
+    
+    # --- Result Cards ---
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Status", "✅ PASS" if res['Pass'] else "❌ FAIL", delta_color="normal" if res['Pass'] else "inverse")
+    c2.metric("Utility Ratio", f"{res['Max_Ratio']*100:.1f}%", f"Gov: {res['Gov']}")
+    c3.metric("Reaction (R)", f"{res['V_act']:.0f} kg")
+    c4.metric("Total Deflection", f"{res['D_act']:.2f} cm", help=f"Allow: {res['D_all']:.2f} cm")
+    
+    # --- Detailed Progress Bars ---
+    st.markdown("### 📊 Check Details")
+    
+    # Shear
+    s_rat = res['V_act']/res['V_all']
+    col_s1, col_s2 = st.columns([1,3])
+    col_s1.markdown(f"**Shear** ({s_rat:.0%})")
+    col_s2.progress(min(s_rat, 1.0), text=f"{res['V_act']:.0f} / {res['V_all']:.0f} kg")
+    
+    # Moment
+    m_rat = res['M_act']/res['M_all']
+    col_m1, col_m2 = st.columns([1,3])
+    col_m1.markdown(f"**Moment** ({m_rat:.0%})")
+    col_m2.progress(min(m_rat, 1.0), text=f"{res['M_act']:.0f} / {res['M_all']:.0f} kg.m ({res['LTB']})")
+    
+    # Deflection
+    d_rat = res['D_act']/res['D_all']
+    col_d1, col_d2 = st.columns([1,3])
+    col_d1.markdown(f"**Deflection** ({d_rat:.0%})")
+    col_d2.progress(min(d_rat, 1.0), text=f"{res['D_act']:.2f} / {res['D_all']:.2f} cm")
 
-# --- TAB 1: SUMMARY ---
-with tab1:
-    c1, c2, c3 = st.columns([1.5, 1, 1])
-    with c1:
-        st.markdown(f"""
-        <div class='metric-card'>
-            <h3 style='margin:0; color:#555;'>Net Safe Load</h3>
-            <h1 style='margin:0; font-size:48px; color:#ff4b4b'>{res['Safe_Load']:.2f} <span style='font-size:20px'>Ton</span></h1>
-            <p style='margin:0; color:gray;'>Limit by: <b>{res['Gov']}</b></p>
-        </div>
-        """, unsafe_allow_html=True)
-    with c2:
-        st.metric("Total Weight", f"{res['Self_Weight']:.1f} kg")
-        st.metric("Est. Cost", f"{res['Cost']:,.0f} THB")
-    with c3:
-        if "Compact" in res['LTB_Msg']:
-            st.success(f"✅ LTB Check\n\n{res['LTB_Msg']}")
+    # --- Calculation Report Text ---
+    with st.expander("📝 Show Calculation Sheet (Copy to Report)"):
+        report_text = f"""
+        CALCULATION SHEET
+        ------------------------------------------------
+        Section: {section_name}
+        Span: {L_input} m | Unbraced Lb: {Lb_input} m
+        Loads: Point = {P_input} kg, UDL = {U_input} kg/m
+        
+        PROPERTIES:
+        Ix = {props['Ix']} cm4, Zx = {props['Zx']} cm3
+        Weight = {props['w']} kg/m
+        
+        RESULTS:
+        1. SHEAR CHECK:
+           V_actual = {res['V_act']:.2f} kg
+           V_allow  = {res['V_all']:.2f} kg
+           Ratio    = {s_rat:.3f} [{"OK" if s_rat<=1 else "FAIL"}]
+           
+        2. MOMENT CHECK:
+           M_actual = {res['M_act']:.2f} kg.m
+           M_allow  = {res['M_all']:.2f} kg.m
+           LTB Mode = {res['LTB']}
+           Ratio    = {m_rat:.3f} [{"OK" if m_rat<=1 else "FAIL"}]
+           
+        3. DEFLECTION CHECK:
+           D_actual = {res['D_act']:.3f} cm
+           D_allow  = {res['D_all']:.3f} cm
+           Ratio    = {d_rat:.3f} [{"OK" if d_rat<=1 else "FAIL"}]
+           
+        CONCLUSION: {"DESIGN OK ✅" if res['Pass'] else "DESIGN FAILED ❌"}
+        ------------------------------------------------
+        """
+        st.code(report_text, language="text")
+
+elif mode == "🤖 Auto-Optimizer":
+    st.markdown("### 🤖 ระบบค้นหาหน้าตัดที่คุ้มค่าที่สุด (Best Value Selector)")
+    st.info("ระบบจะตรวจสอบหน้าตัดทั้งหมดในฐานข้อมูล และเรียงลำดับตาม **น้ำหนัก (Cost)** จากน้อยไปมาก")
+    
+    if st.button("🚀 Start Optimization"):
+        candidates = []
+        
+        # Loop check all
+        progress_bar = st.progress(0)
+        total_items = len(steel_db)
+        
+        for i, (name, p) in enumerate(steel_db.items()):
+            r = analyze_mixed_load(L_input, p, fy, E_val, 0.6, 0.4, def_lim, P_input, U_input, Lb_input)
+            if r['Pass']:
+                candidates.append({
+                    "Section": name,
+                    "Weight (kg/m)": p['w'],
+                    "Total Weight (kg)": r['Weight'],
+                    "Util %": r['Max_Ratio']*100,
+                    "Gov Case": r['Gov'],
+                    "Deflect (cm)": r['D_act']
+                })
+            progress_bar.progress((i+1)/total_items)
+            
+        if not candidates:
+            st.error("❌ ไม่พบหน้าตัดที่ผ่านเกณฑ์เลย! กรุณาลดน้ำหนักบรรทุก หรือเพิ่มความยาว Lb")
         else:
-            st.error(f"⚠️ LTB Check\n\n{res['LTB_Msg']}")
-
-    st.subheader("Utilization Check")
-    caps = res['Caps']
-    safe = res['Safe_Load']
-    
-    u_sh = (safe/caps['Shear'])*100 if caps['Shear']>0 else 0
-    u_mo = (safe/caps['Moment'])*100 if caps['Moment']>0 else 0
-    u_de = (safe/caps['Deflect'])*100 if caps['Deflect']>0 else 0
-    
-    uc1, uc2, uc3 = st.columns(3)
-    uc1.progress(min(u_sh/100, 1.0), text=f"Shear: {u_sh:.0f}%")
-    uc2.progress(min(u_mo/100, 1.0), text=f"Moment: {u_mo:.0f}%")
-    uc3.progress(min(u_de/100, 1.0), text=f"Deflection: {u_de:.0f}%")
-    
-    st.divider()
-    if "Deflection" in res['Gov']:
-        st.warning(f"**Recommendation:** คานแอ่นตัว (Deflection) เป็นตัวควบคุมการออกแบบที่ระยะนี้")
-    elif "Moment" in res['Gov']:
-        st.info(f"**Recommendation:** โมเมนต์ (Moment) เป็นตัวควบคุมการออกแบบ")
-    else:
-        st.success("**Recommendation:** แรงเฉือน (Shear) เป็นตัวควบคุม (คานสั้นและแข็งแรงมาก)")
-
-# --- TAB 2: COMPARE & ECON SPAN ---
-with tab2:
-    st.subheader(f"📉 Analysis Chart: {section_name}")
-    
-    # 1. Prepare Data
-    spans = np.linspace(1, 18, 100)
-    data_points = []
-    
-    for s in spans:
-        r = analyze_beam(s, props, fy, E_val, Fb_ratio, 0.4, defl_limit, load_type, unbraced_L)
-        data_points.append({
-            "Span": s,
-            "Shear": r['Caps']['Shear'],
-            "Moment": r['Caps']['Moment'],
-            "Deflect": r['Caps']['Deflect'],
-            "Safe": r['Safe_Load']
-        })
-    df_graph = pd.DataFrame(data_points)
-    
-    # 2. Calculate Economical Range (Rule of Thumb: Span = 15-24 times Depth)
-    beam_depth_m = props['h'] / 1000
-    econ_min = beam_depth_m * 15 # Conservative / Heavy Load
-    econ_max = beam_depth_m * 24 # Roof / Light Load
-    
-    fig = go.Figure()
-    
-    # Zone: Economical Span
-    fig.add_vrect(
-        x0=econ_min, x1=econ_max,
-        fillcolor="green", opacity=0.1,
-        layer="below", line_width=0,
-        annotation_text="Economical Span (Rule of Thumb)", annotation_position="top left"
-    )
-
-    # Lines
-    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Shear, name="Shear Limit", line=dict(color='red', dash='dash', width=1)))
-    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Moment, name="Moment Limit", line=dict(color='green', dash='dash', width=1)))
-    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Deflect, name="Deflection Limit", line=dict(color='blue', dash='dash', width=1)))
-    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Safe, name="Net Safe Load", line=dict(color='black', width=3)))
-    
-    # Current Point
-    fig.add_trace(go.Scatter(x=[current_L], y=[res['Safe_Load']], mode='markers', name='Your Design',
-                             marker=dict(size=15, color='orange', symbol='diamond', line=dict(color='white', width=2))))
-    
-    fig.update_layout(
-        xaxis_title="Span Length (m)",
-        yaxis_title="Safe Load (Ton)",
-        hovermode="x unified",
-        height=550,
-        legend=dict(orientation="h", y=1.05, x=0.5, xanchor="center")
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    st.markdown(f"""
-    **คำอธิบายกราฟ:**
-    * **พื้นที่สีเขียวจางๆ (Economical Span):** คือช่วงความยาวที่เหมาะสมของหน้าตัดนี้ (Rule of Thumb: 15-24 เท่าของความลึก)
-    * หากจุดส้ม (Your Design) อยู่ **ทางซ้าย** ของสีเขียว = คานแข็งแรงเกินไป (Oversize) อาจพิจารณาลดขนาด
-    * หากจุดส้ม (Your Design) อยู่ **ทางขวา** ของสีเขียว = คานเริ่มยาวเกินไป (Undersize) มักจะเจอปัญหาเรื่องการแอ่นตัว (Deflection)
-    """)
+            # Sort by Weight
+            df_opt = pd.DataFrame(candidates).sort_values(by="Total Weight (kg)")
+            
+            # Show Winner
+            best = df_opt.iloc[0]
+            st.success(f"🏆 Winner: **{best['Section']}** ({best['Weight (kg/m)']} kg/m)")
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Steel Weight", f"{best['Total Weight (kg)']:.1f} kg")
+            c2.metric("Utilization", f"{best['Util %']:.1f}%")
+            c3.metric("Cost Est. (@32B)", f"{best['Total Weight (kg)']*32:,.0f} THB")
+            
+            # Show Table
+            st.markdown("#### 📋 Top 5 Candidates (Lighter is Better)")
+            st.dataframe(df_opt.head(5).style.format({"Util %": "{:.1f}", "Total Weight (kg)": "{:.1f}", "Deflect (cm)": "{:.2f}"}))
+            
+            # Visualization
+            st.markdown("#### 📉 Comparison: Weight vs Utilization")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=df_opt['Total Weight (kg)'],
+                y=df_opt['Util %'],
+                mode='markers+text',
+                text=df_opt['Section'],
+                textposition="top right",
+                marker=dict(size=10, color=df_opt['Util %'], colorscale='RdYlGn_r')
+            ))
+            fig.update_layout(xaxis_title="Total Weight (kg) [Cost]", yaxis_title="Utilization % [Efficiency]", height=400)
+            st.plotly_chart(fig, use_container_width=True)
