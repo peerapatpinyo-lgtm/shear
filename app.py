@@ -24,29 +24,40 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; 
     }
 
-    /* Metric Box (Updated for Bar & Calc) */
+    /* Metric Box (UI Updated) */
     .metric-box { 
         padding: 20px; background: white; 
         border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); 
         border: 1px solid #e0e6e9; height: 100%;
-        position: relative; overflow: hidden;
+        display: flex; flex-direction: column; justify-content: space-between;
     }
     .metric-header {
-        display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
+        display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;
     }
-    .metric-title { font-size: 16px; font-weight: 700; color: #555; text-transform: uppercase; }
-    .metric-value { font-size: 26px; font-weight: 800; color: #2c3e50; }
-    .metric-limit { font-size: 13px; color: #888; }
+    .metric-title { font-size: 16px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
     
-    /* Progress Bar Style */
-    .prog-bg { background-color: #f0f2f5; height: 10px; border-radius: 5px; margin: 12px 0; overflow: hidden; }
-    .prog-fill { height: 100%; border-radius: 5px; transition: width 0.5s ease; }
+    /* Value & Limit Row */
+    .val-row {
+        display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;
+    }
+    .metric-value { font-size: 28px; font-weight: 800; line-height: 1; }
+    .metric-limit { font-size: 13px; color: #888; text-align: right; }
+    
+    /* Progress Bar */
+    .prog-bg { background-color: #ecf0f1; height: 8px; border-radius: 4px; margin-bottom: 12px; overflow: hidden; }
+    .prog-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease-in-out; }
     
     /* Calc Source Mini-Box */
     .calc-mini { 
-        background-color: #f8f9fa; border: 1px dashed #bdc3c7; border-radius: 6px; 
-        padding: 8px; font-family: 'Courier New', monospace; font-size: 12px; color: #555; 
-        text-align: center; margin-top: 8px;
+        background-color: #f8f9fa; 
+        border: 1px dashed #d6dbdf; 
+        border-radius: 6px; 
+        padding: 8px 12px; 
+        font-family: 'Courier New', monospace; 
+        font-size: 13px; 
+        color: #555; 
+        text-align: center; 
+        width: 100%;
     }
 
     /* Math/Calc Box Style (Main Expander) */
@@ -207,35 +218,45 @@ with tab1:
             
     st.markdown("---")
 
-    # --- 3. Metrics (With Bar & Calc) ---
+    # --- 3. Metrics (Clean & Beautiful) ---
     cm1, cm2, cm3 = st.columns(3)
     
-    # --- Helper to create HTML for Metric Box ---
-    def create_metric_card(title, actual, limit, unit, color_base):
+    def create_metric_card(title, actual, limit, unit, color_base, decimal=0):
+        # 1. Calculation Logic
         pct = (actual / limit) * 100
         bar_color = color_base if pct <= 100 else "#e74c3c"
         bar_width = min(pct, 100)
         
+        # 2. String Formatting (Handle commas and decimals)
+        fmt = f",.{decimal}f"
+        act_str = f"{actual:{fmt}}"
+        lim_str = f"{limit:{fmt}}"
+        
+        # 3. HTML Structure (Cleaned up)
         return f"""
         <div class="metric-box" style="border-top: 4px solid {bar_color};">
             <div class="metric-header">
                 <span class="metric-title">{title}</span>
-                <span style="background:{bar_color}20; color:{bar_color}; padding:2px 8px; border-radius:4px; font-weight:bold; font-size:12px;">{pct:.0f}%</span>
+                <span style="background:{bar_color}15; color:{bar_color}; padding:3px 10px; border-radius:12px; font-weight:bold; font-size:12px;">
+                    {pct:.1f}%
+                </span>
             </div>
             
-            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                <div>
-                    <div class="metric-value" style="color:{bar_color};">{actual:,.0f} <small style="font-size:14px; color:#999;">{unit}</small></div>
-                    <div class="metric-limit">Limit: {limit:,.0f} {unit}</div>
+            <div class="val-row">
+                <div class="metric-value" style="color:{bar_color};">
+                    {act_str} <small style="font-size:16px; color:#aaa; font-weight:normal;">{unit}</small>
+                </div>
+                <div class="metric-limit">
+                    Limit: <b>{lim_str}</b> {unit}
                 </div>
             </div>
             
             <div class="prog-bg">
-                <div class="prog-fill" style="width:{bar_width}%; background-color:{bar_color};"></div>
+                <div class="prog-fill" style="width:{bar_width:.1f}%; background-color:{bar_color};"></div>
             </div>
             
             <div class="calc-mini">
-                ({actual:,.0f} / {limit:,.0f}) × 100 = <b>{pct:.1f}%</b>
+                ({act_str} / {lim_str}) × 100 = <b>{pct:.1f}%</b>
             </div>
         </div>
         """
@@ -244,39 +265,13 @@ with tab1:
     with cm1:
         st.markdown(create_metric_card("Shear (V)", V_actual, V_cap, "kg", "#27ae60"), unsafe_allow_html=True)
         
-    # 3.2 Moment Box (Convert Limit from kg.cm to kg.m for display consistency)
+    # 3.2 Moment Box
     with cm2:
         st.markdown(create_metric_card("Moment (M)", M_actual, M_cap/100, "kg.m", "#f39c12"), unsafe_allow_html=True)
         
-    # 3.3 Deflection Box (Special handling for float decimals)
-    d_pct = (delta_actual / delta_allow) * 100
-    d_color = "#2980b9" if d_pct <= 100 else "#e74c3c"
-    d_width = min(d_pct, 100)
-    
+    # 3.3 Deflection Box (Use 2 decimal places)
     with cm3:
-        st.markdown(f"""
-        <div class="metric-box" style="border-top: 4px solid {d_color};">
-            <div class="metric-header">
-                <span class="metric-title">Deflection</span>
-                <span style="background:{d_color}20; color:{d_color}; padding:2px 8px; border-radius:4px; font-weight:bold; font-size:12px;">{d_pct:.0f}%</span>
-            </div>
-            
-             <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                <div>
-                    <div class="metric-value" style="color:{d_color};">{delta_actual:.2f} <small style="font-size:14px; color:#999;">cm</small></div>
-                    <div class="metric-limit">Limit: {delta_allow:.2f} cm</div>
-                </div>
-            </div>
-
-            <div class="prog-bg">
-                <div class="prog-fill" style="width:{d_width}%; background-color:{d_color};"></div>
-            </div>
-            
-            <div class="calc-mini">
-                ({delta_actual:.2f} / {delta_allow:.2f}) × 100 = <b>{d_pct:.1f}%</b>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(create_metric_card("Deflection", delta_actual, delta_allow, "cm", "#2980b9", decimal=2), unsafe_allow_html=True)
 
     # --- 4. Graph ---
     st.markdown("<br>", unsafe_allow_html=True)
