@@ -7,17 +7,16 @@ import math
 # ==========================================
 # 1. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V6 (Detailed)", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V6.1 (Transparent)", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
     .highlight-card { background-color: #e8f6f3; padding: 20px; border-radius: 10px; border: 1px solid #1abc9c; }
     .conn-card { background-color: #fcf3cf; padding: 15px; border-radius: 8px; border: 1px solid #f1c40f; }
     .metric-box { text-align: center; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-top: 3px solid #3498db; }
-    .calc-box { background-color: #f8f9f9; padding: 15px; border-radius: 5px; border-left: 4px solid #85929e; font-family: 'Courier New', monospace; font-size: 14px; margin-top: 20px;}
     .big-num { font-size: 24px; font-weight: bold; color: #17202a; }
     .sub-text { font-size: 14px; color: #7f8c8d; margin-top: 5px; }
-    h4 { margin-top: 20px; color: #2c3e50; }
+    .calc-step { font-family: 'Courier New', monospace; font-size: 14px; background: #f4f6f6; padding: 10px; border-radius: 5px; margin-bottom: 5px; border-left: 4px solid #85929e;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -37,8 +36,8 @@ steel_db = {
 }
 
 with st.sidebar:
-    st.title("Beam Insight V6")
-    st.caption("Detailed Calculation Edition")
+    st.title("Beam Insight V6.1")
+    st.caption("Transparent Calculation Edition")
     st.divider()
     
     st.header("1. Beam Settings")
@@ -65,7 +64,7 @@ with st.sidebar:
 # ==========================================
 p = steel_db[sec_name]
 h_cm, tw_cm = p['h']/10, p['tw']/10
-Aw = h_cm * tw_cm
+Aw = h_cm * tw_cm # Standard assumption: d * tw
 Ix, Zx = p['Ix'], p['Zx']
 
 # Capacities
@@ -83,9 +82,22 @@ v_bolt = min(v_bolt_shear, v_bolt_bear)
 # Function
 def get_capacity(L_m):
     L_cm = L_m * 100
-    w_s = (2 * V_cap) / L_cm * 100
-    w_m = (8 * M_cap) / (L_cm**2) * 100
-    w_d = ((L_cm/defl_lim_val) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100
+    # Formula explanation:
+    # w (kg/cm) = Load / Length
+    # w (kg/m) = w(kg/cm) * 100
+    
+    # 1. Shear Control: w = 2V/L
+    w_s_kgcm = (2 * V_cap) / L_cm
+    w_s = w_s_kgcm * 100
+    
+    # 2. Moment Control: w = 8M/L^2
+    w_m_kgcm = (8 * M_cap) / (L_cm**2)
+    w_m = w_m_kgcm * 100
+    
+    # 3. Deflection Control: w = (Delta * 384EI) / (5L^4)
+    delta_target = L_cm / defl_lim_val
+    w_d_kgcm = (delta_target * 384 * E_mod * Ix) / (5 * (L_cm**4))
+    w_d = w_d_kgcm * 100
     
     w_gov = min(w_s, w_m, w_d)
     cause = "Shear" if w_gov == w_s else ("Moment" if w_gov == w_m else "Deflection")
@@ -95,6 +107,8 @@ def get_capacity(L_m):
 w_shear_limit, w_moment_limit, w_defl_limit, user_safe_load, user_cause = get_capacity(user_span)
 V_actual = user_safe_load * user_span / 2
 M_actual = user_safe_load * user_span**2 / 8
+# Recalculate Delta Actual for display
+# Delta = 5wL^4 / 384EI. Note: w must be kg/cm here. So user_safe_load/100
 delta_actual = (5 * (user_safe_load/100) * ((user_span*100)**4)) / (384 * E_mod * Ix)
 delta_allow = (user_span*100) / defl_lim_val
 
@@ -136,7 +150,7 @@ with tab1:
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <span class="sub-text">Max Uniform Load</span><br>
+                <span class="sub-text">Max Safe Uniform Load (Total)</span><br>
                 <span class="big-num" style="font-size: 36px;">{user_safe_load:,.0f}</span> <span style="font-size:20px; color:#555;">kg/m</span>
             </div>
             <div style="text-align: right;">
@@ -157,38 +171,44 @@ with tab1:
     with c2: st.markdown(f"""<div class="metric-box" style="border-top-color: #f39c12;"><div class="sub-text">Moment (M)</div><div class="big-num">{M_actual:,.0f} kg.m</div><div class="sub-text">Usage: <b>{moment_pct:.0f}%</b></div><div style="background:#eee; height:6px; width:100%; margin-top:5px;"><div style="background:#f39c12; width:{moment_pct}%; height:100%;"></div></div></div>""", unsafe_allow_html=True)
     with c3: st.markdown(f"""<div class="metric-box" style="border-top-color: #27ae60;"><div class="sub-text">Deflection</div><div class="big-num">{delta_actual:.2f} cm</div><div class="sub-text">Usage: <b>{defl_pct:.0f}%</b></div><div style="background:#eee; height:6px; width:100%; margin-top:5px;"><div style="background:#27ae60; width:{min(defl_pct,100)}%; height:100%;"></div></div></div>""", unsafe_allow_html=True)
 
-    # Graph
+    # Graph (Compact)
     st.markdown("#### 📈 Capacity Curve")
     g_spans = np.linspace(2, 15, 100)
     g_data = [get_capacity(l) for l in g_spans]
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[1] for x in g_data], mode='lines', name='Moment Limit', line=dict(color='orange', dash='dot')))
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[0] for x in g_data], mode='lines', name='Shear Limit', line=dict(color='red', dash='dot')))
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[2] for x in g_data], mode='lines', name='Defl. Limit', line=dict(color='green', dash='dot')))
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in g_data], mode='lines', name='Safe Load', line=dict(color='#2E86C1', width=3), fill='tozeroy', fillcolor='rgba(46, 134, 193, 0.1)'))
-    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers+text', marker=dict(color='black', size=12, symbol='star'), text=["Current"], textposition="top right", name='Selected'))
-    fig.update_layout(xaxis_title="Span (m)", yaxis_title="Load (kg/m)", height=350, margin=dict(t=20, b=20))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in g_data], mode='lines', name='Safe Load', line=dict(color='#2E86C1', width=3), fill='tozeroy'))
+    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers', marker=dict(color='red', size=10)))
+    fig.update_layout(xaxis_title="Span (m)", yaxis_title="Load (kg/m)", height=300, margin=dict(t=20, b=20, l=20, r=20))
     st.plotly_chart(fig, use_container_width=True)
 
-    # ================= DETAIL CALCULATION (TAB 1) =================
+    # ================= DETAIL CALCULATION (STEP-BY-STEP) =================
     st.markdown("---")
-    with st.expander("📝 Detailed Calculation Note (Beam)", expanded=True):
+    with st.expander("📝 Show Calculation Steps (Why do I get these numbers?)", expanded=True):
         st.markdown(f"""
-        **1. Section Properties ({sec_name})**
-        * $A_w = d \\times t_w = {h_cm:.1f} \\times {tw_cm:.2f} = {Aw:.2f} \\text{{ cm}}^2$
-        * $Z_x = {Zx:,.1f} \\text{{ cm}}^3$, $I_x = {Ix:,.0f} \\text{{ cm}}^4$
-        * $F_y = {fy:,.0f} \\text{{ ksc}}, E = {E_mod:,.2e} \\text{{ ksc}}$
+        **1. Beam Parameters ({sec_name})**
+        * $F_y = {fy}$ ksc, $E = {E_mod:,.0f}$ ksc
+        * $A_w = h \\times t_w = {h_cm} \\times {tw_cm} = {Aw:.2f}$ cm² (Using total depth)
+        * $Z_x = {Zx}$ cm³, $I_x = {Ix}$ cm⁴
+        * Allowable Shear ($V_a$) = $0.4 F_y A_w = 0.4 \\times {fy} \\times {Aw:.2f} = \\mathbf{{{V_cap:,.0f}}}$ kg
+        * Allowable Moment ($M_a$) = $0.6 F_y Z_x = 0.6 \\times {fy} \\times {Zx} = \\mathbf{{{M_cap:,.0f}}}$ kg.cm
         
-        **2. Allowable Capacities**
-        * **Allowable Shear ($V_a$):** $0.4 F_y A_w = 0.4 \\times {fy} \\times {Aw:.2f} = \\mathbf{{{V_cap:,.0f} \\text{{ kg}}}}$
-        * **Allowable Moment ($M_a$):** $0.6 F_y Z_x = 0.6 \\times {fy} \\times {Zx:.1f} = \\mathbf{{{M_cap:,.0f} \\text{{ kg.cm}}}}$
-        * **Allowable Deflection ($\Delta_a$):** $L/{defl_lim_val} = ({user_span}\\times 100)/{defl_lim_val} = \\mathbf{{{delta_allow:.2f} \\text{{ cm}}}}$
-
-        **3. Maximum Uniform Load Calculation ($w_{{max}}$) at Span {user_span} m.**
-        * **From Shear:** $w_v = \\frac{{2 V_a}}{{L}} = \\frac{{2 \\times {V_cap:,.0f}}}{{{user_span}}} = {w_shear_limit:,.0f} \\text{{ kg/m}}$
-        * **From Moment:** $w_m = \\frac{{8 M_a}}{{L^2}} = \\frac{{8 \\times {M_cap/100:,.0f}}}{{{user_span}^2}} = {w_moment_limit:,.0f} \\text{{ kg/m}}$
-        * **From Deflection:** $w_d = \\frac{{384 E I \Delta_a}}{{5 L^4}} = \\dots = {w_defl_limit:,.0f} \\text{{ kg/m}}$
-        * **Governing Load:** $w_{{allow}} = \\min({w_shear_limit:,.0f}, {w_moment_limit:,.0f}, {w_defl_limit:,.0f}) = \\mathbf{{{user_safe_load:,.0f} \\text{{ kg/m}}}}$ ({user_cause} Control)
+        **2. Safe Load Calculation (at L = {user_span} m)**
+        Convert L to cm: $L = {user_span} \\times 100 = {user_span*100}$ cm
+        
+        **Case A: Shear Limit** ($w = 2V/L$)
+        > $w = \\frac{{2 \\times {V_cap:,.0f}}}{{{user_span*100}}} = {2*V_cap/(user_span*100):.2f}$ kg/cm
+        > Convert to kg/m: ${2*V_cap/(user_span*100):.2f} \\times 100 = \\mathbf{{{w_shear_limit:,.0f}}}$ kg/m
+        
+        **Case B: Moment Limit** ($w = 8M/L^2$)
+        > $w = \\frac{{8 \\times {M_cap:,.0f}}}{{{(user_span*100)}^2}} = {8*M_cap/((user_span*100)**2):.2f}$ kg/cm
+        > Convert to kg/m: ${8*M_cap/((user_span*100)**2):.2f} \\times 100 = \\mathbf{{{w_moment_limit:,.0f}}}$ kg/m
+        
+        **Case C: Deflection Limit** (Limit = L/{defl_lim_val} = {delta_allow:.2f} cm)
+        > $w = \\frac{{\\Delta \\cdot 384EI}}{{5L^4}} = \\frac{{{delta_allow:.2f} \\cdot 384 \\cdot {E_mod:,.0f} \\cdot {Ix}}}{{5 \\cdot {user_span*100}^4}} = {w_defl_limit/100:.2f}$ kg/cm
+        > Convert to kg/m: ${w_defl_limit/100:.2f} \\times 100 = \\mathbf{{{w_defl_limit:,.0f}}}$ kg/m
+        
+        **Conclusion:**
+        The lowest value controls: **{min(w_shear_limit, w_moment_limit, w_defl_limit):,.0f} kg/m**
         """)
 
 # --- TAB 2: CONNECTION ---
@@ -203,15 +223,13 @@ with tab2:
             <h4 style="margin:0; color:#b7950b;">📋 Design Criteria</h4>
             <div style="margin-top:10px;"><b>Basis:</b> {design_basis_txt}</div>
             <div style="margin-top:5px;"><b>Design Shear (Vu):</b> <span style="font-size:20px; font-weight:bold; color:#d35400;">{V_design:,.0f} kg</span></div>
-            <div style="font-size:14px; color:#555;">(Equivalent to {design_usage:.1f}% of Section Capacity)</div>
             <hr>
-            <div><b>Bolt Cap (Min):</b> {v_bolt:,.0f} kg/bolt</div>
-            <div><b>Required:</b> {V_design/v_bolt:.2f} → <b style="color:blue;">{req_bolt} pcs</b></div>
+            <div><b>Single Bolt Cap:</b> {v_bolt:,.0f} kg</div>
+            <div><b>Required:</b> <b style="color:blue;">{req_bolt} pcs</b></div>
         </div>
         """, unsafe_allow_html=True)
         status_color = "green" if layout_ok else "red"
-        status_text = "PASSED" if layout_ok else "FAILED (Space Limit)"
-        st.markdown(f"<div style='margin-top:20px; padding:10px; border-left:5px solid {status_color}; background:#eee;'><b>Layout:</b> <span style='color:{status_color}; font-weight:bold;'>{status_text}</span><br><small>Req H: {req_height} mm / Avail H: {avail_height} mm</small></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='margin-top:10px; color:{status_color}; font-weight:bold;'>Layout Check: {'OK' if layout_ok else 'FAILED'}</div>", unsafe_allow_html=True)
 
     with c_draw:
         fig_c = go.Figure()
@@ -234,23 +252,22 @@ with tab2:
 
     # ================= DETAIL CALCULATION (TAB 2) =================
     st.markdown("---")
-    with st.expander("📝 Detailed Calculation Note (Connection)", expanded=True):
-        cause_of_bolt = "Shear" if v_bolt == v_bolt_shear else "Bearing"
+    with st.expander("📝 Bolt Capacity Check", expanded=True):
         st.markdown(f"""
-        **1. Bolt Parameters ({bolt_size})**
-        * Diameter ($d_b$) = {dia_mm} mm, Area ($A_b$) = {b_area} cm²
-        * Allowable Shear Stress ($F_v$) $\\approx$ 1,000 ksc (Grade 8.8 Simplified)
-        * Allowable Bearing Stress ($F_b$) on Web $\\approx$ 1.2$F_u$ $\\approx$ 4,800 ksc
+        **1. Bolt Area ($A_b$)**
+        Using {bolt_size} (Diameter {dia_mm} mm):
+        $A_b = \\frac{{\\pi \\cdot {dia_cm}^2}}{{4}} \\approx {b_area}$ cm²
         
-        **2. Single Bolt Capacity ($R_{{bolt}}$)**
-        * **Shear Capacity:** $R_v = F_v \\times A_b = 1000 \\times {b_area} = \\mathbf{{{v_bolt_shear:,.0f} \\text{{ kg}}}}$
-        * **Bearing Capacity (Web):** $R_b = F_b \\times d_b \\times t_w = 4800 \\times {dia_cm} \\times {tw_cm} = \\mathbf{{{v_bolt_bear:,.0f} \\text{{ kg}}}}$
-        * **Governing Capacity:** $\\min(R_v, R_b) = \\mathbf{{{v_bolt:,.0f} \\text{{ kg}}}}$ (Controlled by {cause_of_bolt})
-
-        **3. Bolt Group Design**
-        * **Design Load ($V_u$):** {V_design:,.0f} kg
-        * **Number of Bolts:** $n = V_u / R_{{bolt}} = {V_design:,.0f} / {v_bolt:,.0f} = {V_design/v_bolt:.2f} \\rightarrow \\text{{Use }} \\mathbf{{{req_bolt} \\text{{ bolts}}}}$
-        * **Arrangement:** {n_cols} Columns $\\times$ {n_rows} Rows
+        **2. Shear Capacity ($R_v$)**
+        Using $F_v \\approx 1000$ ksc (Grade 8.8):
+        $R_v = 1000 \\times {b_area} = \\mathbf{{{v_bolt_shear:,.0f}}}$ kg
+        
+        **3. Bearing Capacity ($R_b$)**
+        Using $F_b \\approx 4800$ ksc on Web $t_w = {tw_cm}$ cm:
+        $R_b = 4800 \\times {dia_cm} \\times {tw_cm} = \\mathbf{{{v_bolt_bear:,.0f}}}$ kg
+        
+        **4. Conclusion**
+        Use min value: **{v_bolt:,.0f} kg/bolt**
         """)
 
 # --- TAB 3: LOAD TABLE ---
@@ -266,13 +283,3 @@ with tab3:
         "Shear Usage (%)": [(x[3]*l/2 / V_cap)*100 for l, x in zip(t_spans, t_data)]
     })
     st.dataframe(df_res.style.format("{:.1f}", subset=["Span (m)", "Shear Usage (%)"]).format("{:,.0f}", subset=["Max Load (kg/m)", "V_actual (kg)"]), use_container_width=True, height=500)
-    
-    # ================= DETAIL CALCULATION (TAB 3) =================
-    st.markdown("---")
-    with st.expander("📝 Column Definitions", expanded=False):
-        st.markdown("""
-        * **Max Load (kg/m):** Safe uniform load calculated from $\min(Shear, Moment, Deflection)$ limits.
-        * **Limited By:** The criteria that governs the design (usually Shear for short spans, Deflection for long spans).
-        * **V_actual (kg):** End reaction force at the safe load condition ($V = wL/2$).
-        * **Shear Usage (%):** Ratio of actual shear to section shear capacity ($V_{actual} / V_{capacity} \times 100$).
-        """)
