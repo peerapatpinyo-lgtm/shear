@@ -13,8 +13,8 @@ st.markdown("""
 <style>
     .math-card { background-color: #ffffff; border: 1px solid #e0e0e0; border-left: 5px solid #2e86c1; padding: 15px; margin-bottom: 15px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     .optimal-box { background-color: #e8f8f5; border-left: 5px solid #27ae60; padding: 15px; border-radius: 5px; margin-bottom: 15px; }
-    .status-pass { background-color: #d4efdf; color: #145a32; padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #27ae60; }
-    .status-fail { background-color: #fadbd8; color: #7b241c; padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #c0392b; }
+    .status-pass { background-color: #d4efdf; color: #145a32; padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #27ae60; margin-bottom: 20px;}
+    .status-fail { background-color: #fadbd8; color: #7b241c; padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #c0392b; margin-bottom: 20px;}
     .section-header { font-size: 18px; font-weight: bold; color: #34495e; margin-top: 20px; margin-bottom: 10px; border-bottom: 2px solid #ecf0f1; padding-bottom: 5px; }
     .metric-val { font-size: 24px; font-weight: bold; color: #2e86c1; }
 </style>
@@ -235,10 +235,6 @@ with tab2:
                 <small>Governed by: {gov_mode}</small>
             </div>
             """, unsafe_allow_html=True)
-            
-
-[Image of steel connection detail drawing]
-
         else:
             st.markdown(f"""
             <div class="status-fail">
@@ -248,7 +244,7 @@ with tab2:
             </div>
             """, unsafe_allow_html=True)
             if "Block Shear" in gov_mode:
-                 
+                 st.info("ℹ️ Tip: Increase Plate Thickness or Edge Distance to fix Block Shear.")
 
         
         # Detailed Check List (Bar Charts)
