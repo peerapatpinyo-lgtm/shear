@@ -7,7 +7,7 @@ import math
 # ==========================================
 # 1. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Capacity Insight V2.2", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V2.3", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
@@ -15,6 +15,7 @@ st.markdown("""
     .metric-box { text-align: center; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-top: 3px solid #3498db; }
     .big-num { font-size: 24px; font-weight: bold; color: #17202a; }
     .sub-text { font-size: 14px; color: #7f8c8d; margin-top: 5px; }
+    .opt-tag { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-left: 8px;}
     .stTabs [data-baseweb="tab-list"] { gap: 24px; }
 </style>
 """, unsafe_allow_html=True)
@@ -38,8 +39,7 @@ steel_db = {
 # 3. SIDEBAR INPUTS
 # ==========================================
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2666/2666505.png", width=60)
-    st.title("Beam Capacity Insight")
+    st.title("Beam Insight V2.3")
     st.divider()
     
     st.header("⚙️ Design Parameters")
@@ -55,15 +55,14 @@ with st.sidebar:
     with col_dl:
         defl_ratio = st.selectbox("Defl. Limit", ["L/300", "L/360", "L/400"], index=1)
     
-    E_mod = 2.04e6 # ksc
+    E_mod = 2.04e6 
     defl_lim_val = int(defl_ratio.split("/")[1])
     
     st.divider()
-    st.caption("🔩 Connection Assumption")
     bolt_size = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
 
 # ==========================================
-# 4. CALCULATION ENGINE (HELPER FUNCTION)
+# 4. CALCULATION ENGINE
 # ==========================================
 p = steel_db[sec_name]
 
@@ -83,16 +82,13 @@ dia_cm = int(bolt_size[1:])/10
 b_area = 3.14 if bolt_size=="M20" else (2.01 if bolt_size=="M16" else 3.8)
 v_bolt = min(1000 * b_area, 1.2 * 4000 * dia_cm * tw_cm)
 
+# Helper Function
 def get_capacity(L_m):
-    """Calculate capacity for a given span L (meters)"""
     L_cm = L_m * 100
-    
-    # Allowable Loads based on criteria
-    w_s = (2 * V_cap) / L_cm * 100  # Shear Control
-    w_m = (8 * M_cap) / (L_cm**2) * 100 # Moment Control
+    w_s = (2 * V_cap) / L_cm * 100
+    w_m = (8 * M_cap) / (L_cm**2) * 100
     delta_allow = L_cm / defl_lim_val
-    w_d = (delta_allow * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100 # Deflection Control
-    
+    w_d = (delta_allow * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100
     w_gov = min(w_s, w_m, w_d)
     
     cause = "Deflection"
@@ -101,50 +97,77 @@ def get_capacity(L_m):
     
     return w_s, w_m, w_d, w_gov, cause
 
-# ==========================================
-# 5. DATA GENERATION
-# ==========================================
-
-# 5.1 For Graph (High Resolution)
-graph_spans = np.linspace(2, 15, 100)
-graph_data = [get_capacity(l) for l in graph_spans]
-w_shear_g = [x[0] for x in graph_data]
-w_moment_g = [x[1] for x in graph_data]
-w_defl_g = [x[2] for x in graph_data]
-w_gov_g = [x[3] for x in graph_data]
-
-# 5.2 For Table (Clean Steps: 0.5m) -> แก้ปัญหาเลขซ้ำ
-table_spans = np.arange(2, 15.5, 0.5) 
-table_data = [get_capacity(l) for l in table_spans]
-w_gov_t = [x[3] for x in table_data]
-cause_t = [x[4] for x in table_data]
-
-# 5.3 For User Specific Span
+# --- CALCULATION FOR USER SPAN ---
 _, _, _, user_safe_load, user_cause = get_capacity(user_span)
+
+# Forces at Max Load
 V_at_max = user_safe_load * user_span / 2
-M_at_max = user_safe_load * (user_span**2) / 8
+M_at_max = user_safe_load * (user_span**2) / 8 # kg.m
+
+# ⚠️ Calculate Deflection at Max Load (Fix: คำนวณจริงตาม Load ที่รับได้)
+L_cm = user_span * 100
+delta_actual = (5 * (user_safe_load/100) * (L_cm**4)) / (384 * E_mod * Ix) # cm
+delta_allow = L_cm / defl_lim_val # cm
+
+# Percentages
+shear_pct = (V_at_max / V_cap) * 100
+moment_pct = ((M_at_max*100) / M_cap) * 100
+defl_pct = (delta_actual / delta_allow) * 100
+
 req_bolt = math.ceil(V_at_max / v_bolt)
 
+# --- OPTIMAL SPAN LOGIC ---
+# Rule of Thumb: L approx 15d - 20d
+d_m = p['h'] / 1000
+opt_min = 15 * d_m
+opt_max = 20 * d_m
+
+# Span Status Logic
+if user_span < opt_min:
+    span_status = "Deep (สั้นเกินไป/เปลือง)"
+    span_color = "#f1c40f" # Yellow
+    span_bg = "#fcf3cf"
+elif user_span > opt_max:
+    span_status = "Slender (ยาวเกินไป/เสี่ยงแอ่น)"
+    span_color = "#e74c3c" # Red
+    span_bg = "#fadbd8"
+else:
+    span_status = "Optimal (เหมาะสม)"
+    span_color = "#27ae60" # Green
+    span_bg = "#d5f5e3"
+
 # ==========================================
-# 6. UI DISPLAY
+# 5. UI DISPLAY
 # ==========================================
 tab1, tab2, tab3 = st.tabs(["📊 Capacity Analysis", "📐 Section Properties", "💾 Load Table"])
 
-# --- TAB 1: DASHBOARD ---
 with tab1:
-    st.subheader(f"Capacity Analysis for: {sec_name} @ {user_span} m.")
+    st.subheader(f"Capacity Analysis for: {sec_name}")
+
+    # --- PART 1: OPTIMAL CHECK ---
+    st.markdown(f"""
+    <div style="background-color: {span_bg}; padding: 10px 15px; border-radius: 8px; border-left: 5px solid {span_color}; margin-bottom: 20px;">
+        <span style="color: {span_color}; font-weight: bold; font-size: 16px;">
+            Span {user_span} m. is {span_status}
+        </span>
+        <br>
+        <span style="font-size: 14px; color: #555;">
+            💡 ช่วงความยาวที่ประหยัด (Optimal Range L/d ≈ 15-20) สำหรับหน้าตัดนี้คือ: <b>{opt_min:.1f} - {opt_max:.1f} m.</b>
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Card
+    # --- PART 2: MAIN CARD ---
     cause_color = "#e74c3c" if user_cause == "Shear" else ("#f39c12" if user_cause == "Moment" else "#27ae60")
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <span class="sub-text">Maximum Uniform Load Capacity</span><br>
+                <span class="sub-text">Maximum Safe Uniform Load</span><br>
                 <span class="big-num" style="font-size: 36px;">{user_safe_load:,.0f}</span> <span style="font-size:20px; color:#555;">kg/m</span>
             </div>
             <div style="text-align: right;">
-                <span class="sub-text">Limited by</span><br>
+                <span class="sub-text">Controlled by</span><br>
                 <span style="font-size: 18px; font-weight:bold; color:{cause_color};">{user_cause}</span>
             </div>
         </div>
@@ -152,30 +175,74 @@ with tab1:
     """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Metrics
+    # --- PART 3: DETAILED METRICS (WITH DEFLECTION %) ---
     c1, c2, c3 = st.columns(3)
+    
     with c1:
-        shear_pct = (V_at_max / V_cap) * 100
-        st.markdown(f"<div class='metric-box'><div class='sub-text'>Reaction (V)</div><div class='big-num'>{V_at_max:,.0f}</div><div class='sub-text'>Cap: {V_cap:,.0f} kg ({shear_pct:.0f}%)</div></div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="metric-box" style="border-top-color: #e74c3c;">
+            <div class="sub-text">Shear (V)</div>
+            <div class="big-num">{V_at_max:,.0f} <small style="font-size:14px; color:#999;">kg</small></div>
+            <div class="sub-text">Usage: <b>{shear_pct:.0f}%</b></div>
+            <div style="background:#eee; height:6px; width:100%; margin-top:5px; border-radius:3px;">
+                <div style="background:#e74c3c; width:{shear_pct}%; height:100%; border-radius:3px;"></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
     with c2:
-        moment_pct = ((M_at_max*100) / M_cap) * 100
-        st.markdown(f"<div class='metric-box'><div class='sub-text'>Moment (M)</div><div class='big-num'>{M_at_max:,.0f}</div><div class='sub-text'>Cap: {M_cap/100:,.0f} kg.m ({moment_pct:.0f}%)</div></div>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="metric-box" style="border-top-color: #f39c12;">
+            <div class="sub-text">Moment (M)</div>
+            <div class="big-num">{M_at_max:,.0f} <small style="font-size:14px; color:#999;">kg.m</small></div>
+            <div class="sub-text">Usage: <b>{moment_pct:.0f}%</b></div>
+             <div style="background:#eee; height:6px; width:100%; margin-top:5px; border-radius:3px;">
+                <div style="background:#f39c12; width:{moment_pct}%; height:100%; border-radius:3px;"></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
     with c3:
-        st.markdown(f"<div class='metric-box'><div class='sub-text'>Connection</div><div class='big-num'>{req_bolt}</div><div class='sub-text'>Bolts ({bolt_size})</div></div>", unsafe_allow_html=True)
+        # DEFLECTION METRIC
+        st.markdown(f"""
+        <div class="metric-box" style="border-top-color: #27ae60;">
+            <div class="sub-text">Deflection (Δ)</div>
+            <div class="big-num">{delta_actual:.2f} <small style="font-size:14px; color:#999;">cm</small></div>
+            <div class="sub-text">Usage: <b>{defl_pct:.0f}%</b> (Limit {delta_allow:.2f})</div>
+             <div style="background:#eee; height:6px; width:100%; margin-top:5px; border-radius:3px;">
+                <div style="background:#27ae60; width:{min(defl_pct, 100)}%; height:100%; border-radius:3px;"></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Graph
-    st.markdown("#### 📈 Capacity Curve")
+    st.caption(f"Connection Requirement: {req_bolt} bolts of {bolt_size} (at Max Load)")
+
+    # --- PART 4: GRAPH ---
+    st.markdown("#### 📈 Capacity Curve & Optimal Zone")
+    
+    # Generate Data
+    g_spans = np.linspace(2, 15, 100)
+    g_data = [get_capacity(l) for l in g_spans]
+    
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=graph_spans, y=w_moment_g, mode='lines', name='Moment Limit', line=dict(color='orange', dash='dot')))
-    fig.add_trace(go.Scatter(x=graph_spans, y=w_shear_g, mode='lines', name='Shear Limit', line=dict(color='red', dash='dot')))
-    fig.add_trace(go.Scatter(x=graph_spans, y=w_defl_g, mode='lines', name=f'Defl. Limit', line=dict(color='green', dash='dot')))
-    fig.add_trace(go.Scatter(x=graph_spans, y=w_gov_g, mode='lines', name='Safe Load', line=dict(color='#2E86C1', width=3), fill='tozeroy', fillcolor='rgba(46, 134, 193, 0.1)'))
-    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers', marker=dict(color='black', size=12, symbol='star'), name='Selected'))
+    
+    # Highlight Optimal Zone
+    fig.add_vrect(x0=opt_min, x1=opt_max, fillcolor="green", opacity=0.1, 
+                  annotation_text="Optimal Range", annotation_position="top left")
+    
+    # Lines
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[1] for x in g_data], mode='lines', name='Moment Limit', line=dict(color='orange', dash='dot')))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[0] for x in g_data], mode='lines', name='Shear Limit', line=dict(color='red', dash='dot')))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[2] for x in g_data], mode='lines', name=f'Defl. Limit', line=dict(color='green', dash='dot')))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in g_data], mode='lines', name='Safe Load', line=dict(color='#2E86C1', width=3), fill='tozeroy', fillcolor='rgba(46, 134, 193, 0.1)'))
+    
+    # User Point
+    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers', marker=dict(color='black', size=12, symbol='star'), name='Current Span'))
     
     fig.update_layout(xaxis_title="Span (m)", yaxis_title="Load (kg/m)", height=450, hovermode="x unified", margin=dict(t=20, b=20))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- TAB 2: SECTION ---
+# --- TAB 2 & 3 (Same as before) ---
 with tab2:
     st.table(pd.DataFrame({
         "Property": ["Depth", "Width", "Web", "Flange", "Ix", "Zx"],
@@ -183,30 +250,14 @@ with tab2:
         "Unit": ["mm", "mm", "mm", "mm", "cm4", "cm3"]
     }))
 
-# --- TAB 3: TABLE ---
 with tab3:
-    st.subheader(f"Load Capacity Table: {sec_name}")
-    
-    # สร้าง DataFrame ใหม่จาก table_data (ที่ Span สะอาดๆ)
+    table_spans = np.arange(2, 15.5, 0.5) 
+    table_data = [get_capacity(l) for l in table_spans]
     df_res = pd.DataFrame({
         "Span (m)": table_spans,
-        "Max Load (kg/m)": w_gov_t,
-        "Limited By": cause_t,
-        "Reaction V (kg)": [w * l / 2 for w, l in zip(w_gov_t, table_spans)],
-        "Max Moment (kg.m)": [w * l**2 / 8 for w, l in zip(w_gov_t, table_spans)]
+        "Max Load (kg/m)": [x[3] for x in table_data],
+        "Limited By": [x[4] for x in table_data],
+        "Deflection (cm)": [(5 * (x[3]/100) * ((l*100)**4)) / (384 * E_mod * Ix) for l, x in zip(table_spans, table_data)]
     })
     
-    # Formatting display
-    st.dataframe(
-        df_res.style.format({
-            "Span (m)": "{:.1f}", 
-            "Max Load (kg/m)": "{:,.0f}",
-            "Reaction V (kg)": "{:,.0f}",
-            "Max Moment (kg.m)": "{:,.0f}"
-        }), 
-        use_container_width=True, 
-        height=500
-    )
-    
-    csv = df_res.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download CSV", data=csv, file_name=f'capacity_{sec_name}.csv', mime='text/csv')
+    st.dataframe(df_res.style.format({"Span (m)": "{:.1f}", "Max Load (kg/m)": "{:,.0f}", "Deflection (cm)": "{:.2f}"}), use_container_width=True, height=500)
