@@ -3,12 +3,12 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
-# --- IMPORT MODULES ที่เราแยกไว้ ---
+# --- IMPORT MODULES ---
 import connection_design as conn
 import report_generator as rep
 
 # ==========================================
-# 1. SETUP & STYLE (PREMIUM UI V12)
+# 1. SETUP & STYLE
 # ==========================================
 st.set_page_config(page_title="Beam Insight V12 (Modular)", layout="wide", page_icon="🏗️")
 
@@ -24,34 +24,32 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; 
     }
 
-    /* Metric Box */
+    /* Metric Box (Updated Layout) */
     .metric-box { 
-        text-align: center; padding: 20px; background: white; 
-        border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
-        border-top: 5px solid #ccc; height: 100%; transition: all 0.3s ease;
+        text-align: center; padding: 15px; background: white; 
+        border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
+        border-top: 5px solid #ccc; height: 100%;
     }
-    .metric-box:hover { transform: translateY(-5px); box-shadow: 0 12px 20px rgba(0,0,0,0.1); }
-    
-    .big-num { font-size: 28px; font-weight: 800; color: #17202a; margin-bottom: 5px; }
-    .sub-text { font-size: 16px; font-weight: 600; color: #566573; text-transform: uppercase; }
-    
-    .mini-calc {
-        background-color: #f8f9fa; border: 1px dashed #bdc3c7; border-radius: 6px; 
-        padding: 10px; margin-top: 12px; font-family: 'Courier New', monospace; 
-        font-size: 13px; color: #444; text-align: left; line-height: 1.6;
+    .metric-title { font-size: 16px; font-weight: 700; color: #555; margin-bottom: 5px; text-transform: uppercase; }
+    .metric-value { font-size: 24px; font-weight: 800; color: #2c3e50; }
+    .metric-sub { font-size: 13px; color: #7f8c8d; margin-top: 5px; font-family: 'Courier New', monospace; }
+    .metric-badge { 
+        display: inline-block; padding: 2px 8px; border-radius: 4px; 
+        font-size: 12px; font-weight: bold; margin-top: 5px;
     }
     
-    /* Styles for Report & Connection (Global) */
+    .calc-box { background-color: #f4f6f7; padding: 12px; border-radius: 6px; border-left: 4px solid #85c1e9; margin-bottom: 10px; font-family: 'Courier New', monospace; font-size: 13px; }
+    
+    /* Report & Connection Styles */
     .report-paper { background-color: #ffffff; padding: 40px; border: 1px solid #e5e7e9; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border-radius: 2px; max-width: 900px; margin: auto; }
     .report-header { font-size: 20px; font-weight: 800; color: #1a5276; margin-top: 25px; border-bottom: 2px solid #a9cce3; padding-bottom: 8px; }
     .report-line { font-family: 'Courier New', monospace; font-size: 16px; margin-bottom: 8px; color: #2c3e50; border-bottom: 1px dotted #eee; }
-    .calc-box { background-color: #f4f6f7; padding: 12px; border-radius: 6px; border-left: 4px solid #85c1e9; margin-bottom: 10px; font-family: 'Courier New', monospace; font-size: 14px; }
     .conn-card { background-color: #fffbf0; padding: 20px; border-radius: 10px; border-left: 6px solid #f1c40f; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATABASE & INPUTS
+# 2. INPUTS
 # ==========================================
 steel_db = {
     "H 150x75x5x7":     {"h": 150, "b": 75,  "tw": 5,   "tf": 7,   "Ix": 666,    "Zx": 88.8,  "w": 14.0},
@@ -84,8 +82,7 @@ with st.sidebar:
     st.divider()
     st.header("3. Connection Settings")
     bolt_size = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
-    design_mode = st.radio("Connection Design:", 
-                           ["Actual Load (from Span)", "Fixed % Capacity"])
+    design_mode = st.radio("Connection Design:", ["Actual Load (from Span)", "Fixed % Capacity"])
     
     if design_mode == "Fixed % Capacity":
         target_pct = st.slider("Target % Usage", 50, 100, 75, 5)
@@ -96,14 +93,13 @@ with st.sidebar:
     defl_lim_val = int(defl_ratio.split("/")[1])
 
 # ==========================================
-# 3. CORE BEAM CALCULATION
+# 3. CORE CALCULATION
 # ==========================================
 p = steel_db[sec_name]
 h_cm, tw_cm = p['h']/10, p['tw']/10
 Aw = h_cm * tw_cm
 Ix, Zx = p['Ix'], p['Zx']
 
-# --- ASD vs LRFD Logic for Beam ---
 if is_lrfd:
     phi_b, phi_v = 0.90, 1.00
     M_cap = phi_b * fy * Zx
@@ -133,22 +129,21 @@ M_actual = user_safe_load * user_span**2 / 8
 delta_actual = (5 * (user_safe_load/100) * ((user_span*100)**4)) / (384 * E_mod * Ix)
 delta_allow = (user_span*100) / defl_lim_val
 
-# Determine V_design for Connection
 if design_mode == "Actual Load (from Span)":
     V_design = V_actual
 else:
     V_design = V_cap * (target_pct / 100)
 
 # ==========================================
-# 4. UI DISPLAY (Main & Modules)
+# 4. UI DISPLAY
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Calculation Report"])
 
 with tab1:
-    st.subheader(f"Capacity Analysis: {sec_name} ({'LRFD' if is_lrfd else 'ASD'})")
+    st.subheader(f"Capacity Analysis: {sec_name}")
     cause_color = "#e74c3c" if user_cause == "Shear" else ("#f39c12" if user_cause == "Moment" else "#27ae60")
     
-    # 1. Main Load Card
+    # --- 1. Main Card ---
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -164,52 +159,93 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # ====================================================
-    # ✅ ส่วนที่กู้คืนกลับมา: Logic Source (Detail Expander)
-    # ====================================================
-    with st.expander(f"🕵️‍♂️ ดูที่มาการคำนวณ (Method: {method})", expanded=False):
+    # --- 2. Logic Source (Expanded) ---
+    with st.expander(f"🕵️‍♂️ ดูที่มาการคำนวณแบบละเอียด (Calculation Source)", expanded=False):
         c_cal1, c_cal2, c_cal3 = st.columns(3)
         with c_cal1:
-            formula_v = "Phi Vn = 1.0*0.6*Fy*Aw" if is_lrfd else "V_all = 0.4*Fy*Aw"
-            st.markdown(f"""<div class="calc-box"><b>1. Shear ({'LRFD' if is_lrfd else 'ASD'}):</b><br>Cap = {formula_v}<br>= {V_cap:,.0f} kg<br>w = 2*Cap/L = <b>{w_shear:,.0f}</b></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="calc-box"><b>1. Shear ({label_cap_v}):</b><br>• Cap = {V_cap:,.0f} kg<br>• Eq: w = 2*V/L<br>• w_shear = <b>{w_shear:,.0f} kg/m</b></div>""", unsafe_allow_html=True)
         with c_cal2:
-            formula_m = "Phi Mn = 0.9*Fy*Zx" if is_lrfd else "M_all = 0.6*Fy*Zx"
-            st.markdown(f"""<div class="calc-box"><b>2. Moment ({'LRFD' if is_lrfd else 'ASD'}):</b><br>Cap = {formula_m}<br>= {M_cap:,.0f} kg.cm<br>w = 8*Cap/L^2 = <b>{w_moment:,.0f}</b></div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="calc-box"><b>2. Moment ({label_cap_m}):</b><br>• Cap = {M_cap:,.0f} kg.cm<br>• Eq: w = 8*M/L^2<br>• w_moment = <b>{w_moment:,.0f} kg/m</b></div>""", unsafe_allow_html=True)
         with c_cal3:
-            st.markdown(f"""<div class="calc-box"><b>3. Deflection:</b><br>Limit = L/{defl_lim_val}<br>w = (d*384EI)/(5L^4)<br>= <b>{w_defl:,.0f}</b></div>""", unsafe_allow_html=True)
-    
+            st.markdown(f"""<div class="calc-box"><b>3. Deflection (L/{defl_lim_val}):</b><br>• Allow = {delta_allow:.2f} cm<br>• Eq: w = (d*384EI)/(5L^4)<br>• w_defl = <b>{w_defl:,.0f} kg/m</b></div>""", unsafe_allow_html=True)
+
     st.markdown("---")
 
-    # 3. Metrics
+    # --- 3. Metrics (Complete Data) ---
+    # แสดงข้อมูลครบ ทั้ง Actual และ Limit
     cm1, cm2, cm3 = st.columns(3)
+    
+    # Shear Box
+    v_pct = V_actual/V_cap*100
+    v_bg = "#fadbd8" if v_pct > 100 else "#eafaf1"
+    v_txt = "#943126" if v_pct > 100 else "#1e8449"
     with cm1: 
-        st.markdown(f"""<div class="metric-box" style="border-top-color: #e74c3c;"><div class="sub-text">Shear (V) Actual</div><div class="big-num">{V_actual:,.0f} kg</div><div class="mini-calc">Usage: {V_actual/V_cap*100:.0f}%</div></div>""", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="metric-box" style="border-top-color: #e74c3c; background-color: {v_bg};">
+            <div class="metric-title">Shear (V)</div>
+            <div class="metric-value" style="color:{v_txt}">{V_actual:,.0f} <small>kg</small></div>
+            <div class="metric-sub">Limit: {V_cap:,.0f} kg</div>
+            <div class="metric-badge" style="background-color:rgba(0,0,0,0.1); color:{v_txt};">Usage: {v_pct:.0f}%</div>
+        </div>""", unsafe_allow_html=True)
+    
+    # Moment Box
+    m_pct = M_actual*100/M_cap*100
+    m_bg = "#fdebd0" if m_pct > 100 else "#eafaf1"
+    m_txt = "#b9770e" if m_pct > 100 else "#1e8449"
     with cm2: 
-        st.markdown(f"""<div class="metric-box" style="border-top-color: #f39c12;"><div class="sub-text">Moment (M) Actual</div><div class="big-num">{M_actual:,.0f} kg.m</div><div class="mini-calc">Usage: {M_actual*100/M_cap*100:.0f}%</div></div>""", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="metric-box" style="border-top-color: #f39c12; background-color: {m_bg};">
+            <div class="metric-title">Moment (M)</div>
+            <div class="metric-value" style="color:{m_txt}">{M_actual:,.0f} <small>kg.m</small></div>
+            <div class="metric-sub">Limit: {M_cap/100:,.0f} kg.m</div>
+            <div class="metric-badge" style="background-color:rgba(0,0,0,0.1); color:{m_txt};">Usage: {m_pct:.0f}%</div>
+        </div>""", unsafe_allow_html=True)
+    
+    # Deflection Box
+    d_pct = delta_actual/delta_allow*100
+    d_bg = "#e8f8f5"
+    d_txt = "#2e86c1"
     with cm3: 
-        st.markdown(f"""<div class="metric-box" style="border-top-color: #27ae60;"><div class="sub-text">Deflection Actual</div><div class="big-num">{delta_actual:.2f} cm</div><div class="mini-calc">Usage: {delta_actual/delta_allow*100:.0f}%</div></div>""", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="metric-box" style="border-top-color: #27ae60; background-color: {d_bg};">
+            <div class="metric-title">Deflection</div>
+            <div class="metric-value" style="color:{d_txt}">{delta_actual:.2f} <small>cm</small></div>
+            <div class="metric-sub">Allow (L/{defl_lim_val}): {delta_allow:.2f} cm</div>
+            <div class="metric-badge" style="background-color:rgba(0,0,0,0.1); color:{d_txt};">Usage: {d_pct:.0f}%</div>
+        </div>""", unsafe_allow_html=True)
 
-    # 4. Graph
+    # --- 4. Graph (With Axis Labels) ---
     st.markdown("<br>", unsafe_allow_html=True)
     g_spans = np.linspace(2, 15, 100)
     g_data = [get_capacity(l) for l in g_spans]
+    
     fig = go.Figure()
+    # Limit Lines
     fig.add_trace(go.Scatter(x=g_spans, y=[x[1] for x in g_data], mode='lines', name=f'{label_cap_m} Limit', line=dict(color='#f39c12', dash='dot')))
     fig.add_trace(go.Scatter(x=g_spans, y=[x[0] for x in g_data], mode='lines', name=f'{label_cap_v} Limit', line=dict(color='#e74c3c', dash='dot')))
     fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in g_data], mode='lines', name=f'Max {label_load}', line=dict(color='#2E86C1', width=3), fill='tozeroy', fillcolor='rgba(46, 134, 193, 0.1)'))
-    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers', marker=dict(color='#17202a', size=14, symbol='star'), name='Design'))
-    fig.update_layout(height=400, margin=dict(t=20, b=20, l=40, r=40))
+    # Current Design Point
+    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers', 
+                             marker=dict(color='#17202a', size=14, symbol='star', line=dict(width=2, color='white')), 
+                             name='Current Design'))
+    
+    # Layout Updated with Axis Titles
+    fig.update_layout(
+        title="Span vs Capacity Chart",
+        xaxis_title="Span Length (m)",         # ✅ เพิ่มชื่อแกน X
+        yaxis_title=f"Load Capacity (kg/m)",   # ✅ เพิ่มชื่อแกน Y
+        height=450, 
+        margin=dict(t=40, b=40, l=60, r=40),
+        plot_bgcolor='white',
+        xaxis=dict(showgrid=True, gridcolor='#eee'),
+        yaxis=dict(showgrid=True, gridcolor='#eee'),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
     st.plotly_chart(fig, use_container_width=True)
 
 with tab2:
-    # เรียกใช้ Module ภายนอก (Connection)
-    req_bolt_result, v_bolt_result = conn.render_connection_tab(
-        V_design=V_design, 
-        bolt_size=bolt_size, 
-        method=method, 
-        is_lrfd=is_lrfd, 
-        section_data=p
-    )
+    req_bolt_result, v_bolt_result = conn.render_connection_tab(V_design, bolt_size, method, is_lrfd, p)
 
 with tab3:
     st.subheader("Reference Load Table")
@@ -219,17 +255,6 @@ with tab3:
     st.dataframe(df_res.style.format("{:,.0f}", subset=[f"Max {label_load}"]), use_container_width=True)
 
 with tab4:
-    # เรียกใช้ Module ภายนอก (Report)
-    # เราส่งค่าที่คำนวณจาก Main ไปให้ Report Render
     caps = {'M_cap': M_cap, 'V_cap': V_cap}
     bolt_info = {'size': bolt_size, 'capacity': v_bolt_result}
-    
-    rep.render_report_tab(
-        method=method, 
-        is_lrfd=is_lrfd, 
-        sec_name=sec_name, 
-        fy=fy, 
-        section_data=p,
-        caps=caps,
-        bolt_info=bolt_info
-    )
+    rep.render_report_tab(method, is_lrfd, sec_name, fy, p, caps, bolt_info)
