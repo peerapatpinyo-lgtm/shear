@@ -7,18 +7,26 @@ import math
 # ==========================================
 # 1. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V8", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V9 (Final)", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
     .highlight-card { background-color: #e8f6f3; padding: 20px; border-radius: 10px; border: 1px solid #1abc9c; margin-bottom: 20px; }
     .conn-card { background-color: #fcf3cf; padding: 15px; border-radius: 8px; border: 1px solid #f1c40f; }
     .metric-box { text-align: center; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-top: 3px solid #3498db; }
-    .big-num { font-size: 36px; font-weight: bold; color: #17202a; }
-    .sub-text { font-size: 14px; color: #7f8c8d; margin-top: 5px; }
-    .calc-box { font-family: 'Sarabun', sans-serif; font-size: 16px; background-color: #ffffff; padding: 10px; border-radius: 5px; border-left: 4px solid #3498db; margin-top: 10px; }
-    .report-header { font-size: 18px; font-weight: bold; color: #2c3e50; margin-top: 20px; border-bottom: 2px solid #ddd; padding-bottom: 5px; }
-    .report-line { font-family: 'Courier New', monospace; font-size: 16px; margin-bottom: 5px; color: #333; }
+    .calc-box { 
+        background-color: #f8f9f9; 
+        padding: 15px; 
+        border-radius: 8px; 
+        border-left: 5px solid #3498db; 
+        margin-bottom: 10px; 
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        color: #333;
+    }
+    .big-num { font-size: 24px; font-weight: bold; color: #17202a; }
+    .report-line { font-family: 'Courier New', monospace; font-size: 16px; margin-bottom: 8px; color: #2c3e50; }
+    .report-header { font-size: 18px; font-weight: bold; color: #2c3e50; margin-top: 25px; border-bottom: 2px solid #ddd; padding-bottom: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -38,8 +46,8 @@ steel_db = {
 }
 
 with st.sidebar:
-    st.title("Beam Insight V8")
-    st.caption("Final Polish")
+    st.title("Beam Insight V9")
+    st.caption("Complete Details")
     st.divider()
     
     st.header("1. Beam Settings")
@@ -97,6 +105,7 @@ V_actual = user_safe_load * user_span / 2
 M_actual = user_safe_load * user_span**2 / 8
 delta_actual = (5 * (user_safe_load/100) * ((user_span*100)**4)) / (384 * E_mod * Ix)
 delta_allow = (user_span*100) / defl_lim_val
+L_cm = user_span * 100
 
 # Connection Design
 if design_mode == "Actual Load (from Span)":
@@ -126,13 +135,13 @@ layout_ok = req_height <= avail_height
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Calculation Report"])
 
-# --- TAB 1: BEAM ANALYSIS (เพิ่มที่มาของค่า) ---
+# --- TAB 1: BEAM ANALYSIS ---
 with tab1:
     st.subheader(f"Capacity Analysis: {sec_name} @ {user_span} m.")
     
     cause_color = "#e74c3c" if user_cause == "Shear" else ("#f39c12" if user_cause == "Moment" else "#27ae60")
     
-    # 1. Main Card with Calculation Source
+    # 1. Main Card
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -145,37 +154,58 @@ with tab1:
                 <span style="font-size: 20px; font-weight:bold; color:{cause_color};">{user_cause}</span>
             </div>
         </div>
-        <hr style="margin:10px 0; border-top: 1px dashed #bbb;">
-        <div style="font-size:14px; color:#333;">
-            <b>🕵️‍♂️ ที่มาของค่า (Calculation Source):</b><br>
-            <i>คิดจากเงื่อนไขที่รับน้ำหนักได้น้อยที่สุด (Governing Case):</i><br>
+    </div>
     """, unsafe_allow_html=True)
-    
-    # แสดงการคำนวณของ Case ที่ควบคุม (Governing Case)
-    L_cm = user_span * 100
-    if user_cause == "Shear":
-        # w = 2V/L
-        st.code(f"w = 2 * V_cap / L\n  = 2 * {V_cap:,.0f} / {L_cm}\n  = {w_shear:,.0f} kg/m")
-    elif user_cause == "Moment":
-        # w = 8M/L^2
-        st.code(f"w = 8 * M_cap / L^2\n  = 8 * {M_cap:,.0f} / {L_cm}^2\n  = {w_moment:,.0f} kg/m")
-    else:
-        # w = Delta * ...
-        st.code(f"w = (Delta * 384 * E * I) / (5 * L^4)\n  = ({L_cm/defl_lim_val:.2f} * 384 * {E_mod:.0e} * {Ix}) / (5 * {L_cm}^4)\n  = {w_defl:,.0f} kg/m")
-        
-    st.markdown("</div></div>", unsafe_allow_html=True)
 
-    # 2. Metrics
-    c1, c2, c3 = st.columns(3)
+    # 2. ที่มาของค่า 3 กรอบ (Shear, Moment, Deflection)
+    st.markdown("#### 🕵️‍♂️ รายละเอียดการคำนวณ (Calculation Details)")
+    c_cal1, c_cal2, c_cal3 = st.columns(3)
+    
+    with c_cal1:
+        st.markdown("**1. กรณีแรงเฉือน (Shear Control)**")
+        st.markdown(f"""
+        <div class="calc-box">
+        <b>สูตร:</b> w = 2 * V_allow / L<br>
+        <b>แทนค่า:</b> 2 * {V_cap:,.0f} / {L_cm}<br>
+        <b>คำตอบ:</b> {w_shear:,.0f} kg/m
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with c_cal2:
+        st.markdown("**2. กรณีแรงดัด (Moment Control)**")
+        st.markdown(f"""
+        <div class="calc-box">
+        <b>สูตร:</b> w = 8 * M_allow / L^2<br>
+        <b>แทนค่า:</b> 8 * {M_cap:,.0f} / {L_cm}^2<br>
+        <b>คำตอบ:</b> {w_moment:,.0f} kg/m
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with c_cal3:
+        st.markdown("**3. กรณีการแอ่นตัว (Deflection)**")
+        st.markdown(f"""
+        <div class="calc-box">
+        <b>สูตร:</b> w = (Δ * 384 * E * I) / (5 * L^4)<br>
+        <b>แทนค่า:</b> ({L_cm/defl_lim_val:.1f}*384*2.04e6*{Ix})/(5*{L_cm}^4)<br>
+        <b>คำตอบ:</b> {w_defl:,.0f} kg/m
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.info(f"💡 **สรุป:** ค่าน้อยที่สุดคือ **{user_safe_load:,.0f} kg/m** (มาจากกรณี {user_cause})")
+    st.markdown("---")
+
+    # 3. Metrics (Usage)
+    st.markdown("#### 📊 สถานะการใช้งาน (Current Usage)")
+    cm1, cm2, cm3 = st.columns(3)
     shear_pct = (V_actual / V_cap) * 100
     moment_pct = ((M_actual*100) / M_cap) * 100 
     defl_pct = (delta_actual / delta_allow) * 100
     
-    with c1: st.markdown(f"""<div class="metric-box" style="border-top-color: #e74c3c;"><div class="sub-text">Shear (V)</div><div class="big-num" style="font-size:24px;">{V_actual:,.0f} kg</div><div class="sub-text">Usage: <b>{shear_pct:.0f}%</b></div></div>""", unsafe_allow_html=True)
-    with c2: st.markdown(f"""<div class="metric-box" style="border-top-color: #f39c12;"><div class="sub-text">Moment (M)</div><div class="big-num" style="font-size:24px;">{M_actual:,.0f} kg.m</div><div class="sub-text">Usage: <b>{moment_pct:.0f}%</b></div></div>""", unsafe_allow_html=True)
-    with c3: st.markdown(f"""<div class="metric-box" style="border-top-color: #27ae60;"><div class="sub-text">Deflection</div><div class="big-num" style="font-size:24px;">{delta_actual:.2f} cm</div><div class="sub-text">Usage: <b>{defl_pct:.0f}%</b></div></div>""", unsafe_allow_html=True)
+    with cm1: st.markdown(f"""<div class="metric-box" style="border-top-color: #e74c3c;"><div class="sub-text">Shear (V)</div><div class="big-num" style="font-size:24px;">{V_actual:,.0f} kg</div><div class="sub-text">Usage: <b>{shear_pct:.0f}%</b></div></div>""", unsafe_allow_html=True)
+    with cm2: st.markdown(f"""<div class="metric-box" style="border-top-color: #f39c12;"><div class="sub-text">Moment (M)</div><div class="big-num" style="font-size:24px;">{M_actual:,.0f} kg.m</div><div class="sub-text">Usage: <b>{moment_pct:.0f}%</b></div></div>""", unsafe_allow_html=True)
+    with cm3: st.markdown(f"""<div class="metric-box" style="border-top-color: #27ae60;"><div class="sub-text">Deflection</div><div class="big-num" style="font-size:24px;">{delta_actual:.2f} cm</div><div class="sub-text">Usage: <b>{defl_pct:.0f}%</b></div></div>""", unsafe_allow_html=True)
 
-    # 3. Graph
+    # 4. Graph
     st.markdown("#### 📈 Capacity Curve")
     g_spans = np.linspace(2, 15, 100)
     g_data = [get_capacity(l) for l in g_spans]
@@ -188,7 +218,7 @@ with tab1:
     fig.update_layout(xaxis_title="Span (m)", yaxis_title="Load (kg/m)", height=400, margin=dict(t=20, b=20))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- TAB 2: CONNECTION (กู้คืนกราฟิก) ---
+# --- TAB 2: CONNECTION (เหมือนเดิม) ---
 with tab2:
     st.subheader(f"🔩 Connection Design ({bolt_size})")
     c_info, c_draw = st.columns([1, 1.5])
@@ -199,25 +229,18 @@ with tab2:
         st.markdown(f"""<div style="margin-top:20px; padding:10px; border-left:5px solid {status_color}; background:#eee;"><b>Layout Check:</b> <span style="color:{status_color}; font-weight:bold;">{status_text}</span><br><small>Requires {req_height:.0f} mm space (Available {avail_height:.0f} mm)</small></div>""", unsafe_allow_html=True)
 
     with c_draw:
-        # กู้คืนส่วนวาดรูป (Drawing Logic)
         fig_c = go.Figure()
-        # Web
         fig_c.add_shape(type="rect", x0=-p['b']/2, y0=0, x1=p['b']/2, y1=p['h'], line=dict(color="RoyalBlue"), fillcolor="rgba(173, 216, 230, 0.2)")
-        # Flanges
         fig_c.add_shape(type="rect", x0=-p['b']/2, y0=0, x1=p['b']/2, y1=p['tf'], fillcolor="RoyalBlue", line_width=0)
         fig_c.add_shape(type="rect", x0=-p['b']/2, y0=p['h']-p['tf'], x1=p['b']/2, y1=p['h'], fillcolor="RoyalBlue", line_width=0)
-        
-        # Bolts
         cy = p['h'] / 2
         start_y = cy - ((n_rows-1)*pitch)/2
         gage = 60 if p['h'] < 200 else (100 if p['h'] > 400 else 80)
-        
         bx, by = [], []
         for r in range(n_rows):
             y_pos = start_y + r*pitch
             bx.extend([-gage/2, gage/2])
             by.extend([y_pos, y_pos])
-            
         fig_c.add_trace(go.Scatter(x=bx, y=by, mode='markers', marker=dict(size=14, color='#e74c3c', line=dict(width=2, color='black')), name='Bolts'))
         fig_c.update_layout(title="Front View Layout", xaxis=dict(visible=False, range=[-p['b'], p['b']]), yaxis=dict(visible=False, scaleanchor="x"), width=400, height=500, margin=dict(l=20, r=20, t=30, b=20), plot_bgcolor='white')
         st.plotly_chart(fig_c)
@@ -230,34 +253,39 @@ with tab3:
     df_res = pd.DataFrame({"Span (m)": t_spans, "Max Load (kg/m)": [x[3] for x in t_data], "Limited By": [x[4] for x in t_data]})
     st.dataframe(df_res.style.format("{:,.0f}", subset=["Max Load (kg/m)"]), use_container_width=True)
 
-# --- TAB 4: CALCULATION REPORT (Plain Text Mode) ---
+# --- TAB 4: CALCULATION REPORT (Fixed Format: Var = Formula = Sub = Ans) ---
 with tab4:
+    st.markdown('<div class="report-box">', unsafe_allow_html=True)
+    
     st.markdown('<div class="report-header">1. Section Properties</div>', unsafe_allow_html=True)
     st.markdown(f"""
-    <div class="report-line">Section: {sec_name}</div>
-    <div class="report-line">Aw = {h_cm:.1f} x {tw_cm:.1f} = {Aw:.2f} cm2</div>
-    <div class="report-line">Zx = {Zx} cm3, Ix = {Ix} cm4</div>
-    <div class="report-line">Fy = {fy} ksc, Fu = 4000 ksc</div>
+    <div class="report-line">Section = {sec_name}</div>
+    <div class="report-line">Aw = h_web * tw = {h_cm:.1f} * {tw_cm:.1f} = {Aw:.2f} cm2</div>
+    <div class="report-line">Zx = {Zx} cm3</div>
+    <div class="report-line">Ix = {Ix} cm4</div>
+    <div class="report-line">Fy = {fy} ksc</div>
     """, unsafe_allow_html=True)
     
     st.markdown('<div class="report-header">2. Allowable Capacity</div>', unsafe_allow_html=True)
     st.markdown(f"""
     <div class="report-line"><b>Shear Capacity (V_allow):</b></div>
-    <div class="report-line">= 0.4 x {fy} x {Aw:.2f} = {V_cap:,.0f} kg</div>
+    <div class="report-line">V_allow = 0.4 * Fy * Aw = 0.4 * {fy} * {Aw:.2f} = <b>{V_cap:,.0f} kg</b></div>
     <br>
     <div class="report-line"><b>Moment Capacity (M_allow):</b></div>
-    <div class="report-line">= 0.6 x {fy} x {Zx} = {M_cap:,.0f} kg.cm</div>
+    <div class="report-line">M_allow = 0.6 * Fy * Zx = 0.6 * {fy} * {Zx} = <b>{M_cap:,.0f} kg.cm</b></div>
     """, unsafe_allow_html=True)
     
     st.markdown('<div class="report-header">3. Connection Design</div>', unsafe_allow_html=True)
     st.markdown(f"""
     <div class="report-line"><b>Bolt Capacity ({bolt_size}):</b></div>
-    <div class="report-line">- Shear = 1000 x {b_area} = {v_bolt_shear:,.0f} kg</div>
-    <div class="report-line">- Bearing = 1.2 x 4000 x {dia_cm} x {tw_cm} = {v_bolt_bear:,.0f} kg</div>
-    <div class="report-line"><b>=> Use Min = {v_bolt:,.0f} kg/bolt</b></div>
+    <div class="report-line">Shear = 1000 * Area = 1000 * {b_area} = {v_bolt_shear:,.0f} kg</div>
+    <div class="report-line">Bearing = 1.2 * Fu * d * t = 1.2 * 4000 * {dia_cm} * {tw_cm} = {v_bolt_bear:,.0f} kg</div>
+    <div class="report-line"><b>Use Min (Phi Rn) = {v_bolt:,.0f} kg/bolt</b></div>
     <hr>
     <div class="report-line"><b>Required Bolts:</b></div>
     <div class="report-line">V_design = {V_design:,.0f} kg</div>
-    <div class="report-line">Bolts = {V_design:,.0f} / {v_bolt:,.0f} = {V_design/v_bolt:.2f}</div>
-    <div class="report-line"><b>=> Use {req_bolt} bolts</b></div>
+    <div class="report-line">Bolts = V_design / Phi Rn = {V_design:,.0f} / {v_bolt:,.0f} = {V_design/v_bolt:.2f}</div>
+    <div class="report-line"><b>Use = {req_bolt} bolts</b></div>
     """, unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
