@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots # Import เพิ่มสำหรับการทำ 2 แกนที่เสถียร
 import math
 
 # ==========================================
@@ -73,25 +74,35 @@ def analyze_beam(L_m, props, Fy, E, P_load, U_load, Lb_m):
     }
 
 def draw_sfd_bmd(res):
-    # Create Subplots
-    fig = go.Figure()
+    # FIX: Use make_subplots for robust dual-axis support
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # Add SFD
-    fig.add_trace(go.Scatter(x=res['x'], y=res['V_x'], fill='tozeroy', name='Shear (V)', line=dict(color='firebrick')))
+    # Add SFD (Primary Y - Left)
+    fig.add_trace(
+        go.Scatter(x=res['x'], y=res['V_x'], fill='tozeroy', name='Shear (V)', line=dict(color='firebrick')),
+        secondary_y=False,
+    )
     
-    # Add BMD (Plot on secondary y-axis visually or just separate)
-    # For simplicity in this view, let's just plot Moment
-    fig.add_trace(go.Scatter(x=res['x'], y=res['M_x'], fill='tozeroy', name='Moment (M)', line=dict(color='royalblue'), yaxis='y2'))
+    # Add BMD (Secondary Y - Right)
+    fig.add_trace(
+        go.Scatter(x=res['x'], y=res['M_x'], fill='tozeroy', name='Moment (M)', line=dict(color='royalblue')),
+        secondary_y=True,
+    )
 
+    # Set Titles
     fig.update_layout(
         title="Shear & Moment Diagram",
-        xaxis_title="Length (m)",
-        yaxis=dict(title="Shear Force (kg)", titlefont=dict(color="firebrick"), tickfont=dict(color="firebrick")),
-        yaxis2=dict(title="Moment (kg.m)", titlefont=dict(color="royalblue"), tickfont=dict(color="royalblue"), overlaying='y', side='right'),
         hovermode="x unified",
         height=400,
-        margin=dict(l=20, r=20, t=40, b=20)
+        margin=dict(l=20, r=20, t=40, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
+    
+    # Set Axis Labels
+    fig.update_yaxes(title_text="Shear Force (kg)", title_font=dict(color="firebrick"), tickfont=dict(color="firebrick"), secondary_y=False)
+    fig.update_yaxes(title_text="Moment (kg.m)", title_font=dict(color="royalblue"), tickfont=dict(color="royalblue"), secondary_y=True)
+    fig.update_xaxes(title_text="Length (m)")
+
     return fig
 
 def draw_bolt_layout(n_bolts, bolt_size, plate_width=200):
