@@ -35,12 +35,6 @@ st.markdown("""
         margin-top: 20px;
         font-size: 18px;
     }
-    .result-box {
-        background-color: #f4f6f7;
-        padding: 15px;
-        border-left: 5px solid #2e86c1;
-        margin: 10px 0;
-    }
     .governing-box {
         background-color: #d4efdf;
         padding: 20px;
@@ -48,6 +42,7 @@ st.markdown("""
         border-radius: 10px;
         text-align: center;
         color: #145a32;
+        margin-top: 20px;
     }
     .warning-box {
         background-color: #fdedec;
@@ -55,6 +50,10 @@ st.markdown("""
         border: 1px solid #e74c3c;
         border-radius: 5px;
         color: #922b21;
+    }
+    /* ปรับแต่ง Table ให้ดูดีขึ้น */
+    div[data-testid="stTable"] {
+        font-family: 'Courier New', monospace;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -105,7 +104,7 @@ with st.sidebar:
     st.latex(rf"Z_x = {Zx:,} \ cm^3")
 
 # ==========================================
-# 3. LOGIC & CALCULATION (Hidden Logic)
+# 3. LOGIC & CALCULATION
 # ==========================================
 # Units: kg, cm
 L_cm = span * 100
@@ -113,22 +112,18 @@ h_cm = h/10
 tw_cm = tw/10
 Aw = h_cm * tw_cm
 
-# CASE 1: Shear Yielding (Limit State)
-# Vn = 0.6 * Fy * Aw
+# CASE 1: Shear Yielding
 V_case1 = 0.6 * Fy * Aw
-w_case1 = (2 * V_case1) / L_cm * 100 # kg/m
+w_case1 = (2 * V_case1) / L_cm * 100 
 
-# CASE 2: Bending Moment (Allowable Stress)
-# M_all = 0.6 * Fy * Zx
-# V = 4 * M / L
+# CASE 2: Bending Moment
 M_all = 0.6 * Fy * Zx
 V_case2 = (4 * M_all) / L_cm
-w_case2 = (8 * M_all) / (L_cm**2) * 100 # kg/m
+w_case2 = (8 * M_all) / (L_cm**2) * 100 
 
 # CASE 3: Deflection (L/240)
-# V = (384 * E * I) / (2400 * L^2)
 V_case3 = (384 * E_val * Ix) / (2400 * (L_cm**2))
-w_case3 = (384 * E_val * Ix) / (1200 * (L_cm**3)) * 100 # kg/m (Note: Formula for w from delta=L/240)
+w_case3 = (384 * E_val * Ix) / (1200 * (L_cm**3)) * 100 
 
 # Compare
 results = {
@@ -140,7 +135,7 @@ V_governing = min(results.values())
 Control_case = min(results, key=results.get)
 
 # ==========================================
-# 4. MAIN REPORT (Human Readable)
+# 4. MAIN REPORT
 # ==========================================
 st.title("🏗️ Structural Calculation Report")
 st.write("รายการคำนวณความสามารถในการรับน้ำหนักและออกแบบจุดต่อ (Automated Calculation Sheet)")
@@ -158,7 +153,7 @@ with tab_beam:
         st.markdown('<div class="header-topic">PART A: Beam Capacity Analysis</div>', unsafe_allow_html=True)
         
         st.write(f"**Section:** {sec_name} | **Span:** {span:.2f} m")
-        
+        st.markdown("")
         
         # --- CASE 1 ---
         st.markdown('<div class="sub-topic">1. Check Web Shear Capacity (แรงเฉือน)</div>', unsafe_allow_html=True)
@@ -169,7 +164,6 @@ with tab_beam:
         st.write("Allowable Shear ($V_n$):")
         st.latex(r"V_1 = 0.6 \cdot F_y \cdot A_w")
         st.latex(rf"V_1 = 0.6 \cdot {Fy} \cdot {Aw:.2f} = \mathbf{{{V_case1:,.0f}}} \ kg")
-        st.caption("หมายเหตุ: ค่านี้คงที่ตลอดความยาวคาน")
 
         # --- CASE 2 ---
         st.markdown('<div class="sub-topic">2. Check Bending Moment (โมเมนต์ดัด)</div>', unsafe_allow_html=True)
@@ -192,12 +186,19 @@ with tab_beam:
         st.markdown('<div class="header-topic">CONCLUSION (สรุปผล)</div>', unsafe_allow_html=True)
         st.write("เปรียบเทียบค่าทั้ง 3 กรณี (Compare Cases):")
         
+        # --- FIX: ปรับปรุงการแสดงผล Table เพื่อไม่ให้ Error ---
         comp_data = pd.DataFrame({
             "Criteria": ["1. Shear", "2. Moment", "3. Deflection"],
             "Max Reaction (V)": [V_case1, V_case2, V_case3],
             "Max Uniform Load (w)": [w_case1, w_case2, w_case3]
         })
-        st.table(comp_data.style.format("{:,.0f}"))
+        
+        # ใช้ Dictionary ระบุว่า column ไหนจัด Format อย่างไร (ป้องกัน Error กับ column ที่เป็น string)
+        st.table(comp_data.style.format({
+            "Max Reaction (V)": "{:,.0f}",
+            "Max Uniform Load (w)": "{:,.0f}"
+        }))
+        # ----------------------------------------------------
         
         st.markdown(f"""
         <div class="governing-box">
@@ -206,7 +207,7 @@ with tab_beam:
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown('</div>', unsafe_allow_html=True) # End Paper
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with col_vis:
         st.subheader("📊 Visual Analysis")
@@ -243,12 +244,6 @@ with tab_beam:
                           hovermode="x unified", title="Load Capacity Envelope",
                           xaxis=dict(rangeslider=dict(visible=True)))
         st.plotly_chart(fig, use_container_width=True)
-        
-        st.info("""
-        **กราฟนี้คืออะไร?**
-        คือเส้นแสดงความสามารถในการรับแรง (Reaction) สูงสุดที่ความยาวช่วงต่างๆ 
-        โดยเส้นทึบสีน้ำเงินคือค่าที่ปลอดภัยที่สุด (น้อยที่สุด) จากทั้ง 3 กรณี
-        """)
 
 # -------------------------------------------------------------------
 # TAB 2: CONNECTION DESIGN REPORT
@@ -289,7 +284,7 @@ with tab_conn:
         Rn_bolt = n_rows * Ab * Fv
         st.latex(rf"R_n = n \times A_b \times F_v")
         st.latex(rf"R_n = {n_rows} \times {Ab:.2f} \times {Fv} = \mathbf{{{Rn_bolt:,.0f}}} \ kg")
-        
+        st.markdown("")
         
         # 2. BEARING
         st.markdown('<div class="sub-topic">2. Bearing Strength</div>', unsafe_allow_html=True)
@@ -305,7 +300,7 @@ with tab_conn:
         
         # 3. BLOCK SHEAR
         st.markdown('<div class="sub-topic">3. Block Shear Rupture</div>', unsafe_allow_html=True)
-        
+        st.markdown("")
         st.write("การวิบัติแบบฉีกขาดผ่านรูเจาะ (Shear Yield + Tension Rupture)")
         
         # Geo
