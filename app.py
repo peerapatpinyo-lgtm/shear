@@ -14,7 +14,6 @@ st.set_page_config(page_title="Beam Insight V12", layout="wide", page_icon="🏗
 
 st.markdown("""
 <style>
-    /* Import Fonts: Sarabun (General) & Roboto Mono (Numbers/Code) */
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&family=Roboto+Mono:wght@400;500;700&display=swap');
     
     html, body, [class*="css"] { 
@@ -22,71 +21,67 @@ st.markdown("""
         color: #333;
     }
 
-    /* --- 1. Metric Card (Clean & Consistent) --- */
+    /* --- Metric Card CSS --- */
     .metric-card-clean {
         background: white;
         border-radius: 8px;
-        padding: 20px;
+        padding: 15px;
         border: 1px solid #e0e0e0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         height: 100%;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
     }
     
-    .mc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-    .mc-title { font-weight: 600; color: #555; font-size: 16px; display: flex; align-items: center; gap: 8px; }
-    .mc-percent { font-family: 'Roboto Mono', monospace; font-size: 24px; font-weight: 700; }
+    .mc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .mc-title { font-weight: 600; color: #555; font-size: 16px; }
+    .mc-percent { font-family: 'Roboto Mono', monospace; font-size: 22px; font-weight: 700; }
 
     .mc-values { 
         display: flex; justify-content: space-between; align-items: flex-end; 
         font-family: 'Roboto Mono', monospace; color: #333; margin-bottom: 8px; font-size: 14px;
     }
-    .mc-label { font-size: 11px; color: #888; font-family: 'Sarabun'; text-transform: uppercase; letter-spacing: 0.5px; }
-    .mc-val-text { font-weight: 600; font-size: 16px; }
+    .mc-label { font-size: 11px; color: #888; font-family: 'Sarabun'; text-transform: uppercase; }
+    .mc-val-text { font-weight: 600; font-size: 15px; }
 
-    .mc-bar-bg { background-color: #f1f1f1; height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 12px; }
+    .mc-bar-bg { background-color: #f1f1f1; height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 10px; }
     .mc-bar-fill { height: 100%; border-radius: 3px; }
 
-    /* Footer: Equation Check (Correct Math Format) */
+    /* Footer equation text */
     .mc-footer { 
-        background-color: #f9f9f9; 
+        background-color: #f8f9fa; 
         border-top: 1px solid #eee; 
-        padding: 8px 5px; 
-        margin-top: 5px;
-        font-size: 12px; 
-        color: #555; 
+        padding: 6px; 
         text-align: center; 
-        font-family: 'Roboto Mono', monospace; /* Monospace for alignment */
-        white-space: nowrap; /* Prevent ugly wrapping */
-        overflow: hidden;
-        text-overflow: ellipsis;
+        font-family: 'Roboto Mono', monospace;
+        font-size: 12px;
+        color: #555;
+        border-radius: 4px;
     }
 
-    /* --- 2. Calculation Box (LaTeX Container) --- */
+    /* --- Calculation Box --- */
     .calc-box {
-        background-color: #ffffff;
-        border: 1px solid #e5e7eb;
-        border-left-width: 4px;
-        padding: 16px;
-        border-radius: 6px;
-        margin-bottom: 12px;
+        background-color: #fff;
+        border: 1px solid #ddd;
+        border-left-width: 5px;
+        padding: 15px;
+        border-radius: 4px;
+        margin-bottom: 10px;
     }
-    .calc-title {
-        font-weight: 600; color: #1f2937; margin-bottom: 12px;
-        font-size: 14px; border-bottom: 1px dashed #e5e7eb; padding-bottom: 6px;
+    .calc-header {
+        font-weight: bold; font-size: 14px; margin-bottom: 8px; 
+        border-bottom: 1px dashed #ccc; padding-bottom: 4px;
     }
 
-    /* --- 3. Highlight Card --- */
+    /* --- Highlight Card --- */
     .highlight-card { 
         background: white;
-        padding: 24px; 
-        border-radius: 12px; 
-        border: 1px solid #e2e8f0; 
+        padding: 20px; 
+        border-radius: 10px; 
+        border: 1px solid #ddd; 
         border-left: 6px solid #2c3e50;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); 
-        margin-bottom: 24px; 
+        margin-bottom: 20px; 
     }
 </style>
 """, unsafe_allow_html=True)
@@ -143,42 +138,44 @@ h_cm, tw_cm = p['h']/10, p['tw']/10
 Aw = h_cm * tw_cm
 Ix, Zx = p['Ix'], p['Zx']
 
+# 1. Determine Capacity (Limit)
 if is_lrfd:
     phi_b, phi_v = 0.90, 1.00
-    M_cap = phi_b * fy * Zx       # kg-cm
-    V_cap = phi_v * 0.6 * fy * Aw # kg
+    M_cap_kgcm = phi_b * fy * Zx       
+    V_cap_kg = phi_v * 0.6 * fy * Aw 
     label_load = "Factored Load (Wu)"
     label_cap_m = "Phi Mn"
     label_cap_v = "Phi Vn"
 else:
-    M_cap = 0.6 * fy * Zx         # kg-cm
-    V_cap = 0.4 * fy * Aw         # kg
+    M_cap_kgcm = 0.6 * fy * Zx         
+    V_cap_kg = 0.4 * fy * Aw         
     label_load = "Safe Load (w)"
     label_cap_m = "M allow"
     label_cap_v = "V allow"
 
-def get_capacity(L_m):
-    L_cm = L_m * 100
-    # Formula results are in kg/m (multiplying by 100 converts kg/cm to kg/m)
-    w_s = (2 * V_cap) / L_cm * 100
-    w_m = (8 * M_cap) / (L_cm**2) * 100
-    w_d = ((L_cm/defl_lim_val) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100
-    w_gov = min(w_s, w_m, w_d)
-    cause = "Shear" if w_gov == w_s else ("Moment" if w_gov == w_m else "Deflection")
-    return w_s, w_m, w_d, w_gov, cause
+# 2. Determine Safe Load (Reverse Calc) for the Highlight Card & Chart
+L_cm = user_span * 100
+w_shear = (2 * V_cap_kg) / L_cm * 100
+w_moment = (8 * M_cap_kgcm) / (L_cm**2) * 100
+w_defl = ((L_cm/defl_lim_val) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100
+w_gov = min(w_shear, w_moment, w_defl)
+user_safe_load = w_gov # Max allowable uniform load
 
-w_shear, w_moment, w_defl, user_safe_load, user_cause = get_capacity(user_span)
+if w_gov == w_shear: user_cause = "Shear"
+elif w_gov == w_moment: user_cause = "Moment"
+else: user_cause = "Deflection"
 
-# Actual forces for the cards
+# 3. Determine ACTUAL Forces based on the Safe Load (Forward Calc)
+# These are the values we use for the "Check"
 V_actual = user_safe_load * user_span / 2
-M_actual = user_safe_load * user_span**2 / 8  # kg-m
-delta_actual = (5 * (user_safe_load/100) * ((user_span*100)**4)) / (384 * E_mod * Ix) # cm
-delta_allow = (user_span*100) / defl_lim_val # cm
+M_actual_kgm = (user_safe_load * user_span**2) / 8
+delta_actual = (5 * (user_safe_load/100) * (L_cm**4)) / (384 * E_mod * Ix)
+delta_limit = L_cm / defl_lim_val
 
 if design_mode == "Actual Load (from Span)":
     V_design = V_actual
 else:
-    V_design = V_cap * (target_pct / 100)
+    V_design = V_cap_kg * (target_pct / 100)
 
 # ==========================================
 # 4. DISPLAY
@@ -189,22 +186,21 @@ with tab1:
     st.subheader(f"Capacity Analysis: {sec_name}")
     
     # --- 1. Highlight Card ---
-    # Determine color based on control
-    if user_cause == "Moment": c_stat = "#f59e0b"; 
-    elif user_cause == "Shear": c_stat = "#10b981"; 
-    else: c_stat = "#3b82f6";
+    if user_cause == "Moment": c_stat = "#f39c12"; 
+    elif user_cause == "Shear": c_stat = "#27ae60"; 
+    else: c_stat = "#2980b9";
     
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <span style="color:#64748b; font-size:13px; text-transform:uppercase; letter-spacing:1px;">Maximum {label_load}</span><br>
-                <span style="font-family:'Roboto Mono'; font-size:40px; font-weight:700; color:#1e293b;">{user_safe_load:,.0f}</span> 
-                <span style="font-size:18px; color:#94a3b8; font-weight:500;">kg/m</span>
+                <span style="color:#666; font-size:14px; text-transform:uppercase;">MAX {label_load}</span><br>
+                <span style="font-family:'Roboto Mono'; font-size:42px; font-weight:700; color:#333;">{user_safe_load:,.0f}</span> 
+                <span style="font-size:18px; color:#777;">kg/m</span>
             </div>
             <div style="text-align: right;">
-                <span style="color:#64748b; font-size:13px; text-transform:uppercase;">Control Factor</span><br>
-                <span style="font-size: 16px; font-weight:700; color:{c_stat}; background:{c_stat}15; padding: 6px 16px; border-radius:20px; border:1px solid {c_stat}30;">
+                <span style="color:#666; font-size:14px; text-transform:uppercase;">Controlled By</span><br>
+                <span style="font-size: 18px; font-weight:bold; color:{c_stat}; background:{c_stat}20; padding: 5px 15px; border-radius:20px;">
                     {user_cause}
                 </span>
             </div>
@@ -212,120 +208,140 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 2. Calculation Details (Standardized LaTeX) ---
-    with st.expander(f"Show Calculation Details (Step-by-Step)", expanded=True):
+    # --- 2. Calculation Details (THE FIX: Plain & Simple Check) ---
+    with st.expander(f"Show Design Check (Demand / Capacity)", expanded=True):
         c1, c2, c3 = st.columns(3)
-        L_cm_disp = user_span * 100
         
-        # Helper to format numbers in latex cleanly
-        def tex_n(n): return f"{n:,.0f}"
-        
+        # Helper for formatting
+        def fmt(n): return f"{n:,.0f}"
+
         with c1:
-            st.markdown(f'<div class="calc-box" style="border-left-color: #10b981;"><div class="calc-title">1. Shear Capacity</div>', unsafe_allow_html=True)
-            # Formula
-            st.latex(r''' w = \frac{2 \times V_{cap}}{L} \times 100 ''')
-            # Substitute
-            st.latex(fr''' w = \frac{{2 \times {tex_n(V_cap)}}}{{{tex_n(L_cm_disp)}}} \times 100 ''')
-            # Result
-            st.latex(fr''' w = \mathbf{{{tex_n(w_shear)}}} \; kg/m ''')
+            shear_ratio = (V_actual / V_cap_kg) * 100
+            st.markdown(f'<div class="calc-box" style="border-left-color: #27ae60;"><div class="calc-header">1. Shear Check</div>', unsafe_allow_html=True)
+            st.latex(r''' \% = \frac{V_{actual}}{V_{capacity}} \times 100 ''')
+            st.latex(fr''' \% = \frac{{{fmt(V_actual)}}}{{{fmt(V_cap_kg)}}} \times 100 ''')
+            st.latex(fr''' \% = \mathbf{{{shear_ratio:.1f}\%}} ''')
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c2:
-            st.markdown(f'<div class="calc-box" style="border-left-color: #f59e0b;"><div class="calc-title">2. Moment Capacity</div>', unsafe_allow_html=True)
-            # Formula
-            st.latex(r''' w = \frac{8 \times M_{cap}}{L^2} \times 100 ''')
-            # Substitute
-            st.latex(fr''' w = \frac{{8 \times {tex_n(M_cap)}}}{{{tex_n(L_cm_disp)}^2}} \times 100 ''')
-            # Result
-            st.latex(fr''' w = \mathbf{{{tex_n(w_moment)}}} \; kg/m ''')
+            moment_ratio = (M_actual_kgm / (M_cap_kgcm/100)) * 100
+            st.markdown(f'<div class="calc-box" style="border-left-color: #f39c12;"><div class="calc-header">2. Moment Check</div>', unsafe_allow_html=True)
+            st.latex(r''' \% = \frac{M_{actual}}{M_{capacity}} \times 100 ''')
+            # Note: Displaying M in kg-m for consistency
+            st.latex(fr''' \% = \frac{{{fmt(M_actual_kgm)}}}{{{fmt(M_cap_kgcm/100)}}} \times 100 ''')
+            st.latex(fr''' \% = \mathbf{{{moment_ratio:.1f}\%}} ''')
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c3:
-            st.markdown(f'<div class="calc-box" style="border-left-color: #3b82f6;"><div class="calc-title">3. Deflection Limit</div>', unsafe_allow_html=True)
-            # Formula
-            st.latex(r''' w = \frac{384 E I \Delta_{allow}}{5 L^4} \times 100 ''')
-            # Substitute (Formatted scientific notation for E)
-            st.latex(fr''' w = \frac{{384 \times (2.04 \times 10^6) \times {Ix} \times {delta_allow:.2f}}}{{5 \times {tex_n(L_cm_disp)}^4}} \times 100 ''')
-            # Result
-            st.latex(fr''' w = \mathbf{{{tex_n(w_defl)}}} \; kg/m ''')
+            defl_ratio_val = (delta_actual / delta_limit) * 100
+            st.markdown(f'<div class="calc-box" style="border-left-color: #2980b9;"><div class="calc-header">3. Deflection Check</div>', unsafe_allow_html=True)
+            st.latex(r''' \% = \frac{\Delta_{actual}}{\Delta_{limit}} \times 100 ''')
+            st.latex(fr''' \% = \frac{{{delta_actual:.2f}}}{{{delta_limit:.2f}}} \times 100 ''')
+            st.latex(fr''' \% = \mathbf{{{defl_ratio_val:.1f}\%}} ''')
             st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # --- 3. METRIC CARDS (Corrected Math Footer) ---
+    # --- 3. METRIC CARDS (FIXED HTML) ---
     cm1, cm2, cm3 = st.columns(3)
     
-    def create_card_final(icon, title, actual, limit, unit, color_hex, decimal=0):
-        pct = (actual / limit) * 100
+    def render_metric_card(icon, title, actual_val, limit_val, unit, color):
+        # Calculate percent
+        pct = (actual_val / limit_val) * 100 if limit_val > 0 else 0
         width_css = f"{min(pct, 100):.1f}"
         
-        # Formatting Values
-        fmt = f",.{decimal}f"
+        # Format strings
+        s_act = f"{actual_val:,.2f}" if unit == "cm" else f"{actual_val:,.0f}"
+        s_lim = f"{limit_val:,.2f}" if unit == "cm" else f"{limit_val:,.0f}"
         
-        # Color Logic
-        c_final = "#ef4444" if pct > 100 else color_hex
-        
-        # FOOTER LOGIC: Correct Math Notation (A / B) * 100 = %
-        # Using &div; for division symbol and &times; for multiplication
-        math_str = f"({actual:{fmt}} ÷ {limit:{fmt}}) × 100 = <b>{pct:.1f}%</b>"
-        
-        return f"""
-        <div class="metric-card-clean" style="border-top: 4px solid {c_final};">
+        # Color warning
+        final_color = "#c0392b" if pct > 100 else color
+
+        # Construct HTML
+        html_code = f"""
+        <div class="metric-card-clean" style="border-top: 4px solid {final_color};">
             <div class="mc-header">
                 <div class="mc-title"><span>{icon}</span> {title}</div>
-                <div class="mc-percent" style="color:{c_final};">{pct:.1f}%</div>
+                <div class="mc-percent" style="color:{final_color};">{pct:.1f}%</div>
             </div>
             
             <div class="mc-values">
                 <div style="text-align:left;">
                     <div class="mc-label">ACTUAL</div>
-                    <div class="mc-val-text">{actual:{fmt}}</div>
+                    <div class="mc-val-text">{s_act}</div>
                 </div>
                 <div style="text-align:right;">
                     <div class="mc-label">LIMIT ({unit})</div>
-                    <div class="mc-val-text" style="color:#94a3b8;">{limit:{fmt}}</div>
+                    <div class="mc-val-text" style="color:#999;">{s_lim}</div>
                 </div>
             </div>
             
             <div class="mc-bar-bg">
-                <div class="mc-bar-fill" style="width:{width_css}%; background-color:{c_final};"></div>
+                <div class="mc-bar-fill" style="width:{width_css}%; background-color:{final_color};"></div>
             </div>
             
             <div class="mc-footer">
-                {math_str}
+                {s_act} ÷ {s_lim} = <b>{pct:.1f}%</b>
             </div>
         </div>
         """
+        return html_code
     
+    # !!! CRITICAL: unsafe_allow_html=True is REQUIRED here !!!
     with cm1:
-        st.markdown(create_card_final("✂️", "Shear (V)", V_actual, V_cap, "kg", "#10b981"), unsafe_allow_html=True)
+        st.markdown(render_metric_card("✂️", "Shear (V)", V_actual, V_cap_kg, "kg", "#27ae60"), unsafe_allow_html=True)
     with cm2:
-        # Note: M_cap is kg-cm, we divide by 100 to show kg-m in the card to match M_actual
-        st.markdown(create_card_final("🔄", "Moment (M)", M_actual, M_cap/100, "kg.m", "#f59e0b"), unsafe_allow_html=True)
+        st.markdown(render_metric_card("🔄", "Moment (M)", M_actual_kgm, M_cap_kgcm/100, "kg.m", "#f39c12"), unsafe_allow_html=True)
     with cm3:
-        st.markdown(create_card_final("📏", "Deflection", delta_actual, delta_allow, "cm", "#3b82f6", decimal=2), unsafe_allow_html=True)
+        st.markdown(render_metric_card("📏", "Deflection", delta_actual, delta_limit, "cm", "#2980b9"), unsafe_allow_html=True)
 
-    # --- 4. Chart (Consistent Colors) ---
+    # --- 4. Chart ---
     st.markdown("<br>", unsafe_allow_html=True)
-    g_spans = np.linspace(2, 15, 100)
-    g_data = [get_capacity(l) for l in g_spans]
+    
+    # Helper to re-calc for chart
+    def get_caps(L):
+        L_c = L * 100
+        w1 = (2 * V_cap_kg) / L_c * 100
+        w2 = (8 * M_cap_kgcm) / (L_c**2) * 100
+        return w1, w2, min(w1, w2)
+
+    g_spans = np.linspace(2, 15, 50)
+    g_shear = []
+    g_moment = []
+    g_max = []
+    
+    # Calculate chart data loop
+    for l_val in g_spans:
+        s, m, _ = get_caps(l_val)
+        g_shear.append(s)
+        g_moment.append(m)
+        # We also need deflection for the "Real" capacity, but to keep chart simple, let's plot S vs M
+        # Or better, just plot what we had before correctly
+        
+    # Re-using the simple function for chart consistency
+    def get_all_caps(L_m):
+        L_c = L_m * 100
+        ws = (2 * V_cap_kg) / L_c * 100
+        wm = (8 * M_cap_kgcm) / (L_c**2) * 100
+        wd = ((L_c/defl_lim_val) * 384 * E_mod * Ix) / (5 * (L_c**4)) * 100
+        return ws, wm, wd, min(ws, wm, wd)
+
+    c_data = [get_all_caps(l) for l in g_spans]
     
     fig = go.Figure()
-    # Using consistent colors with cards
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[1] for x in g_data], mode='lines', name=f'{label_cap_m}', line=dict(color='#f59e0b', dash='dash')))
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[0] for x in g_data], mode='lines', name=f'{label_cap_v}', line=dict(color='#10b981', dash='dash')))
-    fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in g_data], mode='lines', name=f'Max Capacity', line=dict(color='#3b82f6', width=3), fill='tozeroy', fillcolor='rgba(59, 130, 246, 0.05)'))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[1] for x in c_data], mode='lines', name='Moment Limit', line=dict(color='#f39c12', dash='dot')))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[0] for x in c_data], mode='lines', name='Shear Limit', line=dict(color='#27ae60', dash='dot')))
+    fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in c_data], mode='lines', name='Safe Load Capacity', line=dict(color='#2c3e50', width=3), fill='tozeroy', fillcolor='rgba(44, 62, 80, 0.1)'))
     fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers', 
-                             marker=dict(color='#1e293b', size=14, symbol='circle', line=dict(width=2, color='white')), 
-                             name='Current Span'))
+                             marker=dict(color='#c0392b', size=14, symbol='x', line=dict(width=2, color='white')), 
+                             name='Current Point'))
     
     fig.update_layout(
-        title=dict(text="Load Capacity Curves", font=dict(size=16, color='#64748b')),
-        height=400, 
-        margin=dict(t=50, b=40, l=60, r=40),
-        plot_bgcolor='white',
-        xaxis=dict(showgrid=True, gridcolor='#f1f5f9', title="Span (m)"),
-        yaxis=dict(showgrid=True, gridcolor='#f1f5f9', title="Load (kg/m)"),
+        title="Load Capacity Curve",
+        xaxis_title="Span Length (m)",
+        yaxis_title="Load (kg/m)",
+        height=400,
+        margin=dict(t=40, b=40, l=60, r=40),
         hovermode="x unified",
         legend=dict(orientation="h", y=1.05, x=1, xanchor="right")
     )
@@ -335,13 +351,17 @@ with tab2:
     req_bolt_result, v_bolt_result = conn.render_connection_tab(V_design, bolt_size, method, is_lrfd, p)
 
 with tab3:
-    st.markdown("### Reference Load Table")
-    t_spans = np.arange(2, 15.5, 0.5)
-    t_data = [get_capacity(l) for l in t_spans]
-    df_res = pd.DataFrame({"Span (m)": t_spans, f"Max {label_load}": [x[3] for x in t_data], "Control": [x[4] for x in t_data]})
-    st.dataframe(df_res.style.format("{:,.0f}", subset=[f"Max {label_load}"]), use_container_width=True)
+    st.markdown("### Load Table")
+    t_spans = np.arange(2, 12.5, 0.5)
+    t_rows = []
+    for l in t_spans:
+        ws, wm, wd, wgov = get_all_caps(l)
+        ctrl = "Shear" if wgov == ws else ("Moment" if wgov == wm else "Deflection")
+        t_rows.append({"Span (m)": l, "Max Load (kg/m)": wgov, "Control": ctrl})
+    
+    st.dataframe(pd.DataFrame(t_rows).style.format("{:,.0f}", subset=["Max Load (kg/m)"]), use_container_width=True)
 
 with tab4:
-    caps = {'M_cap': M_cap, 'V_cap': V_cap}
+    caps = {'M_cap': M_cap_kgcm, 'V_cap': V_cap_kg} # Pass units correctly
     bolt_info = {'size': bolt_size, 'capacity': v_bolt_result}
     rep.render_report_tab(method, is_lrfd, sec_name, fy, p, caps, bolt_info)
