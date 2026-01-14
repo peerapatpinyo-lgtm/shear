@@ -4,7 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 # ==========================================
-# 1. SYS STEEL DATABASE (SIMULATED FULL TABLE)
+# 1. SYS STEEL DATABASE (FULL TABLE)
 # ==========================================
 def load_sys_data():
     # ข้อมูลจำลองจากตาราง SYS (Siam Yamato Steel)
@@ -136,10 +136,6 @@ with col_left:
         margin=dict(l=20, r=20, t=20, b=20)
     )
     
-    # 
-
-[Image of moment vs shear diagram]
- - Contextual trigger (Simulated by Plotly)
     st.plotly_chart(fig, use_container_width=True)
 
 with col_right:
