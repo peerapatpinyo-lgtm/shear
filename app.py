@@ -11,7 +11,6 @@ st.set_page_config(page_title="ProStructure: Ultimate Report", layout="wide", pa
 
 st.markdown("""
 <style>
-    /* Paper Style for Calculation Sheet */
     .calc-sheet {
         background-color: #ffffff;
         padding: 30px;
@@ -78,7 +77,6 @@ with st.sidebar:
     st.subheader("Geometry")
     span = st.slider("Span Length (m)", 1.0, 25.0, 6.0, 0.5)
 
-    # Props
     p = df[df['Section'] == sec_name].iloc[0]
     h, tw, tf, Ix, Zx = p['h'], p['tw'], p['tf'], p['Ix'], p['Zx']
 
@@ -120,7 +118,7 @@ c4.metric("Governing Mode", gov)
 col_graph, col_insight = st.columns([2, 1])
 
 with col_graph:
-    st.subheader("📈 Load Capacity Envelope (กราฟแสดงการรับแรง)")
+    st.subheader("📈 Load Capacity Envelope")
     L_vals = np.linspace(1, 25, 100)
     L_cm_vals = L_vals * 100
     
@@ -156,7 +154,7 @@ with col_insight:
     st.progress(min(p_defl, 1.0))
     
     if ratio_L_d > 20:
-        st.warning("⚠️ **Slender:** คานยาวเกินไป Deflection คุม")
+        st.warning("⚠️ **Slender:** คานยาวเกินไป")
     elif ratio_L_d < 15:
         st.info("ℹ️ **Deep:** คานสั้น Shear รับได้สบาย")
     else:
@@ -170,7 +168,7 @@ tab1, tab2 = st.tabs(["📄 1. Detailed Calculation Sheet", "🔩 2. Connection 
 
 with tab1:
     st.markdown('<div class="calc-sheet">', unsafe_allow_html=True)
-    st.markdown('<div class="topic-header">CALCULATION REPORT: BEAM CAPACITY</div>', unsafe_allow_html=True)
+    st.markdown('<div class="topic-header">CALCULATION REPORT</div>', unsafe_allow_html=True)
     
     col_l, col_r = st.columns(2)
     with col_l:
@@ -185,29 +183,34 @@ with tab1:
     
     st.markdown("---")
     
-    st.markdown('<div class="sub-header">2. Shear Capacity (แรงเฉือน)</div>', unsafe_allow_html=True)
-    st.latex(rf"A_w = {h/10} \times {tw/10} = {Aw:.2f} \ cm^2")
-    st.latex(rf"V_{{shear}} = 0.6 \times {Fy} \times {Aw:.2f} = \mathbf{{{V_shear:,.0f}}} \ kg")
+    # CASE 1
+    st.markdown('<div class="sub-header">2. Shear Capacity</div>', unsafe_allow_html=True)
+    st.latex(rf"V_{{shear}} = 0.6 \times {Fy} \times ({h/10} \times {tw/10}) = \mathbf{{{V_shear:,.0f}}} \ kg")
     
-    st.markdown('<div class="sub-header">3. Moment Capacity (โมเมนต์ดัด)</div>', unsafe_allow_html=True)
+    # CASE 2
+    st.markdown('<div class="sub-header">3. Moment Capacity</div>', unsafe_allow_html=True)
     st.latex(rf"M_{{all}} = 0.6 \times {Fy} \times {Zx} = {M_allow:,.0f} \ kg \cdot cm")
-    st.latex(rf"V_{{moment}} = \frac{{4 \times {M_allow:,.0f}}}{{{L_cm}}} = \mathbf{{{V_moment:,.0f}}} \ kg")
+    st.latex(rf"V_{{moment}} = \frac{{4 \times M}}{{L}} = \mathbf{{{V_moment:,.0f}}} \ kg")
     st.markdown("
 
-[Image of bending moment diagram simply supported beam]
+[Image of simply supported beam bending moment diagram]
 ")
     
-    st.markdown('<div class="sub-header">4. Deflection Limit (ระยะแอ่นตัว)</div>', unsafe_allow_html=True)
-    st.latex(rf"V_{{defl}} = \frac{{384 \times {E_val:.0f} \times {Ix}}}{{2400 \times {L_cm}^2}} = \mathbf{{{V_defl:,.0f}}} \ kg")
+    # CASE 3
+    st.markdown('<div class="sub-header">4. Deflection Limit</div>', unsafe_allow_html=True)
+    st.latex(rf"V_{{defl}} = \frac{{384 E I}}{{2400 L^2}} = \mathbf{{{V_defl:,.0f}}} \ kg")
     
-    st.markdown('<div class="highlight-box">', unsafe_allow_html=True)
-    st.markdown(f"**CONCLUSION:** Limited by **{gov}**")
-    st.markdown(f"**Max Reaction = {V_design:,.0f} kg**")
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class="highlight-box">
+    <b>CONCLUSION:</b> The Beam is limited by <b>{gov}</b><br>
+    <b>Max Allowable Reaction = {V_design:,.0f} kg</b>
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
-# 6. CONNECTION DESIGN
+# 6. CONNECTION DESIGN (The source of previous errors)
 # ==========================================
 with tab2:
     st.markdown('<div class="calc-sheet">', unsafe_allow_html=True)
@@ -236,14 +239,18 @@ with tab2:
         status = "PASSED" if min_conn >= V_design else "FAILED"
         color = "green" if status == "PASSED" else "red"
         
-        st.markdown(f"### Status: <span style='color:{color}'>{status}</span>", unsafe_allow_html=True)
-        
-        st.write(f"**Capacity: {min_conn:,.0f} kg** (Ratio: {V_design/min_conn:.2f})")
+        # --- FIXED SECTION: Using explicit variables and triple quotes ---
+        result_html = f"""
+        <h3>Status: <span style='color:{color}'>{status}</span></h3>
+        <p><b>Capacity: {min_conn:,.0f} kg</b> (Ratio: {V_design/min_conn:.2f})</p>
+        """
+        st.markdown(result_html, unsafe_allow_html=True)
+        # -----------------------------------------------------------------
         
         st.markdown("**Calculation Breakdown:**")
         st.latex(rf"1. \ Bolt \ Shear: {rows} \times {Ab:.2f} \times {Fv} = {Rn_bolt:,.0f} \ kg")
         st.markdown("")
-        st.latex(rf"2. \ Bearing: min(Web, Plt) = {Rn_bear:,.0f} \ kg")
-        st.latex(rf"3. \ Weld: 2 \times {L_w:.1f} \times 0.707 \times {weld/10} \times 1470 = {Rn_weld:,.0f} \ kg")
+        st.latex(rf"2. \ Bearing: {Rn_bear:,.0f} \ kg")
+        st.latex(rf"3. \ Weld: {Rn_weld:,.0f} \ kg")
         
     st.markdown('</div>', unsafe_allow_html=True)
