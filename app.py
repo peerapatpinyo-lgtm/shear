@@ -9,7 +9,6 @@ import math
 # ==========================================
 st.set_page_config(page_title="ProStructure: Ultimate Report", layout="wide", page_icon="🏗️")
 
-# ใช้ Triple Quotes เสมอสำหรับ CSS
 st.markdown("""
 <style>
     .calc-sheet {
@@ -28,12 +27,6 @@ st.markdown("""
         font-weight: bold;
         font-size: 20px;
     }
-    .sub-header {
-        color: #2980b9;
-        font-weight: bold;
-        margin-top: 15px;
-        font-size: 16px;
-    }
     .result-box {
         padding: 15px;
         border-radius: 5px;
@@ -47,7 +40,6 @@ st.markdown("""
 # 2. DATA & INPUTS
 # ==========================================
 def get_sys_data():
-    # Database: Section, h, b, tw, tf, Ix, Zx
     data = [
         ("H 100x50x5x7", 100, 50, 5, 7, 378, 76.5),
         ("H 150x75x5x7", 150, 75, 5, 7, 666, 88.8),
@@ -78,12 +70,11 @@ with st.sidebar:
     st.subheader("Geometry")
     span = st.slider("Span Length (m)", 1.0, 25.0, 6.0, 0.5)
 
-    # Get Properties
     p = df[df['Section'] == sec_name].iloc[0]
     h, tw, tf, Ix, Zx = p['h'], p['tw'], p['tf'], p['Ix'], p['Zx']
 
 # ==========================================
-# 3. CALCULATION ENGINE
+# 3. CALCULATION
 # ==========================================
 L_cm = span * 100
 d_m = h / 1000
@@ -100,22 +91,22 @@ V_moment = (4 * M_allow) / L_cm
 # 3. Deflection
 V_defl = (384 * E_val * Ix) / (2400 * (L_cm**2))
 
-# Governing
+# Design Control
 V_design = min(V_shear, V_moment, V_defl)
-if V_design == V_shear: gov = "Shear (แรงเฉือน)"
-elif V_design == V_moment: gov = "Moment (โมเมนต์)"
-else: gov = "Deflection (ระยะแอ่น)"
+if V_design == V_shear: gov = "Shear"
+elif V_design == V_moment: gov = "Moment"
+else: gov = "Deflection"
 
 # ==========================================
-# 4. MAIN DASHBOARD
+# 4. DASHBOARD
 # ==========================================
 st.title(f"🏗️ Design Analysis: {sec_name}")
 
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Max Reaction (V)", f"{V_design:,.0f} kg")
-c2.metric("Span Length", f"{span} m")
-c3.metric("L/d Ratio", f"{ratio_L_d:.1f}", delta="Optimal" if 15<=ratio_L_d<=20 else "Check")
-c4.metric("Governing Mode", gov)
+c1.metric("Max Reaction", f"{V_design:,.0f} kg")
+c2.metric("Span", f"{span} m")
+c3.metric("L/d Ratio", f"{ratio_L_d:.1f}")
+c4.metric("Governing", gov)
 
 col_graph, col_insight = st.columns([2, 1])
 
@@ -130,74 +121,64 @@ with col_graph:
     v_min = np.minimum(np.minimum(v1, v2), v3)
     
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=L_vals, y=v1, name='Shear Limit', line=dict(dash='dot', color='green')))
-    fig.add_trace(go.Scatter(x=L_vals, y=v2, name='Moment Limit', line=dict(dash='dot', color='orange')))
-    fig.add_trace(go.Scatter(x=L_vals, y=v3, name='Deflection Limit', line=dict(dash='dot', color='red')))
-    fig.add_trace(go.Scatter(x=L_vals, y=v_min, name='Design Capacity', fill='tozeroy', line=dict(color='#154360', width=3)))
-    fig.add_trace(go.Scatter(x=[span], y=[V_design], mode='markers', marker=dict(size=12, color='red'), name='Selection'))
+    fig.add_trace(go.Scatter(x=L_vals, y=v1, name='Shear', line=dict(dash='dot', color='green')))
+    fig.add_trace(go.Scatter(x=L_vals, y=v2, name='Moment', line=dict(dash='dot', color='orange')))
+    fig.add_trace(go.Scatter(x=L_vals, y=v3, name='Deflection', line=dict(dash='dot', color='red')))
+    fig.add_trace(go.Scatter(x=L_vals, y=v_min, name='Capacity', fill='tozeroy', line=dict(color='#154360', width=3)))
+    fig.add_trace(go.Scatter(x=[span], y=[V_design], mode='markers', marker=dict(size=12, color='red'), name='Selected'))
     
     fig.update_layout(height=400, margin=dict(l=0,r=0,t=0,b=0))
     st.plotly_chart(fig, use_container_width=True)
 
 with col_insight:
     st.subheader("📊 Utilization")
-    p_shear = V_design / V_shear
-    p_moment = V_design / V_moment
-    p_defl = V_design / V_defl
-    
-    st.write(f"**Shear:** {(p_shear*100):.1f}%")
-    st.progress(min(p_shear, 1.0))
-    st.write(f"**Moment:** {(p_moment*100):.1f}%")
-    st.progress(min(p_moment, 1.0))
-    st.write(f"**Deflection:** {(p_defl*100):.1f}%")
-    st.progress(min(p_defl, 1.0))
+    st.write(f"Shear: {(V_design/V_shear*100):.1f}%")
+    st.progress(min(V_design/V_shear, 1.0))
+    st.write(f"Moment: {(V_design/V_moment*100):.1f}%")
+    st.progress(min(V_design/V_moment, 1.0))
 
 # ==========================================
 # 5. DETAILED REPORT
 # ==========================================
 st.markdown("---")
-tab1, tab2 = st.tabs(["📄 Detailed Calculation", "🔩 Connection Design"])
+tab1, tab2 = st.tabs(["📄 Calculation", "🔩 Connection"])
 
 with tab1:
-    # เริ่มส่วน Calculation Sheet
     st.markdown("""<div class="calc-sheet">""", unsafe_allow_html=True)
     st.markdown("""<div class="topic-header">CALCULATION REPORT</div>""", unsafe_allow_html=True)
     
     col_l, col_r = st.columns(2)
     with col_l:
-        st.markdown("**1. Properties**")
+        st.markdown("**Properties:**")
         st.write(f"Section: {sec_name}")
         st.latex(rf"d={h}, t_w={tw}, I_x={Ix:,}, Z_x={Zx:,}")
-        # ใช้ st.caption แทน st.write เพื่อลดความเสี่ยง Syntax Error
-        st.caption("Ref: Standard Section Table") 
-        st.write("")
+        st.caption("Standard Section Properties")
 
     with col_r:
-         st.markdown(f"**Governing Load: {V_design:,.0f} kg**")
-         st.caption(f"Controlled by: {gov}")
+         st.markdown(f"**Limit State: {gov}**")
+         st.markdown(f"**Capacity: {V_design:,.0f} kg**")
     
     st.markdown("---")
     
-    st.markdown("""<div class="sub-header">2. Shear Capacity</div>""", unsafe_allow_html=True)
-    st.latex(rf"V_{{shear}} = 0.6 F_y A_w = \mathbf{{{V_shear:,.0f}}} \ kg")
+    st.markdown("**1. Shear Capacity:**")
+    st.latex(rf"V_{{n}} = 0.6 F_y A_w = \mathbf{{{V_shear:,.0f}}} \ kg")
     
-    st.markdown("""<div class="sub-header">3. Moment Capacity</div>""", unsafe_allow_html=True)
-    st.latex(rf"M_{{all}} = 0.6 F_y Z_x = {M_allow:,.0f} \ kg \cdot cm")
+    st.markdown("**2. Moment Capacity:**")
+    st.latex(rf"M_{{n}} = 0.6 F_y Z_x = {M_allow:,.0f} \ kg \cdot cm")
     st.latex(rf"V_{{moment}} = \frac{{4 M}}{{L}} = \mathbf{{{V_moment:,.0f}}} \ kg")
-    st.write("
-
-[Image of simply supported beam bending moment diagram]
-")
+    st.write("*(Ref: Simply Supported Beam Diagram)*")
     
-    st.markdown("""<div class="sub-header">4. Deflection Limit</div>""", unsafe_allow_html=True)
+    st.markdown("**3. Deflection Limit:**")
     st.latex(rf"V_{{defl}} = \frac{{384 E I}}{{2400 L^2}} = \mathbf{{{V_defl:,.0f}}} \ kg")
     
     st.markdown("""</div>""", unsafe_allow_html=True)
 
+# ==========================================
+# 6. CONNECTION DESIGN (FIXED)
+# ==========================================
 with tab2:
-    # เริ่มส่วน Connection Sheet
     st.markdown("""<div class="calc-sheet">""", unsafe_allow_html=True)
-    st.markdown("""<div class="topic-header">CONNECTION CHECK (Shear Tab)</div>""", unsafe_allow_html=True)
+    st.markdown("""<div class="topic-header">CONNECTION CHECK</div>""", unsafe_allow_html=True)
     
     c_in, c_cal = st.columns([1, 2])
     
@@ -221,24 +202,22 @@ with tab2:
         min_conn = min(Rn_bolt, Rn_bear, Rn_weld)
         passed = min_conn >= V_design
         
-        # Safe HTML construction using Triple Quotes
-        status = "PASSED" if passed else "FAILED"
-        bg = "#d4edda" if passed else "#f8d7da"
-        txt = "#155724" if passed else "#721c24"
+        # --- SAFE STRING CONSTRUCTION ---
+        status_text = "PASSED" if passed else "FAILED"
+        color = "#155724" if passed else "#721c24"
+        bg_color = "#d4edda" if passed else "#f8d7da"
         
-        result_html = f"""
-        <div class="result-box" style="background-color: {bg}; color: {txt};">
-            <h3>Status: {status}</h3>
+        st.markdown(f"""
+        <div class="result-box" style="background-color: {bg_color}; color: {color};">
+            <h3 style="margin:0;">Status: {status_text}</h3>
             <p>Capacity: <b>{min_conn:,.0f} kg</b> (Ratio: {V_design/min_conn:.2f})</p>
         </div>
-        """
-        st.markdown(result_html, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+        # --------------------------------
         
         st.markdown("**Checklist:**")
         st.latex(rf"1. \ Bolt \ Shear: {Rn_bolt:,.0f} \ kg")
-        
-        # จุดนี้เสี่ยง Error บ่อย ใช้ st.caption หรือ st.write สั้นๆ
-        st.write("")
+        st.caption("*(Check: Single Shear Plane)*") 
         
         st.latex(rf"2. \ Bearing: {Rn_bear:,.0f} \ kg")
         st.latex(rf"3. \ Weld: {Rn_weld:,.0f} \ kg")
