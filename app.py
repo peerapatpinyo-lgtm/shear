@@ -285,6 +285,3 @@ with tab3:
        
     **สรุป:** เราจึงไม่จำเป็นต้องออกแบบ Connection ให้รับแรง 100% Web Limit เสมอไป หากคานมีความยาวอยู่ในช่วง Typical (โซนสีเขียว)
     """)
-    
-
-[Image of simply supported beam shear and moment diagram]
