@@ -38,7 +38,7 @@ st.markdown("""
         font-size: 12px; font-weight: bold; margin-top: 5px;
     }
     
-    /* Math/Calc Box Style */
+    /* Math/Calc Box Style (ใช้ร่วมกันทั้ง App) */
     .math-card {
         background-color: #fdfefe;
         border: 1px solid #e0e6e9;
@@ -46,6 +46,7 @@ st.markdown("""
         padding: 15px;
         margin-bottom: 10px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+        height: 100%; /* ให้ความสูงเท่ากัน */
     }
     .math-header {
         font-weight: bold;
@@ -53,11 +54,6 @@ st.markdown("""
         margin-bottom: 8px;
         border-bottom: 2px solid #f2f4f4;
         padding-bottom: 5px;
-    }
-    .math-desc {
-        font-size: 0.9em;
-        color: #666;
-        margin-bottom: 5px;
     }
 
     /* Report & Connection Styles */
@@ -85,7 +81,7 @@ steel_db = {
 
 with st.sidebar:
     st.title("Beam Insight V12")
-    st.caption("Modular Edition")
+    st.caption("Modular Edition (Complete)")
     st.divider()
     
     st.header("1. Design Method")
@@ -179,19 +175,15 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 2. Logic Source (Detailed Math) ---
-    with st.expander(f"🕵️‍♂️ ดูที่มาการคำนวณแบบละเอียด (Show Calculations)", expanded=False):
-        st.caption("สมการหาค่าน้ำหนักบรรทุกปลอดภัย (w) ในหน่วย kg/m จากเงื่อนไขต่างๆ:")
-        
+    # --- 2. Logic Source (Math Card Style) ---
+    with st.expander(f"🕵️‍♂️ ดูที่มาการคำนวณแบบละเอียด (Calculations)", expanded=False):
+        st.caption("สมการหาค่าน้ำหนักบรรทุกปลอดภัย (w) ในหน่วย kg/m")
         c_cal1, c_cal2, c_cal3 = st.columns(3)
-        
-        # Prepare Values for LaTeX
         L_cm_disp = user_span * 100
         
         with c_cal1:
             st.markdown(f'<div class="math-card"><div class="math-header">1. Shear Control ({label_cap_v})</div>', unsafe_allow_html=True)
             st.markdown(f"Cap = {V_cap:,.0f} kg")
-            # Math Latex
             st.latex(r''' w = \frac{2 \times V_{cap}}{L} \times 100 ''')
             st.latex(fr''' w = \frac{{2 \times {V_cap:,.0f}}}{{{L_cm_disp:.0f}}} \times 100 ''')
             st.markdown(f"<div style='text-align:center; font-weight:bold; color:#e74c3c;'>= {w_shear:,.0f} kg/m</div>", unsafe_allow_html=True)
@@ -200,7 +192,6 @@ with tab1:
         with c_cal2:
             st.markdown(f'<div class="math-card"><div class="math-header">2. Moment Control ({label_cap_m})</div>', unsafe_allow_html=True)
             st.markdown(f"Cap = {M_cap:,.0f} kg.cm")
-            # Math Latex
             st.latex(r''' w = \frac{8 \times M_{cap}}{L^2} \times 100 ''')
             st.latex(fr''' w = \frac{{8 \times {M_cap:,.0f}}}{{{L_cm_disp:.0f}^2}} \times 100 ''')
             st.markdown(f"<div style='text-align:center; font-weight:bold; color:#f39c12;'>= {w_moment:,.0f} kg/m</div>", unsafe_allow_html=True)
@@ -209,14 +200,11 @@ with tab1:
         with c_cal3:
             st.markdown(f'<div class="math-card"><div class="math-header">3. Deflection (L/{defl_lim_val})</div>', unsafe_allow_html=True)
             st.markdown(f"Allow = {delta_allow:.2f} cm (Ix={Ix})")
-            # Math Latex
             st.latex(r''' w = \frac{384 E I \Delta}{5 L^4} \times 100 ''')
             st.latex(fr''' w = \frac{{384 \cdot {E_mod:.2e} \cdot {Ix} \cdot {delta_allow:.1f}}}{{5 \cdot {L_cm_disp:.0f}^4}} \times 100 ''')
             st.markdown(f"<div style='text-align:center; font-weight:bold; color:#27ae60;'>= {w_defl:,.0f} kg/m</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
             
-        st.info(f"💡 หมายเหตุ: การคูณ 100 ในสูตร คือการแปลงหน่วยจาก kg/cm ให้เป็น kg/m เพื่อให้ง่ายต่อการใช้งาน (L ใช้หน่วย cm ในการคำนวณ)")
-
     st.markdown("---")
 
     # --- 3. Metrics (Complete Data) ---
