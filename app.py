@@ -7,7 +7,7 @@ import math
 # ==========================================
 # 1. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V6.2", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V6.3", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
@@ -37,8 +37,8 @@ steel_db = {
 }
 
 with st.sidebar:
-    st.title("Beam Insight V6.2")
-    st.caption("Updated Report Format")
+    st.title("Beam Insight V6.3")
+    st.caption("Perfect LaTeX Report")
     st.divider()
     
     st.header("1. Beam Settings")
@@ -151,7 +151,7 @@ with tab1:
 
     c1, c2, c3 = st.columns(3)
     shear_pct = (V_actual / V_cap) * 100
-    moment_pct = ((M_actual*100) / M_cap) * 100 # Adjust unit
+    moment_pct = ((M_actual*100) / M_cap) * 100 
     defl_pct = (delta_actual / delta_allow) * 100
     
     with c1:
@@ -242,12 +242,13 @@ with tab3:
     })
     st.dataframe(df_res.style.format("{:.1f}", subset=["Span (m)", "Shear Usage (%)"]).format("{:,.0f}", subset=["Max Load (kg/m)", "V_actual (kg)"]), use_container_width=True, height=500)
 
-# --- TAB 4: CALCULATION REPORT (Updated LaTeX) ---
+# --- TAB 4: CALCULATION REPORT (LaTeX Exact Match) ---
 with tab4:
     st.title("📝 Detailed Calculation Report")
     
     st.markdown("#### 1. Section & Material Properties")
-    # ส่วนนี้แก้ไขให้ตรงตามที่คุณต้องการ
+    
+    # ใช้วงเล็บปีกกา 2 ชั้น {{ }} ใน f-string เพื่อแสดงผล LaTeX { } จริงๆ
     st.markdown(f"""
     <div class="report-box">
         <b>Section:</b> {sec_name} <br>
@@ -258,8 +259,10 @@ with tab4:
     """, unsafe_allow_html=True)
     
     st.markdown("#### 2. Capacity Limits (Allowable Stress Design)")
+    
     c_rep1, c_rep2 = st.columns(2)
     with c_rep1:
+        # แสดงผล Vallow ตามรูปแบบที่ต้องการ
         st.latex(r"V_{allow} = 0.4 F_y A_w")
         st.latex(rf"= 0.4 \times {fy} \times {Aw:.2f} = \mathbf{{{V_cap:,.0f}}} \text{{ kg}}")
     with c_rep2:
