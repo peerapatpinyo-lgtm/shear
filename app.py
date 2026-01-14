@@ -1,49 +1,41 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import math
 
 # ==========================================
-# 1. SETUP & STYLE (ตกแต่งหน้าตา)
+# 1. SETUP & STYLE (แต่งสวย)
 # ==========================================
-st.set_page_config(page_title="Beam Insight V12.1 (Fixed)", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V13", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
-    /* กล่องสรุปผลหลัก */
-    .summary-box {
-        background-color: #e8f8f5;
+    .metric-card {
+        background-color: #f8f9f9;
+        border: 1px solid #e5e8e8;
         padding: 20px;
         border-radius: 10px;
-        border-left: 6px solid #1abc9c;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    /* กล่องแสดงที่มาการคำนวณ (Audit) */
-    .audit-box {
-        background-color: #fdfefe;
-        border: 1px solid #d0d3d4;
-        border-radius: 8px;
-        padding: 15px;
-        margin-top: 10px;
-        font-family: 'Sarabun', sans-serif;
-    }
-    .audit-step {
-        margin-bottom: 8px;
-        padding-bottom: 8px;
-        border-bottom: 1px dashed #eee;
-        font-size: 15px;
-    }
-    .big-number {
-        font-size: 24px; 
-        font-weight: bold; 
+    .big-percent {
+        font-size: 32px;
+        font-weight: bold;
         color: #2c3e50;
+    }
+    .math-row {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 5px solid #3498db;
+        margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. ฐานข้อมูล (DATABASE)
+# 2. DATA & INPUT
 # ==========================================
 steel_db = {
     "H 150x75x5x7":     {"h": 150, "b": 75,  "tw": 5,   "tf": 7,   "Ix": 666,    "Zx": 88.8,  "A": 17.85},
@@ -56,326 +48,155 @@ steel_db = {
 }
 
 material_db = {
-    "SS400 (เหล็กทั่วไป)":   {"Fy": 2400, "Fu": 4100},
-    "SM520 (เหล็กกำลังสูง)": {"Fy": 3600, "Fu": 5300}
+    "SS400":   {"Fy": 2400, "Fu": 4100},
+    "SM520":   {"Fy": 3600, "Fu": 5300}
 }
 
-# ==========================================
-# 3. INPUT (Sidebar)
-# ==========================================
 with st.sidebar:
-    st.title("🏗️ Beam Insight V12.1")
-    st.caption("Fix: หน่วย Moment Corrected")
-    st.divider()
-    
-    st.header("1. ตั้งค่าคาน (Beam)")
+    st.header("⚙️ ตั้งค่าโครงสร้าง")
     sec_name = st.selectbox("ขนาดหน้าตัด", list(steel_db.keys()), index=4)
     mat_name = st.selectbox("เกรดเหล็ก", list(material_db.keys()))
-    user_span = st.number_input("ความยาวคาน (เมตร)", min_value=2.0, max_value=15.0, value=6.0, step=0.5)
-    
-    st.header("2. ตั้งค่าน็อต (Bolt)")
+    user_span = st.number_input("ความยาวคาน (m)", 2.0, 15.0, 6.0, 0.5)
     bolt_size = st.selectbox("ขนาดน็อต", ["M16", "M20", "M22", "M24"], index=1)
 
 # ==========================================
-# 4. CALCULATION ENGINE
+# 3. CALCULATION
 # ==========================================
-# 4.1 ดึงค่าตัวแปร
 p = steel_db[sec_name]
 mat = material_db[mat_name]
+h, tw = p['h']/10, p['tw']/10
+Aw = h * tw
+Zx, Ix = p['Zx'], p['Ix']
+Fy, Fu = mat['Fy'], mat['Fu']
+E = 2.04e6
 
-# ค่าทางเรขาคณิต (Geometry)
-h = p['h'] / 10  # cm
-tw = p['tw'] / 10 # cm
-Aw = h * tw      # cm2 (คิดพื้นที่รับแรงเฉือนแบบง่าย h*tw)
-Zx = p['Zx']     # cm3
-Ix = p['Ix']     # cm4
+# Capacity
+V_cap = 0.4 * Fy * Aw
+M_cap = 0.6 * Fy * Zx
+Defl_allow = (user_span * 100) / 360
 
-# ค่าวัสดุ (Material)
-Fy = mat['Fy']
-Fu = mat['Fu']
-E = 2.04e6       # ksc
-
-# 4.2 คำนวณขีดจำกัด (Capacity) ของหน้าตัดเหล็ก
-V_capacity = 0.4 * Fy * Aw      # kg
-M_capacity = 0.6 * Fy * Zx      # kg.cm (ย้ำว่า cm)
-Defl_limit_cm = (user_span * 100) / 360  # L/360
-
-# 4.3 ฟังก์ชันคำนวณ Safe Load (ใช้สำหรับวาดกราฟด้วย)
-def calculate_safe_load(span_m):
-    L_cm = span_m * 100
-    
-    # กรณี 1: Shear Control (w = 2V/L) -> หน่วย kg/cm
-    w_shear_cm = (2 * V_capacity) / L_cm
-    
-    # กรณี 2: Moment Control (w = 8M/L^2) -> หน่วย kg/cm
-    w_moment_cm = (8 * M_capacity) / (L_cm**2)
-    
-    # กรณี 3: Deflection Control (w = delta * 384EI / 5L^4) -> หน่วย kg/cm
-    delta_lim = L_cm / 360
-    w_defl_cm = (delta_lim * 384 * E * Ix) / (5 * (L_cm**4))
-    
-    # หาค่าน้อยสุด
-    w_safe_cm = min(w_shear_cm, w_moment_cm, w_defl_cm)
-    
-    # ระบุสาเหตุ
-    if w_safe_cm == w_shear_cm: cause = "Shear"
-    elif w_safe_cm == w_moment_cm: cause = "Moment"
-    else: cause = "Deflection"
-    
-    return {
-        "safe_load_kgm": w_safe_cm * 100, # แปลงเป็น kg/m
-        "w_shear": w_shear_cm * 100,
-        "w_moment": w_moment_cm * 100,
-        "w_defl": w_defl_cm * 100,
-        "cause": cause
-    }
-
-# 4.4 คำนวณที่จุดปัจจุบัน (Current State)
-current_res = calculate_safe_load(user_span)
-safe_load = current_res["safe_load_kgm"]
-cause = current_res["cause"]
-
-# คำนวณแรงภายในที่เกิดขึ้นจริง (Actual Forces) จาก Safe Load
-w_use = safe_load / 100 # kg/cm
+# Safe Load Logic
 L_cm = user_span * 100
+w_shear = (2 * V_cap) / L_cm * 100
+w_moment = (8 * M_cap) / (L_cm**2) * 100
+w_defl = (Defl_allow * 384 * E * Ix) / (5 * (L_cm**4)) * 100
+safe_load = min(w_shear, w_moment, w_defl)
 
-V_actual = w_use * L_cm / 2         # kg
-M_actual = w_use * (L_cm**2) / 8    # kg.cm (ระวังหน่วยนี้ให้ดี)
-Delta_actual = (5 * w_use * (L_cm**4)) / (384 * E * Ix) # cm
+# Actual Force (ใช้ Safe Load คำนวณกลับ)
+w_act = safe_load / 100 # kg/cm
+V_act = w_act * L_cm / 2
+M_act = w_act * (L_cm**2) / 8 # kg.cm
+Defl_act = (5 * w_act * (L_cm**4)) / (384 * E * Ix)
+
+# Percentages (เอาไว้โชว์ 75% ที่คุณต้องการ)
+pct_v = (V_act / V_cap) * 100
+pct_m = (M_act / M_cap) * 100
+pct_d = (Defl_act / Defl_allow) * 100
 
 # ==========================================
-# 5. DISPLAY (แสดงผล)
+# 4. MAIN DISPLAY
 # ==========================================
-st.title(f"📊 ผลวิเคราะห์: {sec_name} @ {user_span} เมตร")
+st.title(f"📊 ผลวิเคราะห์: {sec_name} @ {user_span}m")
 
-# --- 5.1 สรุปผลหลัก (Summary Card) ---
-st.markdown(f"""
-<div class="summary-box">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div>
-            <h3 style="margin:0; color:#145a32;">น้ำหนักบรรทุกปลอดภัย (Safe Load)</h3>
-            <div style="font-size:40px; font-weight:800; color:#1e8449;">
-                {safe_load:,.0f} <span style="font-size:20px; color:#555;">kg/m</span>
-            </div>
-            <div style="color:#7f8c8d;">(รวมน้ำหนักตัวเองแล้ว)</div>
-        </div>
-        <div style="text-align:right;">
-            <div style="font-size:16px; color:#555;">จุดวิกฤตที่ควบคุมการออกแบบ</div>
-            <div style="font-size:24px; font-weight:bold; color:#e74c3c; border: 2px solid #e74c3c; padding: 5px 15px; border-radius:5px; display:inline-block; margin-top:5px;">
-                {cause}
-            </div>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
-
-# --- 5.2 กราฟเส้น (Capacity Chart) ---
-x_range = np.linspace(2, 15, 100) 
-y_shear = []
-y_moment = []
-y_defl = []
-y_safe = []
-
-for x in x_range:
-    res = calculate_safe_load(x)
-    y_shear.append(res["w_shear"])
-    y_moment.append(res["w_moment"])
-    y_defl.append(res["w_defl"])
-    y_safe.append(res["safe_load_kgm"])
-
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=x_range, y=y_shear, name="Shear Limit", line=dict(color='#e74c3c', width=2, dash='dot')))
-fig.add_trace(go.Scatter(x=x_range, y=y_moment, name="Moment Limit", line=dict(color='#f39c12', width=2, dash='dot')))
-fig.add_trace(go.Scatter(x=x_range, y=y_defl, name="Deflection Limit", line=dict(color='#27ae60', width=2, dash='dot')))
-fig.add_trace(go.Scatter(x=x_range, y=y_safe, name="Safe Zone", fill='tozeroy', line=dict(color='#2980b9', width=4)))
-fig.add_trace(go.Scatter(x=[user_span], y=[safe_load], mode='markers+text', name='จุดปัจจุบัน', 
-                         marker=dict(size=15, color='black', symbol='x'),
-                         text=[f"{safe_load:,.0f}"], textposition="top right"))
-
-fig.update_layout(
-    title="กราฟความสามารถในการรับน้ำหนัก vs ความยาวคาน",
-    xaxis_title="ความยาวคาน (เมตร)",
-    yaxis_title="น้ำหนักบรรทุกปลอดภัย (kg/m)",
-    height=450,
-    hovermode="x unified",
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-)
-st.plotly_chart(fig, use_container_width=True)
-
-# --- 5.3 รายละเอียดเจาะลึก 3 ด้าน (Detail Columns) ---
+# --- 4.1 The "Percentage Cards" (เอาแบบเก่ากลับมาตามขอ) ---
 c1, c2, c3 = st.columns(3)
 
-# 1. แรงเฉือน
-with c1:
-    st.info("✂️ 1. แรงเฉือน (Shear)")
-    pct_v = V_actual / V_capacity
-    st.write(f"**เกิดจริง:** {V_actual:,.0f} kg")
-    st.write(f"**รับได้:** {V_capacity:,.0f} kg")
-    st.progress(min(pct_v, 1.0)) # ใส่ min กันเหนียว
-    st.caption(f"ใช้งาน {pct_v*100:.1f}%")
+def show_card(col, title, act, limit, unit, pct, color):
+    with col:
+        st.markdown(f"""
+        <div class="metric-card" style="border-top: 5px solid {color};">
+            <h4 style="margin:0;">{title}</h4>
+            <div class="big-percent" style="color:{color};">{pct:.1f}%</div>
+            <p style="font-size:14px; color:#555;">
+                ใช้จริง: <b>{act:,.0f}</b> {unit}<br>
+                รับได้: {limit:,.0f} {unit}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        st.progress(min(pct/100, 1.0))
 
-# 2. แรงดัด (แก้บั๊กหน่วยตรงนี้)
-with c2:
-    st.warning("🪵 2. แรงดัด (Moment)")
-    # M_actual หน่วย kg.cm, M_capacity หน่วย kg.cm -> หารกันได้เลย
-    pct_m = M_actual / M_capacity 
-    
-    # เวลาโชว์ค่า แปลงเป็น kg.m ให้อ่านง่าย (หาร 100)
-    st.write(f"**เกิดจริง:** {M_actual/100:,.0f} kg.m")
-    st.write(f"**รับได้:** {M_capacity/100:,.0f} kg.m")
-    st.progress(min(pct_m, 1.0)) # ใส่ min กันเหนียว
-    st.caption(f"ใช้งาน {pct_m*100:.1f}%")
+show_card(c1, "✂️ แรงเฉือน (Shear)", V_act, V_cap, "kg", pct_v, "#e74c3c")
+show_card(c2, "🪵 แรงดัด (Moment)", M_act/100, M_cap/100, "kg.m", pct_m, "#f39c12") # หาร 100 เป็น kg.m
+show_card(c3, "〰️ การแอ่น (Deflection)", Defl_act, Defl_allow, "cm", pct_d, "#27ae60")
 
-# 3. การแอ่น
-with c3:
-    st.success("〰️ 3. การแอ่น (Deflection)")
-    pct_d = Delta_actual / Defl_limit_cm
-    st.write(f"**เกิดจริง:** {Delta_actual:.2f} cm")
-    st.write(f"**ยอมให้:** {Defl_limit_cm:.2f} cm")
-    st.progress(min(pct_d, 1.0)) # ใส่ min กันเหนียว
-    st.caption(f"ใช้งาน {pct_d*100:.1f}%")
+st.markdown(f"""
+<div style="text-align:center; margin-top:20px; padding:15px; background:#eafaf1; border-radius:10px;">
+    <h3>🚀 น้ำหนักบรรทุกปลอดภัยสูงสุด: <span style="color:#27ae60; font-size:36px;">{safe_load:,.0f}</span> kg/m</h3>
+</div>
+""", unsafe_allow_html=True)
 
+# --- 4.2 Graph (กราฟเอาไว้เหมือนเดิม) ---
 st.markdown("---")
+x_range = np.linspace(2, 15, 100)
+y_s, y_m, y_d, y_safe = [], [], [], []
+for x in x_range:
+    Lx = x * 100
+    ws = (2 * V_cap) / Lx * 100
+    wm = (8 * M_cap) / (Lx**2) * 100
+    wd = ((Lx/360) * 384 * E * Ix) / (5 * (Lx**4)) * 100
+    y_s.append(ws); y_m.append(wm); y_d.append(wd); y_safe.append(min(ws,wm,wd))
+
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=x_range, y=y_s, name="Shear Limit", line=dict(dash='dot', color='#e74c3c')))
+fig.add_trace(go.Scatter(x=x_range, y=y_m, name="Moment Limit", line=dict(dash='dot', color='#f39c12')))
+fig.add_trace(go.Scatter(x=x_range, y=y_d, name="Deflection Limit", line=dict(dash='dot', color='#27ae60')))
+fig.add_trace(go.Scatter(x=x_range, y=y_safe, name="Safe Zone", fill='tozeroy', line=dict(color='#2980b9')))
+fig.add_trace(go.Scatter(x=[user_span], y=[safe_load], mode='markers', marker=dict(size=15, color='black'), name="Current"))
+fig.update_layout(height=400, margin=dict(t=30,b=0), title="Capacity Chart", xaxis_title="Length (m)", yaxis_title="Load (kg/m)")
+st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# 6. AUDIT REPORT (โชว์การแทนค่าแบบละเอียด)
-# ==========================================
-st.subheader("📝 รายการคำนวณแบบละเอียด (Calculation Audit)")
-
-with st.expander("คลิกเพื่อดูการแทนค่าทีละบรรทัด (Step-by-Step)", expanded=True):
-    
-    # 6.1 ข้อมูลเบื้องต้น
-    st.markdown("#### 1. ค่าคงที่ของหน้าตัดและวัสดุ")
-    st.markdown(f"""
-    <div class="audit-box">
-        <div class="audit-step"><b>หน้าตัด (Section):</b> {sec_name}</div>
-        <div class="audit-step">
-            $A_w$ (พื้นที่รับแรงเฉือน) = $h \\times t_w$ = {h} × {tw} = <b>{Aw:.2f}</b> cm²
-        </div>
-        <div class="audit-step">
-            $Z_x$ (โมดูลัสหน้าตัด) = <b>{Zx}</b> cm³ &nbsp;|&nbsp; $I_x$ (โมเมนต์ความเฉื่อย) = <b>{Ix}</b> cm⁴
-        </div>
-        <div class="audit-step">
-            <b>วัสดุ (Material):</b> {mat_name} ($F_y$ = {Fy} ksc)
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # 6.2 คำนวณความสามารถ (Capacity)
-    st.markdown("#### 2. คำนวณขีดจำกัดการรับแรง (Capacity)")
-    st.markdown(f"""
-    <div class="audit-box">
-        <div class="audit-step">
-            <b>ก. แรงเฉือนสูงสุดที่รับได้ ($V_{{max}}$):</b><br>
-            สูตร: $0.4 \\times F_y \\times A_w$<br>
-            แทนค่า: $0.4 \\times {Fy} \\times {Aw:.2f}$<br>
-            ผลลัพธ์: <b>{V_capacity:,.0f}</b> kg
-        </div>
-        <div class="audit-step">
-            <b>ข. โมเมนต์สูงสุดที่รับได้ ($M_{{max}}$):</b><br>
-            สูตร: $0.6 \\times F_y \\times Z_x$<br>
-            แทนค่า: $0.6 \\times {Fy} \\times {Zx}$<br>
-            ผลลัพธ์: <b>{M_capacity:,.0f}</b> kg.cm (หรือ {M_capacity/100:,.0f} kg.m)
-        </div>
-        <div class="audit-step">
-            <b>ค. การแอ่นตัวที่ยอมให้ ($\Delta_{{allow}}$):</b><br>
-            สูตร: $L / 360$<br>
-            แทนค่า: ${user_span*100} / 360$<br>
-            ผลลัพธ์: <b>{Defl_limit_cm:.2f}</b> cm
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # 6.3 คำนวณ Load
-    w_shear_load = res["w_shear"]
-    w_moment_load = res["w_moment"]
-    w_defl_load = res["w_defl"]
-    
-    # Audit Load
-    # หมายเหตุ: ใน loop กราฟข้างบนค่า res ถูกเขียนทับเป็นค่าสุดท้าย
-    # ต้องคำนวณใหม่สำหรับจุดปัจจุบันเพื่อโชว์ใน Audit
-    audit_res = calculate_safe_load(user_span)
-    
-    st.markdown("#### 3. คำนวณน้ำหนักปลอดภัย ($w$) จากขีดจำกัดทั้ง 3")
-    st.markdown(f"""
-    <div class="audit-box">
-        <div class="audit-step">
-            <b>กรณี A: คิดจากแรงเฉือน ($w = 2V/L$)</b><br>
-            แทนค่า: $(2 \\times {V_capacity:,.0f}) \div {user_span*100} $<br>
-            = {audit_res['w_shear']/100:,.1f} kg/cm $\\rightarrow$ <b>{audit_res['w_shear']:,.0f} kg/m</b>
-        </div>
-        <div class="audit-step">
-            <b>กรณี B: คิดจากโมเมนต์ ($w = 8M/L^2$)</b><br>
-            แทนค่า: $(8 \\times {M_capacity:,.0f}) \div ({user_span*100})^2 $<br>
-            = {audit_res['w_moment']/100:,.1f} kg/cm $\\rightarrow$ <b>{audit_res['w_moment']:,.0f} kg/m</b>
-        </div>
-        <div class="audit-step">
-            <b>กรณี C: คิดจากการแอ่นตัว ($w = \\Delta \\cdot 384EI / 5L^4$)</b><br>
-            แทนค่า: $({Defl_limit_cm:.2f} \\times 384 \\times {2.04e6:,.0f} \\times {Ix}) \div (5 \\times {user_span*100}^4)$<br>
-            = {audit_res['w_defl']/100:,.1f} kg/cm $\\rightarrow$ <b>{audit_res['w_defl']:,.0f} kg/m</b>
-        </div>
-        <div style="margin-top:10px; padding:10px; background:#eaf2f8; border-radius:5px;">
-            <b>สรุป:</b> เลือกค่าที่น้อยที่สุด = <b>{safe_load:,.0f} kg/m</b> (ควบคุมโดย {cause})
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# ==========================================
-# 7. CONNECTION CHECK (จุดต่อ)
+# 5. AUDIT (แก้การแสดงผลตัวเลขให้สวยตามสั่ง)
 # ==========================================
 st.markdown("---")
-st.subheader(f"🔩 ตรวจสอบจุดต่อ (Connection Audit) : น็อต {bolt_size}")
+st.subheader("📝 ตรวจสอบการคำนวณ (Calculation Audit)")
 
-# คำนวณจุดต่อ
-dia = int(bolt_size[1:]) / 10 # cm
-bolt_area = 3.14 if bolt_size == "M20" else (2.01 if bolt_size == "M16" else (3.80 if bolt_size == "M22" else 4.52))
+with st.expander("ดูวิธีการแทนค่า (Step-by-Step)", expanded=True):
+    
+    st.write("##### 1. คุณสมบัติหน้าตัด (Section Properties)")
+    # ใช้ LaTeX จัดเรียงสวยๆ
+    st.latex(r"""
+    \begin{aligned}
+    A_w &= h \times t_w \\
+        &= """ + f"{h:.1f} \\times {tw:.1f} \\\\" + r"""
+        &= \mathbf{""" + f"{Aw:.2f}" + r"""} \text{ cm}^2
+    \end{aligned}
+    """)
+    st.caption("👆 นี่ครับ แปลงเป็นสมการคณิตศาสตร์ให้ดูง่ายขึ้นแล้วครับ")
+    
+    st.write("##### 2. ขีดจำกัดการรับแรง (Allowable Limits)")
+    c_a, c_b = st.columns(2)
+    with c_a:
+        st.info("**Allowable Shear ($V_a$)**")
+        st.latex(r"""
+        \begin{aligned}
+        V_a &= 0.4 \times F_y \times A_w \\
+            &= 0.4 \times """ + f"{Fy} \\times {Aw:.2f} \\\\" + r"""
+            &= \mathbf{""" + f"{V_cap:,.0f}" + r"""} \text{ kg}
+        \end{aligned}
+        """)
+    with c_b:
+        st.info("**Allowable Moment ($M_a$)**")
+        st.latex(r"""
+        \begin{aligned}
+        M_a &= 0.6 \times F_y \times Z_x \\
+            &= 0.6 \times """ + f"{Fy} \\times {Zx} \\\\" + r"""
+            &= \mathbf{""" + f"{M_cap:,.0f}" + r"""} \text{ kg.cm}
+        \end{aligned}
+        """)
 
-# 1. แรงเฉือนน็อต
-fv_bolt = 1000 # ksc
-cap_shear = fv_bolt * bolt_area
-
-# 2. แรงแบกทาน
-cap_bearing = 1.2 * Fu * dia * tw
-
-# เลือกค่าน้อยสุด
-bolt_cap_final = min(cap_shear, cap_bearing)
-
-# จำนวนที่ต้องใช้
-req_bolt = math.ceil(V_actual / bolt_cap_final)
-if req_bolt < 2: req_bolt = 2
-
-col_bolt1, col_bolt2 = st.columns([1, 1])
-
-with col_bolt1:
-    st.markdown(f"""
-    <div class="audit-box">
-        <b>1. ความสามารถน็อต 1 ตัว (Per Bolt Capacity)</b>
-        <ul>
-            <li>
-                แรงเฉือน (Shear): $F_v \\times A_b$<br>
-                = {fv_bolt} × {bolt_area} = <b>{cap_shear:,.0f}</b> kg
-            </li>
-            <li>
-                แรงแบกทาน (Bearing): $1.2 F_u d t_w$<br>
-                = 1.2 × {Fu} × {dia} × {tw} = <b>{cap_bearing:,.0f}</b> kg
-            </li>
-            <li><b>ใช้ค่าต่ำสุด: {bolt_cap_final:,.0f} kg/ตัว</b></li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col_bolt2:
-    st.markdown(f"""
-    <div class="audit-box" style="background-color: #fef9e7; border-color: #f1c40f;">
-        <b>2. ตรวจสอบจำนวน (Quantity Check)</b>
-        <br><br>
-        แรงเฉือนที่เกิดขึ้นจริง ($V_{{act}}$) = <b>{V_actual:,.0f}</b> kg
-        <br>
-        ความสามารถน็อต ($R_{{bolt}}$) = <b>{bolt_cap_final:,.0f}</b> kg
-        <br><hr>
-        จำนวนที่ต้องใช้ = {V_actual:,.0f} ÷ {bolt_cap_final:,.0f} = {V_actual/bolt_cap_final:.2f}
-        <br>
-        <h1>👉 ต้องใช้ {req_bolt} ตัว</h1>
-    </div>
-    """, unsafe_allow_html=True)
+    st.write("##### 3. ตรวจสอบจุดต่อ (Connection Check)")
+    dia = int(bolt_size[1:])/10
+    # คำนวณ Bolt แบบเดิม
+    bolt_shear_cap = 1000 * (3.1416 * (dia/2)**2) # Shear Area
+    bolt_bear_cap = 1.2 * Fu * dia * tw
+    one_bolt_cap = min(bolt_shear_cap, bolt_bear_cap)
+    req_n = math.ceil(V_act / one_bolt_cap)
+    if req_n < 2: req_n = 2
+    
+    st.latex(r"""
+    \text{Bolt Capacity } (\phi P_n) = \min(\text{Shear}, \text{Bearing}) = \mathbf{""" + f"{one_bolt_cap:,.0f}" + r"""} \text{ kg/bolt}
+    """)
+    st.latex(r"""
+    \text{Required Bolts} = \frac{V_{act}}{P_{bolt}} = \frac{""" + f"{V_act:,.0f}" + r"""}{""" + f"{one_bolt_cap:,.0f}" + r"""} = """ + f"{V_act/one_bolt_cap:.2f}" + r""" \rightarrow \mathbf{""" + f"{req_n}" + r"""} \text{ pcs}
+    """)
