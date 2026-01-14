@@ -2,56 +2,33 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import math
 
 # ==========================================
-# 1. SETUP & STYLING
+# 1. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Safe Load Table Generator", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Section Efficiency Analyzer", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
-    .report-header {
-        background-color: #1a5276;
-        color: white;
-        padding: 15px;
-        border-radius: 5px;
-        text-align: center;
-        margin-bottom: 20px;
-    }
-    .highlight-row {
-        background-color: #d4efdf !important;
-    }
     .metric-card {
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        padding: 15px;
-        text-align: center;
-        background-color: #f8f9f9;
-    }
-    .optimal-badge {
-        background-color: #28a745;
-        color: white;
-        padding: 2px 8px;
-        border-radius: 10px;
-        font-size: 12px;
-    }
-    .calc-box {
-        font-family: 'Courier New', monospace;
-        background-color: #fff;
-        border: 1px solid #ddd;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
         padding: 15px;
         border-radius: 5px;
+        text-align: center;
+    }
+    .explanation-text {
+        font-size: 14px;
+        color: #555;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA & LOGIC
+# 2. DATA
 # ==========================================
 def get_sys_data():
     data = [
-        ("H 100x50x5x7", 100, 50, 5, 7, 378, 76.5),
         ("H 150x75x5x7", 150, 75, 5, 7, 666, 88.8),
         ("H 200x100x5.5x8", 200, 100, 5.5, 8, 1840, 184),
         ("H 250x125x6x9", 250, 125, 6, 9, 3690, 295),
@@ -61,211 +38,136 @@ def get_sys_data():
         ("H 450x200x9x14", 450, 200, 9, 14, 33500, 1490),
         ("H 500x200x10x16", 500, 200, 10, 16, 47800, 1910),
         ("H 600x200x11x17", 600, 200, 11, 17, 77600, 2590),
-        ("H 700x300x13x24", 700, 300, 13, 24, 201000, 5760),
-        ("H 800x300x14x26", 800, 300, 14, 26, 292000, 7290),
-        ("H 900x300x16x28", 900, 300, 16, 28, 411000, 9140)
     ]
     return pd.DataFrame(data, columns=["Section", "h", "b", "tw", "tf", "Ix", "Zx"])
 
-def calculate_capacity(span_m, h, tw, Ix, Zx, Fy, E_val):
+def get_capacity_details(span_m, h, tw, Ix, Zx, Fy=2400, E=2.04e6):
     L_cm = span_m * 100
     
-    # 1. Shear Limit (Constant)
-    Aw = (h/10) * (tw/10)
-    V_shear = 0.6 * Fy * Aw
+    # 1. Shear (Constant)
+    Aw = (h/10)*(tw/10)
+    V_shear = 0.6*Fy*Aw
     
-    # 2. Moment Limit (Assuming Simple Beam, Uniform Load) -> Converted to Max Reaction V
-    # M = wL^2/8, V = wL/2 => M = V(L/2)/2 = VL/4 => V = 4M/L
-    M_allow = 0.6 * Fy * Zx
-    V_moment = (4 * M_allow) / L_cm
+    # 2. Moment (Curve 1/L)
+    M_allow = 0.6*Fy*Zx
+    V_moment = (4*M_allow)/L_cm
     
-    # 3. Deflection Limit (L/360) -> Converted to Max Reaction V
-    # Delta = 5wL^4/384EI. V = wL/2.
-    # Delta = 5(2V/L)L^4 / 384EI = 10VL^3 / 384EI
-    # Limit = L/360
-    # L/360 = 10VL^3 / 384EI => V = (384EI)/(3600 L^2)
-    V_defl = (384 * E_val * Ix) / (3600 * (L_cm**2))
+    # 3. Deflection (Curve 1/L^2)
+    V_defl = (384*E*Ix)/(3600*(L_cm**2)) # Based on L/360 limit
     
-    # Governor
-    V_max = min(V_shear, V_moment, V_defl)
+    # Check Governor
+    vals = {'Shear': V_shear, 'Moment': V_moment, 'Deflection': V_defl}
+    gov_mode = min(vals, key=vals.get)
+    capacity = vals[gov_mode]
     
-    if V_max == V_shear: gov = "Shear"
-    elif V_max == V_moment: gov = "Moment"
-    else: gov = "Deflection"
-    
-    return V_max, gov
+    return capacity, gov_mode
 
 # ==========================================
-# 3. SIDEBAR SELECTION
+# 3. INPUTS
 # ==========================================
 with st.sidebar:
-    st.header("⚙️ Specification")
+    st.header("⚙️ Analysis Setup")
     df = get_sys_data()
-    sec_name = st.selectbox("Select Section", df['Section'], index=6) # Default H400
+    sec_name = st.selectbox("Select Section", df['Section'], index=5)
     
-    # Params
-    Fy = 2400
-    E_val = 2.04e6
-    
-    # Props
+    # Get props
     p = df[df['Section'] == sec_name].iloc[0]
-    h, tw, tf, Ix, Zx = p['h'], p['tw'], p['tf'], p['Ix'], p['Zx']
+    h = p['h']
     
     st.info(f"""
     **{sec_name}**
-    Depth: {h} mm
-    Weight: ~{h*0.1:.1f} kg/m
+    Depth (d): {h} mm
+    Optimal Span (L/d ≈ 20): {h*20/1000:.1f} m
     """)
 
 # ==========================================
-# 4. GENERATE LOAD TABLE (CORE LOGIC)
+# 4. VISUALIZATION - THE "GOVERNING ZONES"
 # ==========================================
-st.title("🏗️ Typical Detail: Safe Load Table Generator")
-st.markdown("ตารางแนะนำพิกัดรับน้ำหนักปลอดภัย (Safe Working Load) ที่ช่วง 50-70% Efficiency")
+st.title("🎯 Structural Efficiency Analysis")
+st.write("กราฟนี้แสดงให้เห็นว่าทำไมช่วงความยาว (Span) บางช่วงถึงเหมาะสมที่สุด โดยดูจาก **พฤติกรรมการวิบัติ (Failure Mode)**")
 
-# Generate Data for Spans 2m - 15m
-table_rows = []
-spans = np.arange(2.0, 16.0, 0.5)
-d_m = h / 1000
-
-optimal_range_text = ""
-opt_min_s, opt_max_s = 0, 0
-
+# Calculate data points
+spans = np.linspace(1, 15, 100)
+results = []
 for s in spans:
-    v_max, gov = calculate_capacity(s, h, tw, Ix, Zx, Fy, E_val)
-    
-    # Optimal Span Check (L/d = 15-20)
-    ratio = s / d_m
-    is_optimal = 15 <= ratio <= 24 # ยืดหยุ่นนิดหน่อยให้ครอบคลุม
-    
-    if is_optimal:
-        if opt_min_s == 0: opt_min_s = s
-        opt_max_s = s
-    
-    table_rows.append({
-        "Span (m)": s,
-        "Max Capacity (kg)": v_max,
-        "Gov. Mode": gov,
-        "Target 50% (kg)": v_max * 0.50,
-        "Target 70% (kg)": v_max * 0.70,
-        "L/d": ratio,
-        "Optimal": "✅" if is_optimal else "-"
-    })
+    cap, mode = get_capacity_details(s, p['h'], p['tw'], p['Ix'], p['Zx'])
+    results.append({'span': s, 'cap': cap, 'mode': mode})
 
-df_table = pd.DataFrame(table_rows)
+df_res = pd.DataFrame(results)
 
-# ==========================================
-# 5. DISPLAY MAIN CONTENT
-# ==========================================
-col_chart, col_table = st.columns([1.5, 1])
+# Create Chart
+fig = go.Figure()
 
-with col_chart:
-    st.subheader("📈 Load Specification Chart")
-    
-    # Create Band Chart
-    fig = go.Figure()
-    
-    # 70% Limit Line
-    fig.add_trace(go.Scatter(
-        x=df_table['Span (m)'], 
-        y=df_table['Target 70% (kg)'],
-        mode='lines',
-        line=dict(width=0),
-        showlegend=False,
-        name='70% Limit'
-    ))
-    
-    # 50% Limit Line (Filled to 70%)
-    fig.add_trace(go.Scatter(
-        x=df_table['Span (m)'], 
-        y=df_table['Target 50% (kg)'],
-        mode='lines',
-        fill='tonexty', # Fill area between 50% and 70%
-        fillcolor='rgba(40, 167, 69, 0.3)', # Green transparent
-        line=dict(width=0),
-        name='Effective Zone (50-70%)'
-    ))
-    
-    # Max Capacity Line (Reference)
-    fig.add_trace(go.Scatter(
-        x=df_table['Span (m)'], 
-        y=df_table['Max Capacity (kg)'],
-        mode='lines',
-        line=dict(color='gray', dash='dash'),
-        name='Max Capacity (100%)'
-    ))
-    
-    # Highlight Optimal Span Range
-    if opt_max_s > 0:
-        fig.add_vrect(
-            x0=opt_min_s, x1=opt_max_s,
-            fillcolor="yellow", opacity=0.1,
-            annotation_text="Optimal Span", annotation_position="top"
-        )
+# Plot Capacity Line
+fig.add_trace(go.Scatter(
+    x=df_res['span'], y=df_res['cap'],
+    mode='lines', line=dict(color='black', width=3),
+    name='Safe Load Limit'
+))
 
-    fig.update_layout(
-        title=f"Recommended Load Range for {sec_name}",
-        xaxis_title="Span Length (m)",
-        yaxis_title="Total Reaction Force (kg)",
-        hovermode="x unified",
-        height=500
+# Add Background Zones (Color Coded by Mode)
+# เราจะหาจุดเปลี่ยน (Transition Points) ของ Mode
+modes = df_res['mode'].values
+changes = np.where(modes[:-1] != modes[1:])[0]
+boundaries = [df_res['span'].iloc[0]] + df_res['span'].iloc[changes].tolist() + [df_res['span'].iloc[-1]]
+zone_colors = {'Shear': 'rgba(255, 0, 0, 0.1)', 'Moment': 'rgba(0, 255, 0, 0.2)', 'Deflection': 'rgba(0, 0, 255, 0.1)'}
+zone_labels = {'Shear': 'Short Span (Shear Controls)', 'Moment': 'Optimal Span (Moment Controls)', 'Deflection': 'Long Span (Deflection Controls)'}
+
+last_x = df_res['span'].iloc[0]
+for i, change_idx in enumerate(changes):
+    mode = modes[change_idx]
+    next_x = df_res['span'].iloc[change_idx]
+    
+    fig.add_vrect(
+        x0=last_x, x1=next_x,
+        fillcolor=zone_colors.get(mode, 'white'), opacity=1,
+        layer="below", line_width=0,
+        annotation_text=mode, annotation_position="top left"
     )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # --- Typical Detail Specification ---
-    st.markdown("### 📝 Typical Detail Specification")
-    st.info(f"""
-    **Section:** {sec_name}
-    **Recommended Span:** {opt_min_s} - {opt_max_s} m
-    **Design Criteria:** Load Efficiency 50-70% of Capacity
-    """)
-    st.write("ใช้ข้อมูลในตารางด้านขวาเพื่อระบุลงในแบบก่อสร้าง (Typical Drawing)")
+    last_x = next_x
 
-with col_table:
-    st.subheader("📋 Safe Load Table")
-    
-    # Display Format
-    st.dataframe(
-        df_table.style.format({
-            "Span (m)": "{:.1f}",
-            "Max Capacity (kg)": "{:,.0f}",
-            "Target 50% (kg)": "{:,.0f}",
-            "Target 70% (kg)": "{:,.0f}",
-            "L/d": "{:.1f}"
-        }).apply(lambda x: ['background-color: #d4efdf' if v == "✅" else '' for v in x], subset=["Optimal"]),
-        height=600,
-        use_container_width=True
-    )
-    
-    st.caption("**Target 50-70%:** ช่วงน้ำหนักบรรทุกแนะนำ (Reaction) ที่ทำให้หน้าตัดทำงานได้คุ้มค่าและปลอดภัยที่สุด")
+# Add last zone
+last_mode = modes[-1]
+fig.add_vrect(
+    x0=last_x, x1=df_res['span'].iloc[-1],
+    fillcolor=zone_colors.get(last_mode, 'white'), opacity=1,
+    layer="below", line_width=0,
+    annotation_text=last_mode, annotation_position="top left"
+)
+
+# Add L/d markers
+L_d_15 = (15 * h) / 1000
+L_d_20 = (20 * h) / 1000
+
+fig.add_vline(x=L_d_15, line_dash="dot", annotation_text="L/d=15", annotation_position="bottom right")
+fig.add_vline(x=L_d_20, line_dash="dot", annotation_text="L/d=20", annotation_position="bottom right")
+
+fig.update_layout(
+    title=f"Efficiency Zones for {sec_name}",
+    xaxis_title="Span Length (m)",
+    yaxis_title="Max Load Capacity (kg)",
+    height=500,
+    hovermode="x unified"
+)
+
+st.plotly_chart(fig, use_container_width=True)
 
 # ==========================================
-# 6. DETAILED CALCULATION (FOR VERIFICATION)
+# 5. EXPLANATION
 # ==========================================
-st.markdown("---")
-with st.expander("🔎 เจาะลึกรายการคำนวณที่ระยะ Span (เลือกดูได้)"):
-    sel_span = st.slider("Select Span to Check (m)", 2.0, 15.0, 6.0, 0.5)
-    
-    # Recalculate for display
-    L_cm = sel_span * 100
-    Aw = (h/10)*(tw/10)
-    V_s = 0.6*Fy*Aw
-    V_m = (4 * (0.6*Fy*Zx)) / L_cm
-    V_d = (384*E_val*Ix) / (3600 * (L_cm**2))
-    
-    v_final = min(V_s, V_m, V_d)
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Calculation Breakdown:**")
-        st.write(f"Span: {sel_span} m | L/d: {sel_span*1000/h:.1f}")
-        st.latex(rf"V_{{shear}} = {V_s:,.0f} \ kg")
-        st.latex(rf"V_{{moment}} = {V_m:,.0f} \ kg")
-        st.latex(rf"V_{{defl}} = {V_d:,.0f} \ kg")
-        st.markdown(f"**Max Capacity (100%): {v_final:,.0f} kg**")
-    
-    with c2:
-        st.markdown("**Load Recommendation:**")
-        st.write(f"50% Utilization: **{v_final*0.5:,.0f} kg**")
-        st.write(f"70% Utilization: **{v_final*0.7:,.0f} kg**")
-        st.success(f"ช่วง Load ที่ควรระบุในแบบ: **{v_final*0.5:,.0f} - {v_final*0.7:,.0f} kg**")
+c1, c2, c3 = st.columns(3)
+
+with c1:
+    st.markdown("### 🔴 Shear Zone")
+    st.caption("ช่วงสั้นมาก (Short Span)")
+    st.write("รับแรงได้มหาศาล แต่พังด้วยแรงเฉือน เหมือนคานลึก (Deep Beam) เป็นช่วงที่ **สิ้นเปลืองเหล็ก**")
+
+with c2:
+    st.markdown("### 🟢 Moment Zone (Optimal)")
+    st.caption("ช่วงที่เหมาะสม")
+    st.write("เป็นช่วงที่หน้าตัดได้ทำงานต้านทานการดัดตัวเต็มที่ (Fully Yield) คุ้มค่าที่สุด มักตรงกับช่วง **L/d 15-20**")
+
+with c3:
+    st.markdown("### 🔵 Deflection Zone")
+    st.caption("ช่วงยาว (Long Span)")
+    st.write("รับแรงได้น้อยลงมาก เพราะถูกจำกัดด้วยระยะแอ่น (Stiffness) คานจะย้วย **ไม่แนะนำ**")
