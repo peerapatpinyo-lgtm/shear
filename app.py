@@ -7,13 +7,38 @@ import math
 # ==========================================
 # 1. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V9 (Final)", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V10", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
     .highlight-card { background-color: #e8f6f3; padding: 20px; border-radius: 10px; border: 1px solid #1abc9c; margin-bottom: 20px; }
     .conn-card { background-color: #fcf3cf; padding: 15px; border-radius: 8px; border: 1px solid #f1c40f; }
-    .metric-box { text-align: center; padding: 15px; background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-top: 3px solid #3498db; }
+    
+    /* ปรับปรุง Metric Box ให้แสดงสูตรได้ */
+    .metric-box { 
+        text-align: center; 
+        padding: 15px; 
+        background: white; 
+        border-radius: 8px; 
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
+        border-top: 5px solid #3498db; 
+        height: 100%;
+    }
+    .big-num { font-size: 24px; font-weight: bold; color: #17202a; margin-bottom: 5px; }
+    .sub-text { font-size: 16px; font-weight: bold; color: #555; margin-bottom: 5px; }
+    
+    /* ส่วนแสดงที่มาการคำนวณในกล่องเล็ก */
+    .mini-calc {
+        background-color: #f4f6f7;
+        border-radius: 4px;
+        padding: 8px;
+        margin-top: 10px;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        color: #444;
+        text-align: left;
+    }
+    
     .calc-box { 
         background-color: #f8f9f9; 
         padding: 15px; 
@@ -24,7 +49,7 @@ st.markdown("""
         font-size: 14px;
         color: #333;
     }
-    .big-num { font-size: 24px; font-weight: bold; color: #17202a; }
+    
     .report-line { font-family: 'Courier New', monospace; font-size: 16px; margin-bottom: 8px; color: #2c3e50; }
     .report-header { font-size: 18px; font-weight: bold; color: #2c3e50; margin-top: 25px; border-bottom: 2px solid #ddd; padding-bottom: 5px; }
 </style>
@@ -46,8 +71,8 @@ steel_db = {
 }
 
 with st.sidebar:
-    st.title("Beam Insight V9")
-    st.caption("Complete Details")
+    st.title("Beam Insight V10")
+    st.caption("Detailed Metrics")
     st.divider()
     
     st.header("1. Beam Settings")
@@ -135,13 +160,12 @@ layout_ok = req_height <= avail_height
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Calculation Report"])
 
-# --- TAB 1: BEAM ANALYSIS ---
 with tab1:
     st.subheader(f"Capacity Analysis: {sec_name} @ {user_span} m.")
     
     cause_color = "#e74c3c" if user_cause == "Shear" else ("#f39c12" if user_cause == "Moment" else "#27ae60")
     
-    # 1. Main Card
+    # --- 1. Main Load Card ---
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -156,57 +180,89 @@ with tab1:
         </div>
     </div>
     """, unsafe_allow_html=True)
-
-    # 2. ที่มาของค่า 3 กรอบ (Shear, Moment, Deflection)
-    st.markdown("#### 🕵️‍♂️ รายละเอียดการคำนวณ (Calculation Details)")
-    c_cal1, c_cal2, c_cal3 = st.columns(3)
     
-    with c_cal1:
-        st.markdown("**1. กรณีแรงเฉือน (Shear Control)**")
-        st.markdown(f"""
-        <div class="calc-box">
-        <b>สูตร:</b> w = 2 * V_allow / L<br>
-        <b>แทนค่า:</b> 2 * {V_cap:,.0f} / {L_cm}<br>
-        <b>คำตอบ:</b> {w_shear:,.0f} kg/m
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with c_cal2:
-        st.markdown("**2. กรณีแรงดัด (Moment Control)**")
-        st.markdown(f"""
-        <div class="calc-box">
-        <b>สูตร:</b> w = 8 * M_allow / L^2<br>
-        <b>แทนค่า:</b> 8 * {M_cap:,.0f} / {L_cm}^2<br>
-        <b>คำตอบ:</b> {w_moment:,.0f} kg/m
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with c_cal3:
-        st.markdown("**3. กรณีการแอ่นตัว (Deflection)**")
-        st.markdown(f"""
-        <div class="calc-box">
-        <b>สูตร:</b> w = (Δ * 384 * E * I) / (5 * L^4)<br>
-        <b>แทนค่า:</b> ({L_cm/defl_lim_val:.1f}*384*2.04e6*{Ix})/(5*{L_cm}^4)<br>
-        <b>คำตอบ:</b> {w_defl:,.0f} kg/m
-        </div>
-        """, unsafe_allow_html=True)
+    # --- 2. Capacity Source Logic (เหมือนเดิม) ---
+    with st.expander("🕵️‍♂️ ดูที่มาของการคำนวณ Max Load (คลิก)", expanded=True):
+        c_cal1, c_cal2, c_cal3 = st.columns(3)
+        with c_cal1:
+            st.markdown(f"""<div class="calc-box"><b>1. Shear Control:</b><br>w = 2*V_allow/L<br>= 2*{V_cap:,.0f}/{L_cm}<br>= <b>{w_shear:,.0f} kg/m</b></div>""", unsafe_allow_html=True)
+        with c_cal2:
+            st.markdown(f"""<div class="calc-box"><b>2. Moment Control:</b><br>w = 8*M_allow/L^2<br>= 8*{M_cap:,.0f}/{L_cm}^2<br>= <b>{w_moment:,.0f} kg/m</b></div>""", unsafe_allow_html=True)
+        with c_cal3:
+            st.markdown(f"""<div class="calc-box"><b>3. Deflection:</b><br>w = (d*384EI)/(5L^4)<br>= ...<br>= <b>{w_defl:,.0f} kg/m</b></div>""", unsafe_allow_html=True)
 
-    st.info(f"💡 **สรุป:** ค่าน้อยที่สุดคือ **{user_safe_load:,.0f} kg/m** (มาจากกรณี {user_cause})")
     st.markdown("---")
 
-    # 3. Metrics (Usage)
-    st.markdown("#### 📊 สถานะการใช้งาน (Current Usage)")
+    # --- 3. Actual Force Metrics (แก้ไขใหม่ตามสั่ง) ---
+    st.markdown("#### 📊 ผลลัพธ์แรงที่เกิดขึ้นจริง (Actual Forces & Usage)")
     cm1, cm2, cm3 = st.columns(3)
+    
     shear_pct = (V_actual / V_cap) * 100
     moment_pct = ((M_actual*100) / M_cap) * 100 
     defl_pct = (delta_actual / delta_allow) * 100
     
-    with cm1: st.markdown(f"""<div class="metric-box" style="border-top-color: #e74c3c;"><div class="sub-text">Shear (V)</div><div class="big-num" style="font-size:24px;">{V_actual:,.0f} kg</div><div class="sub-text">Usage: <b>{shear_pct:.0f}%</b></div></div>""", unsafe_allow_html=True)
-    with cm2: st.markdown(f"""<div class="metric-box" style="border-top-color: #f39c12;"><div class="sub-text">Moment (M)</div><div class="big-num" style="font-size:24px;">{M_actual:,.0f} kg.m</div><div class="sub-text">Usage: <b>{moment_pct:.0f}%</b></div></div>""", unsafe_allow_html=True)
-    with cm3: st.markdown(f"""<div class="metric-box" style="border-top-color: #27ae60;"><div class="sub-text">Deflection</div><div class="big-num" style="font-size:24px;">{delta_actual:.2f} cm</div><div class="sub-text">Usage: <b>{defl_pct:.0f}%</b></div></div>""", unsafe_allow_html=True)
+    # Shear Box (แก้ไข)
+    with cm1: 
+        st.markdown(f"""
+        <div class="metric-box" style="border-top-color: #e74c3c;">
+            <div class="sub-text">Shear (V) Actual</div>
+            <div class="big-num">{V_actual:,.0f} kg</div>
+            <div class="mini-calc">
+                <b>1. หาแรง V:</b><br>
+                V = w * L / 2<br>
+                = {user_safe_load:,.0f} * {user_span} / 2<br>
+                = {V_actual:,.0f} kg<br>
+                <hr style="margin:5px 0">
+                <b>2. หา % Usage:</b><br>
+                = V_act / V_cap<br>
+                = {V_actual:,.0f} / {V_cap:,.0f}<br>
+                = <b>{shear_pct:.0f}%</b>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    # Moment Box (แก้ไข)
+    with cm2: 
+        st.markdown(f"""
+        <div class="metric-box" style="border-top-color: #f39c12;">
+            <div class="sub-text">Moment (M) Actual</div>
+            <div class="big-num">{M_actual:,.0f} kg.m</div>
+            <div class="mini-calc">
+                <b>1. หาโมเมนต์ M:</b><br>
+                M = w * L^2 / 8<br>
+                = {user_safe_load:,.0f} * {user_span}^2 / 8<br>
+                = {M_actual:,.0f} kg.m<br>
+                <hr style="margin:5px 0">
+                <b>2. หา % Usage:</b><br>
+                = M_act / M_cap<br>
+                = {M_actual:,.0f} / {M_cap:,.0f}<br>
+                = <b>{moment_pct:.0f}%</b>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    # Deflection Box (แก้ไข)
+    with cm3: 
+        st.markdown(f"""
+        <div class="metric-box" style="border-top-color: #27ae60;">
+            <div class="sub-text">Deflection Actual</div>
+            <div class="big-num">{delta_actual:.2f} cm</div>
+            <div class="mini-calc">
+                <b>1. หาระยะแอ่น:</b><br>
+                d = 5wL^4 / 384EI<br>
+                ...แทนค่าสูตร...<br>
+                = {delta_actual:.2f} cm<br>
+                <hr style="margin:5px 0">
+                <b>2. หา % Usage:</b><br>
+                = Act / Allow<br>
+                = {delta_actual:.2f} / {delta_allow:.2f}<br>
+                = <b>{defl_pct:.0f}%</b>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # 4. Graph
-    st.markdown("#### 📈 Capacity Curve")
+    st.markdown("<br>", unsafe_allow_html=True)
     g_spans = np.linspace(2, 15, 100)
     g_data = [get_capacity(l) for l in g_spans]
     fig = go.Figure()
@@ -218,7 +274,6 @@ with tab1:
     fig.update_layout(xaxis_title="Span (m)", yaxis_title="Load (kg/m)", height=400, margin=dict(t=20, b=20))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- TAB 2: CONNECTION (เหมือนเดิม) ---
 with tab2:
     st.subheader(f"🔩 Connection Design ({bolt_size})")
     c_info, c_draw = st.columns([1, 1.5])
@@ -245,7 +300,6 @@ with tab2:
         fig_c.update_layout(title="Front View Layout", xaxis=dict(visible=False, range=[-p['b'], p['b']]), yaxis=dict(visible=False, scaleanchor="x"), width=400, height=500, margin=dict(l=20, r=20, t=30, b=20), plot_bgcolor='white')
         st.plotly_chart(fig_c)
 
-# --- TAB 3: LOAD TABLE ---
 with tab3:
     st.subheader("Reference Load Table")
     t_spans = np.arange(2, 15.5, 0.5)
@@ -253,7 +307,6 @@ with tab3:
     df_res = pd.DataFrame({"Span (m)": t_spans, "Max Load (kg/m)": [x[3] for x in t_data], "Limited By": [x[4] for x in t_data]})
     st.dataframe(df_res.style.format("{:,.0f}", subset=["Max Load (kg/m)"]), use_container_width=True)
 
-# --- TAB 4: CALCULATION REPORT (Fixed Format: Var = Formula = Sub = Ans) ---
 with tab4:
     st.markdown('<div class="report-box">', unsafe_allow_html=True)
     
