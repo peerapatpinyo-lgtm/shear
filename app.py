@@ -185,10 +185,10 @@ with c_graph:
         text=[f"{V_10d/1000:.1f}T"], textposition="top right"
     ))
     
-    # Annotations Zones
-    fig.add_vrect(x0=spans[0], x1=depth_m*8, fillcolor="red", opacity=0.05, annotation_text="Deep Beam Zone (Short)", annotation_position="top left")
-    fig.add_vrect(x0=depth_m*8, x1=depth_m*15, fillcolor="green", opacity=0.05, annotation_text="Typical Zone", annotation_position="top center")
-    fig.add_vrect(x0=depth_m*15, x1=spans[-1], fillcolor="blue", opacity=0.05, annotation_text="Economical Zone (Long)", annotation_position="top right")
+    # Annotations Zones (FIXED: Changed 'top center' to 'top' or 'inside top')
+    fig.add_vrect(x0=spans[0], x1=depth_m*8, fillcolor="red", opacity=0.05, annotation_text="Deep Beam Zone", annotation_position="top left")
+    fig.add_vrect(x0=depth_m*8, x1=depth_m*15, fillcolor="green", opacity=0.05, annotation_text="Typical Zone", annotation_position="top")
+    fig.add_vrect(x0=depth_m*15, x1=spans[-1], fillcolor="blue", opacity=0.05, annotation_text="Economical Zone", annotation_position="top right")
 
     fig.update_layout(
         xaxis_title="Beam Span Length (m)",
