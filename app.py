@@ -46,11 +46,11 @@ st.markdown("""
     .mc-bar-bg { background-color: #f0f0f0; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
     .mc-bar-fill { height: 100%; border-radius: 4px; }
 
-    /* Footer: สมการเช็คความถูกต้อง (แก้ไขใหม่) */
+    /* Footer: สมการเช็คความถูกต้อง (แก้ไขให้ถูกต้องตามหลักคณิตศาสตร์) */
     .mc-footer { 
         background-color: #fafafa; border-top: 1px solid #eee; 
-        padding-top: 8px; margin-top: 5px;
-        font-size: 13px; color: #555; text-align: center; 
+        padding-top: 10px; margin-top: 5px;
+        font-size: 13px; color: #444; text-align: center; 
         font-family: 'Roboto Mono', monospace;
         letter-spacing: -0.5px;
     }
@@ -232,7 +232,7 @@ with tab1:
         bar_color = color
         if pct > 100: bar_color = "#c0392b" # Red warning
 
-        # FIXED: Footer now shows explicit percentage calculation: (A / B) * 100 = %
+        # FIXED: Footer now shows correct math: (A / B) x 100 = %
         return f"""
         <div class="metric-card-clean" style="border-top: 4px solid {bar_color};">
             <div class="mc-header">
@@ -256,7 +256,7 @@ with tab1:
             </div>
             
             <div class="mc-footer">
-                ({actual:{fmt_val}} / {limit:{fmt_val}}) × 100 = <b>{pct:.1f}%</b>
+                ( {actual:{fmt_val}} / {limit:{fmt_val}} ) × 100 = <b>{pct:.1f}%</b>
             </div>
         </div>
         """
