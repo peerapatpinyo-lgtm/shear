@@ -177,7 +177,7 @@ with tab1:
         st.markdown("**1. Properties**")
         st.write(f"Section: {sec_name}")
         st.latex(rf"d={h}mm, t_w={tw}mm, I_x={Ix:,}cm^4, Z_x={Zx:,}cm^3")
-        st.write("")
+        st.markdown("")
 
     with col_r:
          st.markdown(f"**Governing Load: {V_design:,.0f} kg**")
@@ -194,7 +194,7 @@ with tab1:
     st.latex(rf"V_{{moment}} = \frac{{4 \times {M_allow:,.0f}}}{{{L_cm}}} = \mathbf{{{V_moment:,.0f}}} \ kg")
     st.markdown("
 
-[Image of simply supported beam bending moment diagram]
+[Image of bending moment diagram simply supported beam]
 ")
     
     st.markdown('<div class="sub-header">4. Deflection Limit (ระยะแอ่นตัว)</div>', unsafe_allow_html=True)
@@ -236,7 +236,7 @@ with tab2:
         status = "PASSED" if min_conn >= V_design else "FAILED"
         color = "green" if status == "PASSED" else "red"
         
-        # ใช้ Triple quotes เพื่อความปลอดภัยของ String HTML
+        # FIX: ใช้ Triple Quotes (""") เพื่อรองรับ HTML หลายบรรทัด
         st.markdown(f"""
         ### Status: <span style='color:{color}'>{status}</span>
         """, unsafe_allow_html=True)
