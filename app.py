@@ -148,7 +148,7 @@ with tab1:
     st.subheader(f"Capacity Analysis: {sec_name} ({'LRFD' if is_lrfd else 'ASD'})")
     cause_color = "#e74c3c" if user_cause == "Shear" else ("#f39c12" if user_cause == "Moment" else "#27ae60")
     
-    # Main Load Card
+    # 1. Main Load Card
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -164,7 +164,23 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # Metrics
+    # ====================================================
+    # ✅ ส่วนที่กู้คืนกลับมา: Logic Source (Detail Expander)
+    # ====================================================
+    with st.expander(f"🕵️‍♂️ ดูที่มาการคำนวณ (Method: {method})", expanded=False):
+        c_cal1, c_cal2, c_cal3 = st.columns(3)
+        with c_cal1:
+            formula_v = "Phi Vn = 1.0*0.6*Fy*Aw" if is_lrfd else "V_all = 0.4*Fy*Aw"
+            st.markdown(f"""<div class="calc-box"><b>1. Shear ({'LRFD' if is_lrfd else 'ASD'}):</b><br>Cap = {formula_v}<br>= {V_cap:,.0f} kg<br>w = 2*Cap/L = <b>{w_shear:,.0f}</b></div>""", unsafe_allow_html=True)
+        with c_cal2:
+            formula_m = "Phi Mn = 0.9*Fy*Zx" if is_lrfd else "M_all = 0.6*Fy*Zx"
+            st.markdown(f"""<div class="calc-box"><b>2. Moment ({'LRFD' if is_lrfd else 'ASD'}):</b><br>Cap = {formula_m}<br>= {M_cap:,.0f} kg.cm<br>w = 8*Cap/L^2 = <b>{w_moment:,.0f}</b></div>""", unsafe_allow_html=True)
+        with c_cal3:
+            st.markdown(f"""<div class="calc-box"><b>3. Deflection:</b><br>Limit = L/{defl_lim_val}<br>w = (d*384EI)/(5L^4)<br>= <b>{w_defl:,.0f}</b></div>""", unsafe_allow_html=True)
+    
+    st.markdown("---")
+
+    # 3. Metrics
     cm1, cm2, cm3 = st.columns(3)
     with cm1: 
         st.markdown(f"""<div class="metric-box" style="border-top-color: #e74c3c;"><div class="sub-text">Shear (V) Actual</div><div class="big-num">{V_actual:,.0f} kg</div><div class="mini-calc">Usage: {V_actual/V_cap*100:.0f}%</div></div>""", unsafe_allow_html=True)
@@ -173,7 +189,7 @@ with tab1:
     with cm3: 
         st.markdown(f"""<div class="metric-box" style="border-top-color: #27ae60;"><div class="sub-text">Deflection Actual</div><div class="big-num">{delta_actual:.2f} cm</div><div class="mini-calc">Usage: {delta_actual/delta_allow*100:.0f}%</div></div>""", unsafe_allow_html=True)
 
-    # Graph
+    # 4. Graph
     st.markdown("<br>", unsafe_allow_html=True)
     g_spans = np.linspace(2, 15, 100)
     g_data = [get_capacity(l) for l in g_spans]
