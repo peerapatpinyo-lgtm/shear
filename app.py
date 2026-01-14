@@ -19,63 +19,43 @@ st.markdown("""
 
     /* --- Metric Card Design --- */
     .metric-card-final {
-        background: white;
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        border: 1px solid #e9ecef;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
+        background: white; border-radius: 12px; padding: 20px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05); border: 1px solid #e9ecef;
+        height: 100%; display: flex; flex-direction: column; justify-content: space-between;
     }
-
-    .m-header {
-        display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
-    }
+    .m-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
     .m-title { font-weight: 700; color: #555; font-size: 16px; display: flex; align-items: center; gap: 8px; }
     .m-percent { font-size: 24px; font-weight: 800; }
-
-    /* Progress Bar Wrapper */
-    .m-bar-bg {
-        background-color: #f1f3f5; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 12px;
-    }
-    .m-bar-fill {
-        height: 100%; border-radius: 5px; transition: width 0.6s ease;
-    }
-
-    /* Values Row */
-    .m-values {
-        display: flex; justify-content: space-between; align-items: flex-end;
-        font-family: 'Roboto Mono', monospace; font-size: 14px; color: #333;
-        margin-bottom: 8px;
-    }
+    .m-bar-bg { background-color: #f1f3f5; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 12px; }
+    .m-bar-fill { height: 100%; border-radius: 5px; transition: width 0.6s ease; }
+    .m-values { display: flex; justify-content: space-between; align-items: flex-end; font-family: 'Roboto Mono', monospace; font-size: 14px; color: #333; margin-bottom: 8px; }
     .val-label { font-size: 11px; color: #aaa; font-family: 'Sarabun', sans-serif; margin-bottom: 2px; }
+    .m-check { background-color: #f8f9fa; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #636e72; text-align: center; border: 1px solid #edf2f7; font-family: 'Roboto Mono', monospace; }
 
-    /* Calculation Check (The Footer) */
-    .m-check {
-        background-color: #f8f9fa;
-        border-radius: 6px;
-        padding: 6px 10px;
-        font-size: 12px;
-        color: #636e72;
-        text-align: center;
-        border: 1px solid #edf2f7;
-        font-family: 'Roboto Mono', monospace;
-    }
-    .m-check b { color: #2d3436; }
-
-    /* --- Global Utils --- */
+    /* --- Highlight Card --- */
     .highlight-card { 
         background: linear-gradient(135deg, #ebf5fb 0%, #ffffff 100%);
         padding: 25px; border-radius: 12px; border-left: 6px solid #2e86c1; 
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; 
     }
-    .math-card {
-        background-color: #fdfefe; border: 1px solid #e0e6e9; border-radius: 8px;
-        padding: 15px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); height: 100%;
+    
+    /* --- Math/Calculation Display Style --- */
+    .calc-box {
+        background-color: #fff;
+        border-left: 4px solid #ddd;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 0 8px 8px 0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    .math-header { font-weight: bold; color: #2e86c1; margin-bottom: 8px; border-bottom: 2px solid #f2f4f4; padding-bottom: 5px; }
+    .calc-title {
+        font-weight: bold;
+        color: #2c3e50;
+        margin-bottom: 10px;
+        font-size: 16px;
+        border-bottom: 1px solid #eee;
+        padding-bottom: 5px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -96,7 +76,7 @@ steel_db = {
 
 with st.sidebar:
     st.title("Beam Insight V12")
-    st.caption("Modular Edition (Final Fix)")
+    st.caption("Standard Calculation Edition")
     st.divider()
     
     st.header("1. Design Method")
@@ -190,29 +170,40 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 2. Logic Source (Math Card Style) ---
-    with st.expander(f"🕵️‍♂️ ดูที่มาการคำนวณแบบละเอียด (Calculations)", expanded=False):
+    # --- 2. Calculation Source (THE FIX) ---
+    # แก้ไข: แสดงสมการและ "การแทนค่า" ให้ชัดเจนเหมือนเขียนมือ
+    with st.expander(f"🕵️‍♂️ ดูรายการคำนวณ (Calculation Details)", expanded=True):
         c_cal1, c_cal2, c_cal3 = st.columns(3)
         L_cm_disp = user_span * 100
         
         with c_cal1:
-            st.markdown(f'<div class="math-card"><div class="math-header">1. Shear Control</div>', unsafe_allow_html=True)
-            st.latex(fr''' w = \frac{{2 \times {V_cap:,.0f}}}{{{L_cm_disp:.0f}}} \times 100 = \mathbf{{{w_shear:,.0f}}} ''')
+            st.markdown(f'<div class="calc-box"><div class="calc-title">1. Shear Control</div>', unsafe_allow_html=True)
+            # Formula
+            st.latex(r''' w = \frac{2 \times V_{cap}}{L} \times 100 ''')
+            # Substitution (The user requested format)
+            st.latex(fr''' w = \frac{{2 \times {V_cap:,.0f}}}{{{L_cm_disp:,.0f}}} \times 100 ''')
+            # Result
+            st.latex(fr''' w = \mathbf{{{w_shear:,.0f}}} \; kg/m ''')
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c_cal2:
-            st.markdown(f'<div class="math-card"><div class="math-header">2. Moment Control</div>', unsafe_allow_html=True)
-            st.latex(fr''' w = \frac{{8 \times {M_cap:,.0f}}}{{{L_cm_disp:.0f}^2}} \times 100 = \mathbf{{{w_moment:,.0f}}} ''')
+            st.markdown(f'<div class="calc-box"><div class="calc-title">2. Moment Control</div>', unsafe_allow_html=True)
+            st.latex(r''' w = \frac{8 \times M_{cap}}{L^2} \times 100 ''')
+            st.latex(fr''' w = \frac{{8 \times {M_cap:,.0f}}}{{{L_cm_disp:,.0f}^2}} \times 100 ''')
+            st.latex(fr''' w = \mathbf{{{w_moment:,.0f}}} \; kg/m ''')
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c_cal3:
-            st.markdown(f'<div class="math-card"><div class="math-header">3. Deflection</div>', unsafe_allow_html=True)
-            st.latex(fr''' w = \frac{{384 \cdot {E_mod:.2e} \cdot {Ix} \cdot {delta_allow:.1f}}}{{5 \cdot {L_cm_disp:.0f}^4}} \times 100 = \mathbf{{{w_defl:,.0f}}} ''')
+            st.markdown(f'<div class="calc-box"><div class="calc-title">3. Deflection Control</div>', unsafe_allow_html=True)
+            st.latex(r''' w = \frac{384 E I \Delta}{5 L^4} \times 100 ''')
+            # Use scientific notation for E to save space, but explicit numbers for others
+            st.latex(fr''' w = \frac{{384 \times {E_mod:.2e} \times {Ix} \times {delta_allow:.2f}}}{{5 \times {L_cm_disp:,.0f}^4}} \times 100 ''')
+            st.latex(fr''' w = \mathbf{{{w_defl:,.0f}}} \; kg/m ''')
             st.markdown("</div>", unsafe_allow_html=True)
             
     st.markdown("---")
 
-    # --- 3. FINAL METRICS (Fixed Formatting) ---
+    # --- 3. METRICS CARDS ---
     cm1, cm2, cm3 = st.columns(3)
     
     def create_card_final(icon, title, actual, limit, unit, color_base, decimal=0):
@@ -220,7 +211,7 @@ with tab1:
         pct = (actual / limit) * 100
         
         # 2. String Formats (Clean CSS width)
-        width_css = f"{min(pct, 100):.1f}"  # Force 1 decimal place for CSS
+        width_css = f"{min(pct, 100):.1f}"
         fmt_val = f",.{decimal}f"
         
         # 3. Colors
@@ -237,7 +228,6 @@ with tab1:
                 <div class="m-title"><span>{icon}</span> {title}</div>
                 <div class="m-percent" style="color:{c_text};">{pct:.1f}%</div>
             </div>
-            
             <div class="m-values">
                 <div style="text-align:left;">
                     <div class="val-label">ACTUAL</div>
@@ -248,26 +238,19 @@ with tab1:
                     <div style="color:#888;">{limit:{fmt_val}} <small>{unit}</small></div>
                 </div>
             </div>
-            
             <div class="m-bar-bg">
                 <div class="m-bar-fill" style="width:{width_css}%; background-color:{c_bar};"></div>
             </div>
-            
             <div class="m-check">
                 {actual:{fmt_val}} ÷ {limit:{fmt_val}} = <b>{pct:.1f}%</b>
             </div>
         </div>
         """
     
-    # 3.1 Shear
     with cm1:
         st.markdown(create_card_final("✂️", "Shear (V)", V_actual, V_cap, "kg", "#2ecc71"), unsafe_allow_html=True)
-        
-    # 3.2 Moment
     with cm2:
         st.markdown(create_card_final("🔄", "Moment (M)", M_actual, M_cap/100, "kg.m", "#f1c40f"), unsafe_allow_html=True)
-        
-    # 3.3 Deflection
     with cm3:
         st.markdown(create_card_final("📏", "Deflection", delta_actual, delta_allow, "cm", "#3498db", decimal=2), unsafe_allow_html=True)
 
