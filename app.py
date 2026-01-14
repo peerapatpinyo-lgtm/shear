@@ -4,9 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 # --- 1. Database: ข้อมูลหน้าตัด H-Beam (SYS Reference) ---
-# หน่วย: mm, cm2, cm3, cm4
-# Ix = Moment of Inertia (รอบแกนหลัก), Zx = Section Modulus
-# Tw = Web Thickness, Tf = Flange Thickness
+# หน่วย: h, b, tw, tf (mm) | Ix (cm4) | Zx (cm3)
 steel_db = {
     "H 100x50x5x7":   {"h": 100, "b": 50,  "tw": 5, "tf": 7,  "Ix": 187,   "Zx": 37.5},
     "H 125x60x6x8":   {"h": 125, "b": 60,  "tw": 6, "tf": 8,  "Ix": 413,   "Zx": 65.9},
@@ -36,13 +34,17 @@ section_name = st.sidebar.selectbox("เลือกขนาดหน้าต�
 props = steel_db[section_name]
 
 # Material Properties
+st.sidebar.markdown("---")
+st.sidebar.subheader("คุณสมบัติวัสดุ")
 fy = st.sidebar.number_input("Yield Strength (Fy) [ksc]", value=2400, step=100)
 E_val = st.sidebar.number_input("Modulus of Elasticity (E) [ksc]", value=2040000)
 
 # Allowable Factors (ASD)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Design Criteria")
 Fb_ratio = st.sidebar.slider("Allowable Bending Stress (Fb/Fy)", 0.4, 0.7, 0.60, 0.01)
 Fv_ratio = st.sidebar.slider("Allowable Shear Stress (Fv/Fy)", 0.3, 0.5, 0.40, 0.01)
-defl_limit = st.sidebar.selectbox("Deflection Limit", [240, 300, 360, 400, 500], index=0)
+defl_limit = st.sidebar.selectbox("Deflection Limit (L/x)", [240, 300, 360, 400, 500], index=0)
 
 # Span Input for Specific Calculation
 st.sidebar.markdown("---")
@@ -51,7 +53,7 @@ current_L = st.sidebar.number_input("ระบุความยาวที่�
 # --- 3. Calculation Engine ---
 def calculate_capacity(L_m, props, Fy, E, Fb_r, Fv_r, def_lim):
     """
-    คืนค่า P_allow (Ton) สำหรับทั้ง 3 Cases
+    คืนค่า P_allow (Ton) สำหรับทั้ง 3 Cases (Point Load at Center)
     L_m: Length in meters
     """
     # Convert units to cm/kg
@@ -61,26 +63,23 @@ def calculate_capacity(L_m, props, Fy, E, Fb_r, Fv_r, def_lim):
     Ix = props['Ix']
     Zx = props['Zx']
     
-    # 1. Shear Capacity (Vn)
-    # Area of Web = Depth * Web Thickness (Simple approximation)
+    # 1. Shear Capacity (Vn) -> Control by Web Area
+    # V_allow = Fv * Aw
+    # Point Load Max Shear = P/2 -> P_shear = 2 * V_allow
     Aw = h_cm * tw_cm 
     Fv = Fv_r * Fy
-    # V_allow (kg) = Fv * Aw
-    # For Point Load at Center, V_max = P/2 => P_shear = 2 * V_allow
     V_allow = Fv * Aw
     P_shear_kg = 2 * V_allow
     
-    # 2. Moment Capacity (Vm)
-    # Fb = Allowable Bending Stress
+    # 2. Moment Capacity (Vm) -> Control by Section Modulus
+    # M_max = PL/4 -> P = 4*M_allow / L
     Fb = Fb_r * Fy
     M_allow_kgcm = Fb * Zx
-    # Simple Beam Point Load Center: M_max = PL/4 => P = 4*M_allow / L
     P_moment_kg = (4 * M_allow_kgcm) / L_cm
     
-    # 3. Deflection Limit (Vd)
+    # 3. Deflection Limit (Vd) -> Control by Moment of Inertia
     # Delta_allow = L / def_lim
     # Delta_max = (P * L^3) / (48 * E * I)
-    # P = (48 * E * I * Delta_allow) / L^3
     # P = (48 * E * I) / (def_lim * L^2)
     P_deflect_kg = (48 * E * Ix) / (def_lim * (L_cm**2))
     
@@ -112,15 +111,15 @@ else:
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    st.subheader(f"ผลลัพธ์ที่ความยาว {current_L} m")
+    st.subheader(f"📌 ผลลัพธ์ที่ความยาว {current_L} m")
     st.info(f"Design Load (ปลอดภัย): **{design_load:.2f} Ton**")
     st.write(f"ควบคุมโดย: **:{gov_color}[{gov_case}]**")
     
     st.markdown("---")
     st.caption("รายละเอียดแต่ละ Case:")
-    st.write(f"🔹 Shear Cap: {res_point['Shear_Ton']:.2f} Ton")
-    st.write(f"🔹 Moment Cap: {res_point['Moment_Ton']:.2f} Ton")
-    st.write(f"🔹 Deflection Limit: {res_point['Deflect_Ton']:.2f} Ton")
+    st.write(f"🔹 Shear Cap: **{res_point['Shear_Ton']:.2f}** Ton")
+    st.write(f"🔹 Moment Cap: **{res_point['Moment_Ton']:.2f}** Ton")
+    st.write(f"🔹 Deflection Limit: **{res_point['Deflect_Ton']:.2f}** Ton")
 
 # --- 6. Generate Data for Graph ---
 L_range = np.arange(1.0, 15.1, 0.1) # คำนวณตั้งแต่ 1m ถึง 15m
@@ -145,11 +144,11 @@ df = pd.DataFrame(data_list)
 
 # --- 7. Plot Graph using Plotly ---
 with col2:
-    st.subheader(f"กราฟเปรียบเทียบความสามารถรับน้ำหนัก: {section_name}")
+    st.subheader(f"📈 กราฟเปรียบเทียบ: {section_name}")
     
     fig = go.Figure()
 
-    # Plot Shear (Constant mostly)
+    # Plot Shear
     fig.add_trace(go.Scatter(x=df['Span_m'], y=df['Shear_Ton'], mode='lines', 
                              name='Shear Capacity', line=dict(color='red', dash='dash')))
 
@@ -173,14 +172,20 @@ with col2:
         xaxis_title="ความยาวคาน (เมตร)",
         yaxis_title="น้ำหนักบรรทุกปลอดภัย (Point Load: ตัน)",
         hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=20, r=20, t=20, b=20)
     )
     
     st.plotly_chart(fig, use_container_width=True)
 
 # --- 8. Data Table & Export ---
 st.markdown("### 📋 ตารางข้อมูล CSV")
-st.dataframe(df.style.format("{:.2f}"))
+
+# Define columns to format as numbers
+numeric_cols = ["Span_m", "Shear_Ton", "Moment_Ton", "Deflect_Ton", "Design_Load"]
+
+# ใช้ subset เพื่อ Format เฉพาะคอลัมน์ตัวเลข (ป้องกัน Error กับคอลัมน์ string)
+st.dataframe(df.style.format(subset=numeric_cols, formatter="{:.2f}"))
 
 # CSV Download
 csv = df.to_csv(index=False).encode('utf-8')
