@@ -7,7 +7,7 @@ import math
 # ==========================================
 # 1. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V6 (Report Added)", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V6.1 (Fixed)", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
@@ -37,8 +37,8 @@ steel_db = {
 }
 
 with st.sidebar:
-    st.title("Beam Insight V6")
-    st.caption("Hybrid + Report Tab")
+    st.title("Beam Insight V6.1")
+    st.caption("Hybrid + Report (Fixed)")
     st.divider()
     
     st.header("1. Beam Settings")
@@ -62,7 +62,7 @@ with st.sidebar:
     defl_lim_val = int(defl_ratio.split("/")[1])
 
 # ==========================================
-# 3. CORE CALCULATION (Keep exactly as V5)
+# 3. CORE CALCULATION
 # ==========================================
 p = steel_db[sec_name]
 h_cm, tw_cm = p['h']/10, p['tw']/10
@@ -126,7 +126,6 @@ layout_ok = req_height <= avail_height
 # ==========================================
 # 4. UI DISPLAY
 # ==========================================
-# เพิ่ม tab4 ตรงนี้
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Calculation Report"])
 
 # --- TAB 1: BEAM ANALYSIS ---
@@ -175,10 +174,6 @@ with tab1:
     
     fig.update_layout(xaxis_title="Span (m)", yaxis_title="Load (kg/m)", height=400, margin=dict(t=20, b=20))
     st.plotly_chart(fig, use_container_width=True)
-    # 
-
-[Image of shear and bending moment diagram simple beam]
-
 
 # --- TAB 2: CONNECTION ---
 with tab2:
@@ -247,12 +242,11 @@ with tab3:
     })
     st.dataframe(df_res.style.format("{:.1f}", subset=["Span (m)", "Shear Usage (%)"]).format("{:,.0f}", subset=["Max Load (kg/m)", "V_actual (kg)"]), use_container_width=True, height=500)
 
-# --- TAB 4: CALCULATION REPORT (เพิ่มใหม่ตามคำขอ) ---
+# --- TAB 4: CALCULATION REPORT ---
 with tab4:
     st.title("📝 Detailed Calculation Report")
     
     st.markdown("#### 1. Section & Material Properties")
-    # 
     st.markdown(f"""
     <div class="report-box">
         <b>Section:</b> {sec_name} <br>
@@ -276,7 +270,6 @@ with tab4:
     st.info(f"Controls by: **{user_cause}**")
     
     st.markdown("#### 4. Connection Design")
-    # 
     st.markdown(f"""
     <div class="report-box">
         <b>Bolt Capacity ({bolt_size}):</b> <br>
