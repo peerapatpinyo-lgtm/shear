@@ -7,7 +7,7 @@ import math
 # ==========================================
 # 1. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V6.1 (Fixed)", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V6.2", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
@@ -37,8 +37,8 @@ steel_db = {
 }
 
 with st.sidebar:
-    st.title("Beam Insight V6.1")
-    st.caption("Hybrid + Report (Fixed)")
+    st.title("Beam Insight V6.2")
+    st.caption("Updated Report Format")
     st.divider()
     
     st.header("1. Beam Settings")
@@ -242,11 +242,12 @@ with tab3:
     })
     st.dataframe(df_res.style.format("{:.1f}", subset=["Span (m)", "Shear Usage (%)"]).format("{:,.0f}", subset=["Max Load (kg/m)", "V_actual (kg)"]), use_container_width=True, height=500)
 
-# --- TAB 4: CALCULATION REPORT ---
+# --- TAB 4: CALCULATION REPORT (Updated LaTeX) ---
 with tab4:
     st.title("📝 Detailed Calculation Report")
     
     st.markdown("#### 1. Section & Material Properties")
+    # ส่วนนี้แก้ไขให้ตรงตามที่คุณต้องการ
     st.markdown(f"""
     <div class="report-box">
         <b>Section:</b> {sec_name} <br>
