@@ -57,18 +57,18 @@ steel_db = {
 # ==========================================
 # 2. APP CONFIGURATION
 # ==========================================
-st.set_page_config(page_title="H-Beam Professional Calculator", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="H-Beam Master Calculator", layout="wide", page_icon="🏗️")
 
 st.title("🏗️ H-Beam Professional Design Tool")
 st.markdown("""
-**เครื่องมือออกแบบและตรวจสอบหน้าตัดเหล็ก H-Beam (SYS/TIS Standard)**
-* คำนวณความสามารถรับน้ำหนักปลอดภัยสุทธิ (**Net Safe Load**)
-* พิจารณาแรงเฉือน (Shear), โมเมนต์ (Moment), และระยะแอ่น (Deflection)
-* **หักลบน้ำหนักตัวเองของคาน (Self-weight) โดยอัตโนมัติ**
+**โปรแกรมคำนวณความสามารถรับน้ำหนัก H-Beam (มาตรฐาน SYS/TIS)**
+* คำนวณ **Net Safe Load** (หักน้ำหนักตัวเองอัตโนมัติ)
+* ตรวจสอบ **Shear**, **Moment**, และ **Deflection**
+* มีระบบตรวจสอบ **LTB (Lateral Torsional Buckling)** หากค้ำยันไม่เพียงพอ
 """)
 
 # ==========================================
-# 3. SIDEBAR: INPUT PARAMETERS
+# 3. SIDEBAR: INPUTS
 # ==========================================
 st.sidebar.header("1. เลือกหน้าตัด & รูปแบบแรง")
 section_name = st.sidebar.selectbox("ขนาดหน้าตัด (Section)", list(steel_db.keys()))
@@ -86,105 +86,120 @@ fy = st.sidebar.number_input("Yield Strength (Fy) [ksc]", value=2400, step=100, 
 E_val = st.sidebar.number_input("Modulus of Elasticity (E) [ksc]", value=2040000)
 Fb_ratio = st.sidebar.slider("Allowable Bending (Fb/Fy)", 0.4, 0.7, 0.60, 0.01)
 Fv_ratio = st.sidebar.slider("Allowable Shear (Fv/Fy)", 0.3, 0.5, 0.40, 0.01)
-defl_limit = st.sidebar.selectbox("Deflection Limit (L/x)", [200, 240, 300, 360, 400, 500], index=1)
+defl_limit = st.sidebar.selectbox("Deflection Limit (L/x)", [200, 240, 300, 360, 400, 500], index=2)
 
 st.sidebar.markdown("---")
-st.sidebar.header("3. พารามิเตอร์อื่นๆ")
-current_L = st.sidebar.number_input("ระบุความยาวที่ต้องการตรวจสอบ (m)", value=6.0, step=0.5, min_value=1.0)
+st.sidebar.header("3. การค้ำยัน (LTB Check)")
+unbraced_L = st.sidebar.number_input("ระยะห่างจุดค้ำยัน (Lb) [m]", 
+                                     value=0.0, step=0.5, 
+                                     help="ใส่ 0.0 หากมีการค้ำยันตลอดแนว หรือระบุระยะห่างคานซอย")
+
+st.sidebar.markdown("---")
+st.sidebar.header("4. พารามิเตอร์อื่นๆ")
+current_L = st.sidebar.number_input("ระบุความยาวช่วงคาน (Span) [m]", value=6.0, step=0.5, min_value=1.0)
 unit_price = st.sidebar.number_input("ราคาเหล็กประเมิน (บาท/กก.)", value=32.0, step=0.5)
 
 # ==========================================
-# 4. CALCULATION ENGINE
+# 4. CALCULATION ENGINE (With LTB & Self-Weight)
 # ==========================================
-def calculate_net_capacity(L_m, props, Fy, E, Fb_r, Fv_r, def_lim, load_type_mode):
+def calculate_net_capacity(L_m, props, Fy, E, Fb_r, Fv_r, def_lim, load_type_mode, Lb_input_m):
     """
-    Calculate Net Safe Load (Ton) by subtracting self-weight.
-    Returns dictionary with breakdown of capacities.
+    คำนวณ Net Safe Load (Ton) โดยพิจารณา LTB และหักน้ำหนักตัวเอง
     """
-    # Unit Conversions
+    # 1. Unit Conversions
     L_cm = L_m * 100
-    h_cm = props['h'] / 10
-    tw_cm = props['tw'] / 10
-    Ix = props['Ix']
-    Zx = props['Zx']
-    w_beam_kg_m = props['w'] 
+    h = props['h']; b = props['b']; tw = props['tw']; tf = props['tf']
+    h_cm = h / 10; tw_cm = tw / 10
+    Ix = props['Ix']; Zx = props['Zx']
+    w_beam_kg_m = props['w']
     
-    # ----------------------------------------
-    # A. Calculate Allowable Limits (Gross)
-    # ----------------------------------------
-    # Shear Capacity (Vn)
+    # 2. Determine Effective Unbraced Length (Lb)
+    # ถ้า User ใส่ 0 คือ Fully Braced (Lb=0), ถ้าใส่ค่าอื่นให้ใช้ค่านั้น (แต่ไม่เกิน Span)
+    real_Lb_m = min(Lb_input_m, L_m) if Lb_input_m > 0 else 0
+    
+    # 3. Calculate Allowable Stresses
+    
+    # --- Shear (Fv) ---
     Aw = h_cm * tw_cm
-    V_allow_gross = (Fv_r * Fy) * Aw # kg
-    
-    # Moment Capacity (Mn)
-    M_allow_gross = (Fb_r * Fy) * Zx # kg.cm
-    
-    # Deflection Allowed
-    Delta_allow_total = L_cm / def_lim # cm
+    V_allow_gross = (Fv_r * Fy) * Aw  # kg
 
-    # ----------------------------------------
-    # B. Calculate Self-Weight Effects (Always UDL)
-    # ----------------------------------------
-    # Shear from self-weight
-    V_self = (w_beam_kg_m * L_m) / 2 # kg
+    # --- Moment (Fb) with LTB Check ---
+    # Simplified LTB Rule: 
+    # If Lb < 15*b -> Compact (Full Fb)
+    # If Lb > 15*b -> Reduce Fb (Simplified Quadratic Reduction for Safety)
     
-    # Moment from self-weight (wL^2/8)
-    M_self_kgcm = (w_beam_kg_m * (L_m**2) / 8) * 100 # kg.cm
+    limit_Lb_m = 15 * (b / 1000) # b is mm -> m
     
-    # Deflection from self-weight (5wL^4 / 384EI)
-    # Note: w in formula needs to be kg/cm -> w_kg_m / 100
+    if real_Lb_m <= limit_Lb_m:
+        Fb_final = Fb_r * Fy
+        ltb_status = "Compact (OK)"
+    else:
+        # LTB Occurs: Reduce Fb
+        # สูตรลดทอนแบบ Simplified (Conservative)
+        reduction_factor = (limit_Lb_m / real_Lb_m) ** 2
+        Fb_final = (Fb_r * Fy) * reduction_factor
+        # กันค่าต่ำเกินไป (Floor at 20% of Fy)
+        Fb_final = max(Fb_final, 0.2 * Fy)
+        ltb_status = "Slender (Reduced Fb)"
+
+    M_allow_gross = Fb_final * Zx  # kg.cm
+
+    # --- Deflection ---
+    Delta_allow_total = L_cm / def_lim  # cm
+
+    # 4. Calculate Self-Weight Effects (Always UDL)
+    V_self = (w_beam_kg_m * L_m) / 2
+    M_self_kgcm = (w_beam_kg_m * (L_m**2) / 8) * 100
+    
     w_beam_kg_cm = w_beam_kg_m / 100
     Delta_self = (5 * w_beam_kg_cm * (L_cm**4)) / (384 * E * Ix)
 
-    # ----------------------------------------
-    # C. Calculate Net Capacity based on Load Type
-    # ----------------------------------------
+    # 5. Calculate Net Capacity based on Load Type
     
     if "Point Load" in load_type_mode:
-        # 1. Shear Check: V_applied = P/2 + V_self <= V_allow
-        # P/2 <= V_allow - V_self
+        # Shear Check
         P_shear_kg = 2 * (V_allow_gross - V_self)
         
-        # 2. Moment Check: M_applied = PL/4 + M_self <= M_allow
-        # PL/4 <= M_allow - M_self
+        # Moment Check
         P_moment_kg = 4 * (M_allow_gross - M_self_kgcm) / L_cm
         
-        # 3. Deflection Check: Delta_P + Delta_self <= Delta_allow
-        # Delta_P <= Delta_allow - Delta_self
-        # PL^3 / 48EI <= Delta_remaining
+        # Deflection Check
         Delta_remaining = Delta_allow_total - Delta_self
         P_deflect_kg = (48 * E * Ix * Delta_remaining) / (L_cm**3)
         
     else: # Uniform Load (UDL)
-        # We solve for Total Load W (where W = w_applied * L)
+        # Solve for Total Load W_total then subtract beam weight
         
-        # 1. Shear: V_max = W_total/2 <= V_allow
+        # Shear
         W_total_shear = 2 * V_allow_gross
         P_shear_kg = W_total_shear - (w_beam_kg_m * L_m)
         
-        # 2. Moment: M_max = W_total*L/8 <= M_allow
+        # Moment
         W_total_moment = (8 * M_allow_gross) / L_cm # Result is Total Load in kg
         P_moment_kg = W_total_moment - (w_beam_kg_m * L_m)
         
-        # 3. Deflection: Delta = 5*W_total*L^3 / 384EI (Note: Standard formula adjusted for Total Load W)
+        # Deflection (Std Formula adjusted for Total Load W)
         Delta_remaining = Delta_allow_total - Delta_self
         P_deflect_kg = (384 * E * Ix * Delta_remaining) / (5 * (L_cm**3))
 
-    # Return results (Use max(0, ...) to handle cases where self-weight exceeds limit)
+    # 6. Return Results (Handle negative capacities)
     return {
         "Span_m": L_m,
         "Shear_Ton": max(0, P_shear_kg / 1000),
         "Moment_Ton": max(0, P_moment_kg / 1000),
         "Deflect_Ton": max(0, P_deflect_kg / 1000),
-        "Self_Weight_Ton": (w_beam_kg_m * L_m) / 1000
+        "Self_Weight_Ton": (w_beam_kg_m * L_m) / 1000,
+        "Fb_Used": Fb_final,
+        "LTB_Status": ltb_status,
+        "Lb_m": real_Lb_m
     }
 
 # ==========================================
 # 5. MAIN LOGIC & UI DISPLAY
 # ==========================================
 
-# --- Calculate for the specific point ---
-res = calculate_net_capacity(current_L, props, fy, E_val, Fb_ratio, Fv_ratio, defl_limit, load_type)
+# --- Calculate Specific Point ---
+res = calculate_net_capacity(current_L, props, fy, E_val, Fb_ratio, Fv_ratio, defl_limit, load_type, unbraced_L)
 safe_load = min(res["Shear_Ton"], res["Moment_Ton"], res["Deflect_Ton"])
 
 # Determine Governing Case
@@ -206,7 +221,7 @@ total_cost = total_weight_kg * unit_price
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    st.subheader(f"📌 ผลการตรวจสอบที่ {current_L} m")
+    st.subheader(f"📌 ผลลัพธ์ที่ระยะ {current_L} m")
     
     # Big Number Card
     st.markdown(f"""
@@ -218,22 +233,33 @@ with col1:
     """, unsafe_allow_html=True)
     
     st.write("")
-    st.markdown(f"**Condition Control:** :{gov_color}[**{gov_case}**]")
+    st.markdown(f"**Controlled by:** :{gov_color}[**{gov_case}**]")
     
+    # LTB Warning
+    if "Reduced" in res['LTB_Status']:
+        st.warning(f"⚠️ **LTB Alert:** หน้าตัดเกิดการโก่งเดาะ (Lb={res['Lb_m']}m) ค่ารับโมเมนต์ถูกลดลงเหลือ Fb = {res['Fb_Used']:.0f} ksc")
+    else:
+        st.success(f"✅ **LTB Status:** Compact (ปลอดภัย) Fb = {res['Fb_Used']:.0f} ksc")
+
     with st.expander("📊 ดูรายละเอียดการคำนวณ", expanded=True):
         st.write(f"🔹 **Shear Cap:** {res['Shear_Ton']:.2f} Ton")
         st.write(f"🔹 **Moment Cap:** {res['Moment_Ton']:.2f} Ton")
         st.write(f"🔹 **Deflection Limit:** {res['Deflect_Ton']:.2f} Ton")
-        st.markdown("---")
+        st.divider()
         st.write(f"⚖️ **น้ำหนักคาน:** {res['Self_Weight_Ton']*1000:.1f} kg")
         st.write(f"💰 **ราคาเหล็ก (Est.):** {total_cost:,.0f} บาท")
 
 # --- Generate Graph Data ---
-L_range = np.arange(1.0, 16.0, 0.2) # Generate 1m to 15m
+# Logic: Graph shows capacity vs Span based on the *User's Bracing Input*
+# If user sets Lb=0, graph assumes fully braced everywhere.
+# If user sets Lb=2, graph assumes Lb=2 for all spans > 2.
+
+L_range = np.arange(1.0, 16.0, 0.25)
 data_list = []
 
 for L in L_range:
-    r = calculate_net_capacity(L, props, fy, E_val, Fb_ratio, Fv_ratio, defl_limit, load_type)
+    # Pass the user's unbraced_L setting to the loop
+    r = calculate_net_capacity(L, props, fy, E_val, Fb_ratio, Fv_ratio, defl_limit, load_type, unbraced_L)
     min_val = min(r["Shear_Ton"], r["Moment_Ton"], r["Deflect_Ton"])
     r["Safe_Load"] = min_val
     data_list.append(r)
@@ -242,7 +268,7 @@ df = pd.DataFrame(data_list)
 
 with col2:
     st.subheader(f"📈 Load Capacity Chart: {section_name}")
-    st.caption(f"Mode: {load_type} | Criteria: Fy={fy}, Fb={Fb_ratio}Fy, Delta=L/{defl_limit}")
+    st.caption(f"Mode: {load_type} | Bracing Lb: {unbraced_L if unbraced_L>0 else 'Auto/Full'} m")
     
     fig = go.Figure()
     
@@ -274,11 +300,9 @@ with col2:
 # ==========================================
 st.markdown("### 📋 ตารางข้อมูล (Export Data)")
 
-# Table Configuration
 cols_show = ["Span_m", "Shear_Ton", "Moment_Ton", "Deflect_Ton", "Safe_Load", "Self_Weight_Ton"]
 st.dataframe(df[cols_show].style.format("{:.2f}"))
 
-# CSV Download Logic
 csv = df.to_csv(index=False).encode('utf-8')
 file_name_clean = section_name.replace(" ", "_").replace(".", "")
 st.download_button(
