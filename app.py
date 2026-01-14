@@ -24,7 +24,7 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; 
     }
 
-    /* Metric Box (Updated Layout) */
+    /* Metric Box */
     .metric-box { 
         text-align: center; padding: 15px; background: white; 
         border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
@@ -38,8 +38,28 @@ st.markdown("""
         font-size: 12px; font-weight: bold; margin-top: 5px;
     }
     
-    .calc-box { background-color: #f4f6f7; padding: 12px; border-radius: 6px; border-left: 4px solid #85c1e9; margin-bottom: 10px; font-family: 'Courier New', monospace; font-size: 13px; }
-    
+    /* Math/Calc Box Style */
+    .math-card {
+        background-color: #fdfefe;
+        border: 1px solid #e0e6e9;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    .math-header {
+        font-weight: bold;
+        color: #2e86c1;
+        margin-bottom: 8px;
+        border-bottom: 2px solid #f2f4f4;
+        padding-bottom: 5px;
+    }
+    .math-desc {
+        font-size: 0.9em;
+        color: #666;
+        margin-bottom: 5px;
+    }
+
     /* Report & Connection Styles */
     .report-paper { background-color: #ffffff; padding: 40px; border: 1px solid #e5e7e9; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border-radius: 2px; max-width: 900px; margin: auto; }
     .report-header { font-size: 20px; font-weight: 800; color: #1a5276; margin-top: 25px; border-bottom: 2px solid #a9cce3; padding-bottom: 8px; }
@@ -159,20 +179,47 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 2. Logic Source (Expanded) ---
-    with st.expander(f"🕵️‍♂️ ดูที่มาการคำนวณแบบละเอียด (Calculation Source)", expanded=False):
+    # --- 2. Logic Source (Detailed Math) ---
+    with st.expander(f"🕵️‍♂️ ดูที่มาการคำนวณแบบละเอียด (Show Calculations)", expanded=False):
+        st.caption("สมการหาค่าน้ำหนักบรรทุกปลอดภัย (w) ในหน่วย kg/m จากเงื่อนไขต่างๆ:")
+        
         c_cal1, c_cal2, c_cal3 = st.columns(3)
+        
+        # Prepare Values for LaTeX
+        L_cm_disp = user_span * 100
+        
         with c_cal1:
-            st.markdown(f"""<div class="calc-box"><b>1. Shear ({label_cap_v}):</b><br>• Cap = {V_cap:,.0f} kg<br>• Eq: w = 2*V/L<br>• w_shear = <b>{w_shear:,.0f} kg/m</b></div>""", unsafe_allow_html=True)
+            st.markdown(f'<div class="math-card"><div class="math-header">1. Shear Control ({label_cap_v})</div>', unsafe_allow_html=True)
+            st.markdown(f"Cap = {V_cap:,.0f} kg")
+            # Math Latex
+            st.latex(r''' w = \frac{2 \times V_{cap}}{L} \times 100 ''')
+            st.latex(fr''' w = \frac{{2 \times {V_cap:,.0f}}}{{{L_cm_disp:.0f}}} \times 100 ''')
+            st.markdown(f"<div style='text-align:center; font-weight:bold; color:#e74c3c;'>= {w_shear:,.0f} kg/m</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
         with c_cal2:
-            st.markdown(f"""<div class="calc-box"><b>2. Moment ({label_cap_m}):</b><br>• Cap = {M_cap:,.0f} kg.cm<br>• Eq: w = 8*M/L^2<br>• w_moment = <b>{w_moment:,.0f} kg/m</b></div>""", unsafe_allow_html=True)
+            st.markdown(f'<div class="math-card"><div class="math-header">2. Moment Control ({label_cap_m})</div>', unsafe_allow_html=True)
+            st.markdown(f"Cap = {M_cap:,.0f} kg.cm")
+            # Math Latex
+            st.latex(r''' w = \frac{8 \times M_{cap}}{L^2} \times 100 ''')
+            st.latex(fr''' w = \frac{{8 \times {M_cap:,.0f}}}{{{L_cm_disp:.0f}^2}} \times 100 ''')
+            st.markdown(f"<div style='text-align:center; font-weight:bold; color:#f39c12;'>= {w_moment:,.0f} kg/m</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
         with c_cal3:
-            st.markdown(f"""<div class="calc-box"><b>3. Deflection (L/{defl_lim_val}):</b><br>• Allow = {delta_allow:.2f} cm<br>• Eq: w = (d*384EI)/(5L^4)<br>• w_defl = <b>{w_defl:,.0f} kg/m</b></div>""", unsafe_allow_html=True)
+            st.markdown(f'<div class="math-card"><div class="math-header">3. Deflection (L/{defl_lim_val})</div>', unsafe_allow_html=True)
+            st.markdown(f"Allow = {delta_allow:.2f} cm (Ix={Ix})")
+            # Math Latex
+            st.latex(r''' w = \frac{384 E I \Delta}{5 L^4} \times 100 ''')
+            st.latex(fr''' w = \frac{{384 \cdot {E_mod:.2e} \cdot {Ix} \cdot {delta_allow:.1f}}}{{5 \cdot {L_cm_disp:.0f}^4}} \times 100 ''')
+            st.markdown(f"<div style='text-align:center; font-weight:bold; color:#27ae60;'>= {w_defl:,.0f} kg/m</div>", unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+            
+        st.info(f"💡 หมายเหตุ: การคูณ 100 ในสูตร คือการแปลงหน่วยจาก kg/cm ให้เป็น kg/m เพื่อให้ง่ายต่อการใช้งาน (L ใช้หน่วย cm ในการคำนวณ)")
 
     st.markdown("---")
 
     # --- 3. Metrics (Complete Data) ---
-    # แสดงข้อมูลครบ ทั้ง Actual และ Limit
     cm1, cm2, cm3 = st.columns(3)
     
     # Shear Box
@@ -214,26 +261,23 @@ with tab1:
             <div class="metric-badge" style="background-color:rgba(0,0,0,0.1); color:{d_txt};">Usage: {d_pct:.0f}%</div>
         </div>""", unsafe_allow_html=True)
 
-    # --- 4. Graph (With Axis Labels) ---
+    # --- 4. Graph ---
     st.markdown("<br>", unsafe_allow_html=True)
     g_spans = np.linspace(2, 15, 100)
     g_data = [get_capacity(l) for l in g_spans]
     
     fig = go.Figure()
-    # Limit Lines
     fig.add_trace(go.Scatter(x=g_spans, y=[x[1] for x in g_data], mode='lines', name=f'{label_cap_m} Limit', line=dict(color='#f39c12', dash='dot')))
     fig.add_trace(go.Scatter(x=g_spans, y=[x[0] for x in g_data], mode='lines', name=f'{label_cap_v} Limit', line=dict(color='#e74c3c', dash='dot')))
     fig.add_trace(go.Scatter(x=g_spans, y=[x[3] for x in g_data], mode='lines', name=f'Max {label_load}', line=dict(color='#2E86C1', width=3), fill='tozeroy', fillcolor='rgba(46, 134, 193, 0.1)'))
-    # Current Design Point
     fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers', 
                              marker=dict(color='#17202a', size=14, symbol='star', line=dict(width=2, color='white')), 
                              name='Current Design'))
     
-    # Layout Updated with Axis Titles
     fig.update_layout(
         title="Span vs Capacity Chart",
-        xaxis_title="Span Length (m)",         # ✅ เพิ่มชื่อแกน X
-        yaxis_title=f"Load Capacity (kg/m)",   # ✅ เพิ่มชื่อแกน Y
+        xaxis_title="Span Length (m)",
+        yaxis_title=f"Load Capacity (kg/m)",
         height=450, 
         margin=dict(t=40, b=40, l=60, r=40),
         plot_bgcolor='white',
