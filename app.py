@@ -5,235 +5,272 @@ import plotly.graph_objects as go
 import math
 
 # ==========================================
-# 1. SETUP
+# 1. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Professional Shear Connection Design", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Structure Master Pro", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
-    .header-box { background-color: #2c3e50; color: white; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
-    .pass-box { border-left: 5px solid #27ae60; background-color: #eafaf1; padding: 10px; margin: 5px 0; }
-    .fail-box { border-left: 5px solid #c0392b; background-color: #fdedec; padding: 10px; margin: 5px 0; }
-    .formula { font-family: 'Courier New'; font-size: 14px; color: #555; }
-    .metric-value { font-size: 18px; font-weight: bold; }
+    .big-card { background-color: #f0f8ff; padding: 20px; border-radius: 10px; border: 1px solid #add8e6; margin-bottom: 10px;}
+    .opt-card { background-color: #d4efdf; padding: 20px; border-radius: 10px; border-left: 5px solid #27ae60; }
+    .warn-card { background-color: #fdedec; padding: 20px; border-radius: 10px; border-left: 5px solid #c0392b; }
+    .metric-val { font-size: 24px; font-weight: bold; color: #154360; }
+    .metric-lbl { font-size: 14px; color: #566573; }
+    .pass { color: green; font-weight: bold; }
+    .fail { color: red; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATABASE & INPUTS
+# 2. DATABASE
 # ==========================================
-steel_sections = {
-    "H 200x100x5.5x8": {"h": 200, "tw": 5.5, "tf": 8, "Zx": 184, "Fu": 4000, "Fy": 2400},
-    "H 250x125x6x9":    {"h": 250, "tw": 6.0, "tf": 9, "Zx": 295, "Fu": 4000, "Fy": 2400},
-    "H 300x150x6.5x9":  {"h": 300, "tw": 6.5, "tf": 9, "Zx": 481, "Fu": 4000, "Fy": 2400},
-    "H 350x175x7x11":   {"h": 350, "tw": 7.0, "tf": 11, "Zx": 775, "Fu": 4000, "Fy": 2400},
-    "H 400x200x8x13":   {"h": 400, "tw": 8.0, "tf": 13, "Zx": 1190, "Fu": 4000, "Fy": 2400},
-    "H 500x200x10x16":  {"h": 500, "tw": 10.0, "tf": 16, "Zx": 1910, "Fu": 4000, "Fy": 2400},
+steel_db = {
+    "H 150x75x5x7":     {"h": 150, "b": 75,  "tw": 5,   "tf": 7,   "Ix": 666,    "Zx": 88.8,  "w": 14.0},
+    "H 200x100x5.5x8": {"h": 200, "b": 100, "tw": 5.5, "tf": 8,   "Ix": 1840,   "Zx": 184,   "w": 21.3},
+    "H 250x125x6x9":    {"h": 250, "b": 125, "tw": 6,   "tf": 9,   "Ix": 3690,   "Zx": 295,   "w": 29.6},
+    "H 300x150x6.5x9": {"h": 300, "b": 150, "tw": 6.5, "tf": 9,   "Ix": 7210,   "Zx": 481,   "w": 36.7},
+    "H 350x175x7x11":  {"h": 350, "b": 175, "tw": 7,   "tf": 11,  "Ix": 13600,  "Zx": 775,   "w": 49.6},
+    "H 400x200x8x13":  {"h": 400, "b": 200, "tw": 8,   "tf": 13,  "Ix": 23700,  "Zx": 1190,  "w": 66.0},
+    "H 450x200x9x14":  {"h": 450, "b": 200, "tw": 9,   "tf": 14,  "Ix": 33500,  "Zx": 1490,  "w": 76.0},
+    "H 500x200x10x16": {"h": 500, "b": 200, "tw": 10,  "tf": 16,  "Ix": 47800,  "Zx": 1910,  "w": 89.6},
 }
 
+# ==========================================
+# 3. SIDEBAR (Global Inputs)
+# ==========================================
 with st.sidebar:
-    st.header("1. Load & Section")
-    sec_name = st.selectbox("Beam Section", list(steel_sections.keys()), index=4)
-    beam = steel_sections[sec_name]
+    st.header("1. เลือกหน้าตัดคาน (Main Input)")
+    sec_name = st.selectbox("Section Size", list(steel_db.keys()), index=5)
+    p = steel_db[sec_name]
     
-    vu_input = st.number_input("Required Shear Force (Vu) [tons]", value=15.0, step=1.0) * 1000 # Convert to kg
+    st.info(f"""
+    **{sec_name}**
+    * Weight: {p['w']} kg/m
+    * Depth: {p['h']} mm
+    * Web: {p['tw']} mm
+    """)
     
-    st.header("2. Connection Config (Shear Tab)")
-    col_s1, col_s2 = st.columns(2)
-    with col_s1:
-        bolt_grade = st.selectbox("Bolt Grade", ["A307", "A325 (N)", "A490 (N)"])
-        bolt_dia_mm = st.selectbox("Bolt Dia (mm)", [16, 20, 22, 24], index=1)
-    with col_s2:
-        n_rows = st.number_input("Rows of Bolts", 2, 10, 3)
-        plate_t = st.selectbox("Plate Thickness (mm)", [6, 9, 12, 16, 20], index=1)
-
-    st.header("3. Geometry (mm)")
-    pitch = st.number_input("Pitch (s)", value=3*bolt_dia_mm, min_value=3*bolt_dia_mm)
-    lev = st.number_input("Vertical Edge (Lev)", value=1.5*bolt_dia_mm)
-    leh = st.number_input("Horiz. Edge (Leh)", value=40)
-    weld_s = st.number_input("Weld Size (mm)", value=6)
+    st.markdown("---")
+    st.header("2. วัสดุ (Material)")
+    fy = st.number_input("Fy (ksc)", 2400)
+    fu = st.number_input("Fu (ksc)", 4000)
+    E_mod = 2.04e6
 
 # ==========================================
-# 3. ENGINEERING CALCULATION ENGINE
+# 4. CALCULATION: BEAM CAPACITY
 # ==========================================
+# Properties
+h_cm, tw_cm = p['h']/10, p['tw']/10
+Ix, Zx = p['Ix'], p['Zx']
+Aw = h_cm * tw_cm
 
-# 3.1 Properties
-db = bolt_dia_mm / 10 # cm
-dh = db + 0.2 # Hole diameter cm
-tp = plate_t / 10 # Plate thickness cm
-tw = beam['tw'] / 10 # Web thickness cm
-Fu_beam = beam['Fu']
-Fy_plate = 2400 # Assume SS400
-Fu_plate = 4000
-Fy_weld = 0.6 * 4900 # E70xx electrode shear strength (approx)
+# Limits
+M_allow = 0.6 * fy * Zx
+V_allow_web = 0.4 * fy * Aw
 
-# 3.2 Bolt Shear Capacity
-# A325N Shear Strength ~ 3720 ksc (approx for Allowable), A307 ~ 1900
-fv_bolt = 3720 if "A325" in bolt_grade else (4760 if "A490" in bolt_grade else 1900)
-area_bolt = 3.1416 * (db/2)**2
-rn_bolt_shear = n_rows * area_bolt * fv_bolt
-# Note: For strict ASD/LRFD, need specific Fv. Using simplified Allowable stress here.
+# Optimal Range (15d - 20d)
+opt_min = 15 * (p['h']/1000)
+opt_max = 20 * (p['h']/1000)
 
-# 3.3 Bearing Capacity (R = 1.2 * Fu * d * t) (Simplified AISC J3.10)
-rn_bear_web = n_rows * (1.2 * Fu_beam * db * tw)
-rn_bear_plate = n_rows * (1.2 * Fu_plate * db * tp)
+# Generate Curve Data
+spans = np.linspace(2, 16, 100)
+w_gov, gov_cause = [], []
 
-# 3.4 Block Shear (The Complex One)
-# Variables
-s = pitch / 10
-lev_cm = lev / 10
-leh_cm = leh / 10
-L_gv = lev_cm + (n_rows - 1) * s # Gross vertical length
-L_nv = L_gv - (n_rows - 0.5) * dh # Net vertical length
-L_nt = leh_cm - 0.5 * dh # Net tension length (horizontal)
-
-# Calc Function
-def get_block_shear(Fy, Fu, t, Agv, Anv, Ant):
-    # AISC Eq J4-5: min( 0.6Fu*Anv + Ubs*Fu*Ant , 0.6Fy*Agv + Ubs*Fu*Ant )
-    term1 = 0.6 * Fu * Anv + 1.0 * Fu * Ant
-    term2 = 0.6 * Fy * Agv + 1.0 * Fu * Ant
-    return min(term1, term2)
-
-rn_bs_web = get_block_shear(beam['Fy'], Fu_beam, tw, L_gv*tw, L_nv*tw, L_nt*tw)
-rn_bs_plate = get_block_shear(Fy_plate, Fu_plate, tp, L_gv*tp, L_nv*tp, L_nt*tp)
-
-# 3.5 Plate Yielding & Rupture (Shear Yield/Rupture)
-plate_h = L_gv + lev_cm # Total plate height approx
-rn_pl_yield = 0.6 * Fy_plate * (plate_h * tp)
-rn_pl_rupture = 0.6 * Fu_plate * ((plate_h - n_rows*dh) * tp)
-
-# 3.6 Weld Capacity (Double Fillet)
-# Fw = 0.707 * s * 0.3 * Fu_weld (ASD) ... simplified logic
-# Allowable weld stress ~ 0.3 * 4900 = 1470 ksc
-rn_weld = 2 * (0.707 * (weld_s/10)) * plate_h * 0.3 * 4900
-
-# 3.7 Governing Capacity
-capacities = {
-    "Bolt Shear": rn_bolt_shear,
-    "Bearing (Web)": rn_bear_web,
-    "Bearing (Plate)": rn_bear_plate,
-    "Block Shear (Web)": rn_bs_web,
-    "Block Shear (Plate)": rn_bs_plate,
-    "Plate Shear Yield": rn_pl_yield,
-    "Plate Shear Rupture": rn_pl_rupture,
-    "Weld Strength": rn_weld
-}
-limit_state = min(capacities, key=capacities.get)
-max_capacity = capacities[limit_state]
-
-# ==========================================
-# 4. REPORT UI
-# ==========================================
-
-st.title(f"🛠️ Detailed Connection Analysis: {sec_name}")
-
-# --- Summary Banner ---
-status = "PASS" if max_capacity >= vu_input else "FAIL"
-color_banner = "#27ae60" if status == "PASS" else "#c0392b"
-
-st.markdown(f"""
-<div style="background-color:{color_banner}; padding:20px; border-radius:10px; color:white; text-align:center;">
-    <h1 style="margin:0;">Status: {status}</h1>
-    <h3 style="margin:0;">Load: {vu_input/1000:.2f} T  vs  Capacity: {max_capacity/1000:.2f} T</h3>
-    <p>Governing Failure Mode: <strong>{limit_state}</strong></p>
-</div>
-""", unsafe_allow_html=True)
-
-col_rep1, col_rep2 = st.columns([1.5, 1])
-
-# --- LEFT: DETAILED CHECK LIST ---
-with col_rep1:
-    st.subheader("📝 Detailed Calculation Checks")
+for L in spans:
+    L_cm = L * 100
+    ws = (2 * V_allow_web) / L_cm * 100 # Shear Limit Load
+    wm = (8 * M_allow) / (L_cm**2) * 100 # Moment Limit Load
+    wd = ((L_cm / 360) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100 # Deflection Limit (L/360)
     
-    def render_check(label, capacity, demand, unit="kg"):
-        ratio = demand / capacity
-        icon = "✅" if ratio <= 1.0 else "❌"
-        bar_color = "green" if ratio <= 1.0 else "red"
-        pct = min(ratio * 100, 100)
+    min_w = min(ws, wm, wd)
+    w_gov.append(min_w)
+    
+    if min_w == ws: gov_cause.append("Shear")
+    elif min_w == wm: gov_cause.append("Moment")
+    else: gov_cause.append("Deflection")
+
+# ==========================================
+# 5. UI TABS
+# ==========================================
+st.title("🏗️ Structural Beam & Connection Studio")
+
+tab1, tab2 = st.tabs(["📊 1. หา Span & Load ที่เหมาะสม", "🛠️ 2. ออกแบบรายละเอียดจุดต่อ (Detailing)"])
+
+# ==========================================
+# TAB 1: BEAM SELECTION & OPTIMAL SPAN
+# ==========================================
+with tab1:
+    st.subheader(f"วิเคราะห์ขีดความสามารถ: {sec_name}")
+    
+    col_main1, col_main2 = st.columns([1, 2])
+    
+    with col_main1:
+        # Optimal Recommendation
+        st.markdown(f"""
+        <div class="opt-card">
+            <h3 style="margin:0">✅ Optimal Span</h3>
+            <div class="metric-val">{opt_min:.1f} - {opt_max:.1f} m</div>
+            <div class="metric-lbl">ช่วงความยาวที่แนะนำ (L/d = 15-20)</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.write("")
+        # Span Slider
+        st.markdown("👇 **เลือกความยาวคานที่จะใช้จริง:**")
+        user_span = st.slider("Span Length (m)", 2.0, 16.0, (opt_min+opt_max)/2, 0.5)
+        
+        # Get Values
+        idx = (np.abs(spans - user_span)).argmin()
+        safe_load = w_gov[idx]
+        reaction = safe_load * user_span / 2
+        cause = gov_cause[idx]
         
         st.markdown(f"""
-        <div style="margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:5px;">
-            <div style="display:flex; justify-content:space-between;">
-                <strong>{icon} {label}</strong>
-                <span>Cap: {capacity:,.0f} {unit}</span>
-            </div>
-            <div style="background-color:#eee; width:100%; height:8px; border-radius:4px; margin-top:5px;">
-                <div style="background-color:{bar_color}; width:{pct}%; height:100%; border-radius:4px;"></div>
-            </div>
-            <div style="font-size:12px; color:#888; text-align:right;">Ratio: {ratio:.2f}</div>
+        <div class="big-card">
+            <div class="metric-lbl">Safe Uniform Load</div>
+            <div class="metric-val">{safe_load:,.0f} kg/m</div>
+            <div class="metric-lbl">Limited by: <b>{cause}</b></div>
+            <hr>
+            <div class="metric-lbl">End Reaction (V)</div>
+            <div class="metric-val" style="color:#d35400">{reaction:,.0f} kg</div>
+            <div class="metric-lbl">ใช้ค่านี้ไปออกแบบจุดต่อใน Tab 2</div>
         </div>
         """, unsafe_allow_html=True)
 
-    # 1. BOLTS & HOLES GROUP
-    st.markdown("#### 1. Bolts & Holes Interaction")
-    render_check(f"Bolt Shear ({n_rows}x{bolt_grade})", rn_bolt_shear, vu_input)
-    render_check("Bearing on Beam Web", rn_bear_web, vu_input)
-    render_check("Bearing on Plate", rn_bear_plate, vu_input)
-    
-    # 2. RUPTURE GROUP
-    st.markdown("#### 2. Rupture & Tearing")
-    
-    # Expandable detail for Block Shear because it's complex
-    with st.expander("🔍 See Block Shear Details"):
-        st.markdown(f"""
-        **Web Block Shear:**
-        - Agv (Shear Gross): {L_gv*tw:.2f} cm²
-        - Anv (Shear Net): {L_nv*tw:.2f} cm²
-        - Ant (Tension Net): {L_nt*tw:.2f} cm²
-        - **Capacity:** {rn_bs_web:,.0f} kg
+    with col_main2:
+        # THE GRAPH
+        st.markdown("##### 📈 กราฟแสดงความสามารถรับน้ำหนัก (Safe Load Capacity)")
+        fig = go.Figure()
         
-        **Plate Block Shear:**
-        - Agv: {L_gv*tp:.2f} cm² | Anv: {L_nv*tp:.2f} cm² | Ant: {L_nt*tp:.2f} cm²
-        - **Capacity:** {rn_bs_plate:,.0f} kg
-        """)
+        # Safe Zone
+        fig.add_trace(go.Scatter(x=spans, y=w_gov, fill='tozeroy', mode='lines', 
+                                 name='Safe Load', line=dict(color='#2E86C1', width=3)))
         
+        # Highlight Optimal Zone
+        fig.add_vrect(x0=opt_min, x1=opt_max, fillcolor="green", opacity=0.1, 
+                      annotation_text="Optimal Zone", annotation_position="top")
+        
+        # User Point
+        fig.add_trace(go.Scatter(x=[user_span], y=[safe_load], mode='markers', 
+                                 marker=dict(size=12, color='red', line=dict(width=2, color='white')),
+                                 name='Selected Span'))
+        
+        fig.update_layout(xaxis_title="Span Length (m)", yaxis_title="Safe Uniform Load (kg/m)", 
+                          hovermode="x unified", height=450)
+        st.plotly_chart(fig, use_container_width=True)
 
-    render_check("Block Shear (Web)", rn_bs_web, vu_input)
-    render_check("Block Shear (Plate)", rn_bs_plate, vu_input)
+# ==========================================
+# TAB 2: DETAILED CONNECTION (THE DEEP DIVE)
+# ==========================================
+with tab2:
+    st.subheader("🛠️ Connection Design Studio")
     
-    # 3. PLATE & WELD GROUP
-    st.markdown("#### 3. Plate & Weld")
-    render_check("Plate Shear Yielding", rn_pl_yield, vu_input)
-    render_check("Plate Shear Rupture", rn_pl_rupture, vu_input)
-    render_check(f"Weld Strength (size {weld_s}mm)", rn_weld, vu_input)
+    # ดึงค่า Reaction จาก Tab 1 มาเป็นค่าตั้งต้น (แต่แก้ได้)
+    col_inp1, col_inp2 = st.columns(2)
+    
+    with col_inp1:
+        st.markdown("#### A. Load & Bolts")
+        vu_input = st.number_input("Design Shear (kg) [ดึงมาจาก Tab 1]", value=float(reaction), step=100.0)
+        bolt_grade = st.selectbox("Bolt Grade", ["A325 (N)", "A307", "A490"], index=0)
+        bolt_dia = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
+        
+    with col_inp2:
+        st.markdown("#### B. Plate & Geometry")
+        n_rows = st.number_input("จำนวนแถวน็อต (Rows)", 2, 10, 3)
+        plate_t = st.selectbox("ความหนา Plate (mm)", [6, 9, 12, 16, 20], index=1)
+        # Auto calc geometry suggestion
+        d_mm = int(bolt_dia[1:])
+        pitch = st.number_input("ระยะห่าง (Pitch) mm", value=3*d_mm)
+        edge_v = st.number_input("ระยะขอบตั้ง (Lev) mm", value=1.5*d_mm)
+        edge_h = st.number_input("ระยะขอบนอน (Leh) mm", value=40)
 
-# --- RIGHT: VISUALIZATION & GEOMETRY ---
-with col_rep2:
-    st.subheader("📊 Capacity Comparison")
+    st.markdown("---")
     
-    # Bar Chart
-    df_cap = pd.DataFrame(list(capacities.items()), columns=['Mode', 'Capacity'])
-    df_cap['Color'] = ['#95a5a6']*len(df_cap)
+    # --- ENGINEERING CALCULATION (Hidden Logic) ---
+    # Props
+    db = d_mm / 10
+    dh = db + 0.2
+    tp = plate_t / 10
     
-    # Highlight Min (Limit) and Demand
-    min_idx = df_cap['Capacity'].idxmin()
-    df_cap.at[min_idx, 'Color'] = '#c0392b' # Red for Limit
+    # 1. Bolt Shear
+    fv = 3720 if "A325" in bolt_grade else 1900
+    rn_bolt = n_rows * (3.14*(db/2)**2) * fv
     
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        y=df_cap['Mode'], x=df_cap['Capacity']/1000,
-        orientation='h', marker_color=df_cap['Color'],
-        text=df_cap['Capacity']/1000, texttemplate='%{text:.1f}T'
-    ))
+    # 2. Bearing (Web & Plate)
+    rn_bear_web = n_rows * (1.2 * fu * db * tw_cm)
+    rn_bear_pl = n_rows * (1.2 * fu * db * tp)
     
-    # Add Demand Line
-    fig.add_vline(x=vu_input/1000, line_dash="dash", line_color="black", annotation_text="Load Vu")
+    # 3. Block Shear (Web)
+    s, ev, eh = pitch/10, edge_v/10, edge_h/10
+    L_gv = ev + (n_rows-1)*s
+    L_nv = L_gv - (n_rows-0.5)*dh
+    L_nt = eh - 0.5*dh
     
-    fig.update_layout(height=400, margin=dict(l=0,r=0,t=0,b=0), xaxis_title="Capacity (Tons)")
-    st.plotly_chart(fig, use_container_width=True)
+    def block_shear(Fy, Fu, t, Agv, Anv, Ant):
+        return min(0.6*Fu*Anv + 1.0*Fu*Ant, 0.6*Fy*Agv + 1.0*Fu*Ant)
+        
+    rn_bs_web = block_shear(fy, fu, tw_cm, L_gv*tw_cm, L_nv*tw_cm, L_nt*tw_cm)
+    rn_bs_pl = block_shear(2400, 4000, tp, L_gv*tp, L_nv*tp, L_nt*tp) # Plate SS400
     
-    st.subheader("📏 Geometry Check (AISC)")
-    # Geometric Rules
-    min_pitch = 2.67 * bolt_dia_mm
-    pref_pitch = 3.0 * bolt_dia_mm
-    min_edge = bolt_dia_mm # Simplified, strictly depends on cut edge/rolled edge
+    # 4. Plate Yield/Rupture
+    H_pl = L_gv + ev
+    rn_pl_yield = 0.6 * 2400 * H_pl * tp
+    rn_pl_rup = 0.6 * 4000 * (H_pl - n_rows*dh) * tp
     
+    # Collect Results
     checks = {
-        f"Pitch >= {min_pitch:.1f} mm": pitch >= min_pitch,
-        f"Edge Dist >= {min_edge} mm": lev >= min_edge and leh >= min_edge,
-        "Plate Thk vs Beam Web": plate_t >= beam['tw'] # Engineering Judgement
+        "Bolt Shear": rn_bolt,
+        "Bearing (Web)": rn_bear_web,
+        "Bearing (Plate)": rn_bear_pl,
+        "Block Shear (Web)": rn_bs_web,
+        "Block Shear (Plate)": rn_bs_pl,
+        "Plate Yield": rn_pl_yield,
+        "Plate Rupture": rn_pl_rup
     }
+    min_cap = min(checks.values())
+    limit_mode = min(checks, key=checks.get)
     
-    for rule, is_ok in checks.items():
-        icon = "✅" if is_ok else "⚠️"
-        st.write(f"{icon} {rule}")
+    # --- DISPLAY RESULTS ---
+    col_res_L, col_res_R = st.columns([1.5, 1])
+    
+    with col_res_L:
+        st.markdown("### 📋 Detailed Check List")
+        
+        # Loop to show bars
+        for mode, cap in checks.items():
+            ratio = vu_input / cap
+            is_pass = ratio <= 1.0
+            color = "#27ae60" if is_pass else "#c0392b"
+            icon = "✅" if is_pass else "❌"
+            
+            st.markdown(f"""
+            <div style="margin-bottom:10px;">
+                <div style="display:flex; justify-content:space-between;">
+                    <span>{icon} <b>{mode}</b></span>
+                    <span>Cap: {cap:,.0f} kg</span>
+                </div>
+                <div style="width:100%; background:#eee; height:8px; border-radius:4px;">
+                    <div style="width:{min(ratio*100, 100)}%; background:{color}; height:100%; border-radius:4px;"></div>
+                </div>
+                <small style="color:#777">Demand: {vu_input:,.0f} kg | Ratio: {ratio:.2f}</small>
+            </div>
+            """, unsafe_allow_html=True)
+            
+    with col_res_R:
+        st.markdown("### 🏁 Conclusion")
+        status = "PASSED" if min_cap >= vu_input else "FAILED"
+        bg_col = "#d4efdf" if status=="PASSED" else "#fadbd8"
+        
+        st.markdown(f"""
+        <div style="background-color:{bg_col}; padding:20px; border-radius:10px; text-align:center; border: 1px solid #ccc;">
+            <h2 style="margin:0; color:{'green' if status=='PASSED' else 'red'}">{status}</h2>
+            <hr>
+            <div class="metric-lbl">Governing Capacity</div>
+            <div class="metric-val">{min_cap:,.0f} kg</div>
+            <div class="metric-lbl">Controlled by: <b>{limit_mode}</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        with st.expander("ℹ️ Help: Block Shear คือ?"):
+            st.write("การวิบัติโดยที่เนื้อเหล็กฉีกหลุดออกมาเป็นก้อน (สี่เหลี่ยม) มักเกิดเมื่อใช้ Bolts หลายตัวแต่เหล็กบาง")
+            st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Block_shear_failure.svg/300px-Block_shear_failure.svg.png", caption="Block Shear Concept")
