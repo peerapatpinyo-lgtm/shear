@@ -5,10 +5,11 @@ import plotly.graph_objects as go
 import math
 
 # ==========================================
-# 1. STYLE CONFIGURATION
+# 1. SETUP & CONFIG
 # ==========================================
 st.set_page_config(page_title="ProStructure: Ultimate Report", layout="wide", page_icon="🏗️")
 
+# CSS Styling (ใช้ Triple Quotes เสมอเพื่อป้องกัน Error)
 st.markdown("""
 <style>
     .calc-sheet {
@@ -34,19 +35,20 @@ st.markdown("""
         margin-top: 15px;
         font-size: 16px;
     }
-    .highlight-box {
-        background-color: #eaf2f8;
+    .status-box {
         padding: 15px;
-        border-left: 5px solid #2980b9;
-        margin: 10px 0;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        border: 1px solid #ddd;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. INPUT DATA
+# 2. DATA & INPUTS
 # ==========================================
 def get_sys_data():
+    # Database: Section, h, b, tw, tf, Ix, Zx
     data = [
         ("H 100x50x5x7", 100, 50, 5, 7, 378, 76.5),
         ("H 150x75x5x7", 150, 75, 5, 7, 666, 88.8),
@@ -77,51 +79,56 @@ with st.sidebar:
     st.subheader("Geometry")
     span = st.slider("Span Length (m)", 1.0, 25.0, 6.0, 0.5)
 
+    # Get Properties
     p = df[df['Section'] == sec_name].iloc[0]
     h, tw, tf, Ix, Zx = p['h'], p['tw'], p['tf'], p['Ix'], p['Zx']
 
 # ==========================================
-# 3. CALCULATION CORE
+# 3. CALCULATION ENGINE
 # ==========================================
 L_cm = span * 100
 d_m = h / 1000
 ratio_L_d = span / d_m
 
-# 1. Shear
+# 1. Shear Capacity
 Aw = (h/10) * (tw/10)
 V_shear = 0.6 * Fy * Aw
 
-# 2. Moment
+# 2. Moment Capacity (Simplified for simply supported)
 M_allow = 0.6 * Fy * Zx
 V_moment = (4 * M_allow) / L_cm
 
-# 3. Deflection
+# 3. Deflection Limit (Simplified L/360)
+# V_defl comes from equating 5wL^4/384EI to L/360, converted to point load equivalent for comparison
 V_defl = (384 * E_val * Ix) / (2400 * (L_cm**2))
 
-# Governing
+# Design Control
 V_design = min(V_shear, V_moment, V_defl)
-if V_design == V_shear: gov = "Shear (แรงเฉือนคุม)"
-elif V_design == V_moment: gov = "Moment (โมเมนต์คุม)"
-else: gov = "Deflection (ระยะแอ่นคุม)"
+if V_design == V_shear: gov = "Shear (แรงเฉือน)"
+elif V_design == V_moment: gov = "Moment (โมเมนต์)"
+else: gov = "Deflection (ระยะแอ่น)"
 
 # ==========================================
-# 4. DASHBOARD & GRAPH
+# 4. MAIN DASHBOARD
 # ==========================================
 st.title(f"🏗️ Design Analysis: {sec_name}")
 
+# Metrics
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Max Reaction (V)", f"{V_design:,.0f} kg")
 c2.metric("Span Length", f"{span} m")
 c3.metric("L/d Ratio", f"{ratio_L_d:.1f}", delta="Optimal: 15-20" if 15<=ratio_L_d<=20 else "Check Span")
 c4.metric("Governing Mode", gov)
 
+# Charts
 col_graph, col_insight = st.columns([2, 1])
 
 with col_graph:
-    st.subheader("📈 Load Capacity Envelope")
+    st.subheader("📈 Capacity Envelope")
     L_vals = np.linspace(1, 25, 100)
     L_cm_vals = L_vals * 100
     
+    # Calculate curves
     v1 = np.full_like(L_vals, V_shear)
     v2 = (4 * M_allow) / L_cm_vals
     v3 = (384 * E_val * Ix) / (2400 * (L_cm_vals**2))
@@ -133,12 +140,14 @@ with col_graph:
     fig.add_trace(go.Scatter(x=L_vals, y=v3, name='Deflection Limit', line=dict(dash='dot', color='red')))
     fig.add_trace(go.Scatter(x=L_vals, y=v_min, name='Design Capacity', fill='tozeroy', line=dict(color='#154360', width=3)))
     
+    # Current point
     fig.add_trace(go.Scatter(x=[span], y=[V_design], mode='markers', marker=dict(size=12, color='red'), name='Current Selection'))
+    
     fig.update_layout(height=400, hovermode="x unified", xaxis_title="Span (m)", yaxis_title="Max Load (kg)", margin=dict(l=0,r=0,t=0,b=0))
     st.plotly_chart(fig, use_container_width=True)
 
 with col_insight:
-    st.subheader("📊 % Utilization")
+    st.subheader("📊 Utilization")
     
     p_shear = V_design / V_shear
     p_moment = V_design / V_moment
@@ -152,83 +161,72 @@ with col_insight:
     
     st.write(f"**Deflection:** {(p_defl*100):.1f}%")
     st.progress(min(p_defl, 1.0))
-    
-    if ratio_L_d > 20:
-        st.warning("⚠️ **Slender:** คานยาวเกินไป")
-    elif ratio_L_d < 15:
-        st.info("ℹ️ **Deep:** คานสั้น Shear รับได้สบาย")
-    else:
-        st.success("✅ **Optimal:** ช่วงความยาวเหมาะสม")
 
 # ==========================================
-# 5. DETAILED CALCULATION REPORT
+# 5. DETAILED REPORT TABS
 # ==========================================
 st.markdown("---")
-tab1, tab2 = st.tabs(["📄 1. Detailed Calculation Sheet", "🔩 2. Connection Design"])
+tab1, tab2 = st.tabs(["📄 1. Detailed Calculation", "🔩 2. Connection Design"])
 
+# --- TAB 1: BEAM CALCULATION ---
 with tab1:
-    st.markdown('<div class="calc-sheet">', unsafe_allow_html=True)
-    st.markdown('<div class="topic-header">CALCULATION REPORT</div>', unsafe_allow_html=True)
+    # เปิด container HTML ด้วย Triple Quotes
+    st.markdown("""
+    <div class="calc-sheet">
+        <div class="topic-header">CALCULATION REPORT</div>
+    """, unsafe_allow_html=True)
     
     col_l, col_r = st.columns(2)
     with col_l:
         st.markdown("**1. Properties**")
         st.write(f"Section: {sec_name}")
         st.latex(rf"d={h}mm, t_w={tw}mm, I_x={Ix:,}cm^4, Z_x={Zx:,}cm^3")
-        st.markdown("")
-
+        st.write("")
+    
     with col_r:
          st.markdown(f"**Governing Load: {V_design:,.0f} kg**")
          st.caption(f"Controlled by: {gov}")
     
     st.markdown("---")
     
-    # CASE 1
     st.markdown('<div class="sub-header">2. Shear Capacity</div>', unsafe_allow_html=True)
-    st.latex(rf"V_{{shear}} = 0.6 \times {Fy} \times ({h/10} \times {tw/10}) = \mathbf{{{V_shear:,.0f}}} \ kg")
+    st.latex(rf"V_{{shear}} = 0.6 F_y A_w = \mathbf{{{V_shear:,.0f}}} \ kg")
     
-    # CASE 2
     st.markdown('<div class="sub-header">3. Moment Capacity</div>', unsafe_allow_html=True)
-    st.latex(rf"M_{{all}} = 0.6 \times {Fy} \times {Zx} = {M_allow:,.0f} \ kg \cdot cm")
-    st.latex(rf"V_{{moment}} = \frac{{4 \times M}}{{L}} = \mathbf{{{V_moment:,.0f}}} \ kg")
-    st.markdown("
+    st.latex(rf"M_{{all}} = 0.6 F_y Z_x = {M_allow:,.0f} \ kg \cdot cm")
+    st.latex(rf"V_{{moment}} = \frac{{4 M}}{{L}} = \mathbf{{{V_moment:,.0f}}} \ kg")
+    st.write("
 
 [Image of simply supported beam bending moment diagram]
 ")
     
-    # CASE 3
     st.markdown('<div class="sub-header">4. Deflection Limit</div>', unsafe_allow_html=True)
     st.latex(rf"V_{{defl}} = \frac{{384 E I}}{{2400 L^2}} = \mathbf{{{V_defl:,.0f}}} \ kg")
     
-    st.markdown(f"""
-    <div class="highlight-box">
-    <b>CONCLUSION:</b> The Beam is limited by <b>{gov}</b><br>
-    <b>Max Allowable Reaction = {V_design:,.0f} kg</b>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+    # ปิด container
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# ==========================================
-# 6. CONNECTION DESIGN (The source of previous errors)
-# ==========================================
+# --- TAB 2: CONNECTION DESIGN (จุดที่เคย Error บ่อย) ---
 with tab2:
-    st.markdown('<div class="calc-sheet">', unsafe_allow_html=True)
-    st.markdown('<div class="topic-header">CONNECTION DESIGN: SHEAR TAB</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="calc-sheet">
+        <div class="topic-header">CONNECTION CHECK (Shear Tab)</div>
+    """, unsafe_allow_html=True)
     
     c_in, c_cal = st.columns([1, 2])
     
     with c_in:
-        st.info(f"**Load ($V_u$):** {V_design:,.0f} kg")
+        st.info(f"**Required Load ($V_u$):** {V_design:,.0f} kg")
         dia = st.selectbox("Bolt Dia (mm)", [12, 16, 20, 22, 24], index=2)
         rows = st.number_input("Rows (n)", 2, 8, 3)
         tp = st.selectbox("Plate Thick (mm)", [6, 9, 12, 16], index=1)
         weld = st.selectbox("Weld Size (mm)", [4, 6, 8], index=1)
     
     with c_cal:
+        # Calcs
         db = dia/10
         Ab = math.pi*(db/2)**2
-        Fv = 3720 
+        Fv = 3720 # A325
         
         Rn_bolt = rows * Ab * Fv
         Rn_bear = min(rows*1.2*Fu*db*(tw/10), rows*1.2*Fu*db*(tp/10))
@@ -236,21 +234,32 @@ with tab2:
         Rn_weld = 2 * L_w * 0.707 * (weld/10) * (0.3*4900)
         
         min_conn = min(Rn_bolt, Rn_bear, Rn_weld)
-        status = "PASSED" if min_conn >= V_design else "FAILED"
-        color = "green" if status == "PASSED" else "red"
+        passed = min_conn >= V_design
         
-        # --- FIXED SECTION: Using explicit variables and triple quotes ---
-        result_html = f"""
-        <h3>Status: <span style='color:{color}'>{status}</span></h3>
-        <p><b>Capacity: {min_conn:,.0f} kg</b> (Ratio: {V_design/min_conn:.2f})</p>
+        # --- SAFE HTML CONSTRUCTION ---
+        # แยกตัวแปรออกมาเพื่อความชัวร์ 100%
+        status_text = "PASSED" if passed else "FAILED"
+        bg_color = "#d4edda" if passed else "#f8d7da" # Green/Red bg
+        text_color = "#155724" if passed else "#721c24"
+        
+        # ใช้ Triple Quotes ตรงนี้เพื่อรองรับหลายบรรทัด
+        html_content = f"""
+        <div class="status-box" style="background-color: {bg_color}; color: {text_color};">
+            <h3 style="margin:0;">Result: {status_text}</h3>
+            <p style="margin-top:5px;">
+                <b>Capacity: {min_conn:,.0f} kg</b> 
+                (Ratio: {V_design/min_conn:.2f})
+            </p>
+        </div>
         """
-        st.markdown(result_html, unsafe_allow_html=True)
-        # -----------------------------------------------------------------
         
-        st.markdown("**Calculation Breakdown:**")
-        st.latex(rf"1. \ Bolt \ Shear: {rows} \times {Ab:.2f} \times {Fv} = {Rn_bolt:,.0f} \ kg")
-        st.markdown("")
+        st.markdown(html_content, unsafe_allow_html=True)
+        # ------------------------------
+        
+        st.markdown("**Checklist:**")
+        st.latex(rf"1. \ Bolt \ Shear: {Rn_bolt:,.0f} \ kg")
+        st.write("")
         st.latex(rf"2. \ Bearing: {Rn_bear:,.0f} \ kg")
         st.latex(rf"3. \ Weld: {Rn_weld:,.0f} \ kg")
         
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
