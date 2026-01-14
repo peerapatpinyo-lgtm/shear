@@ -8,66 +8,91 @@ import connection_design as conn
 import report_generator as rep
 
 # ==========================================
-# 1. SETUP & STYLE
+# 1. SETUP & STYLE (New CSS for Pro Dashboard)
 # ==========================================
 st.set_page_config(page_title="Beam Insight V12 (Modular)", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;800&family=Roboto+Mono:wght@500&display=swap');
     html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
 
-    /* Highlight Card */
+    /* --- Pro Card Style --- */
+    .metric-card-pro {
+        background: white;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+        border: 1px solid #f0f2f5;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        transition: transform 0.2s;
+    }
+    .metric-card-pro:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+    }
+
+    /* Header */
+    .pro-header {
+        display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;
+    }
+    .pro-title {
+        font-size: 16px; font-weight: 700; color: #636e72; text-transform: uppercase; letter-spacing: 0.5px;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .pro-percent {
+        font-size: 36px; font-weight: 800; line-height: 1;
+    }
+
+    /* Grid Layout for Values */
+    .stat-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+        margin-bottom: 15px;
+        padding: 12px;
+        background: #f8f9fa;
+        border-radius: 10px;
+    }
+    .stat-item { display: flex; flex-direction: column; }
+    .stat-label { font-size: 12px; color: #999; margin-bottom: 2px; }
+    .stat-value { font-size: 18px; font-weight: 700; color: #2d3436; }
+    
+    /* Progress Bar Styled */
+    .bar-container {
+        height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden; margin-bottom: 12px;
+    }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+
+    /* Math Pill (Subtle Footer) */
+    .math-pill {
+        font-family: 'Roboto Mono', monospace;
+        font-size: 11px;
+        color: #b2bec3;
+        text-align: right;
+        background: #fff;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 6px;
+    }
+    .math-pill span { background: #f1f2f6; padding: 2px 6px; border-radius: 4px; }
+
+    /* --- Global Utils --- */
     .highlight-card { 
         background: linear-gradient(135deg, #ebf5fb 0%, #ffffff 100%);
         padding: 25px; border-radius: 12px; border-left: 6px solid #2e86c1; 
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 25px; 
     }
-
-    /* Metric Box (UI Updated) */
-    .metric-box { 
-        padding: 20px; background: white; 
-        border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); 
-        border: 1px solid #e0e6e9; height: 100%;
-        display: flex; flex-direction: column; justify-content: space-between;
-    }
-    .metric-header {
-        display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;
-    }
-    .metric-title { font-size: 16px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
-    
-    /* Value & Limit Row */
-    .val-row {
-        display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;
-    }
-    .metric-value { font-size: 28px; font-weight: 800; line-height: 1; }
-    .metric-limit { font-size: 13px; color: #888; text-align: right; }
-    
-    /* Progress Bar */
-    .prog-bg { background-color: #ecf0f1; height: 8px; border-radius: 4px; margin-bottom: 12px; overflow: hidden; }
-    .prog-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease-in-out; }
-    
-    /* Calc Source Mini-Box */
-    .calc-mini { 
-        background-color: #f8f9fa; 
-        border: 1px dashed #d6dbdf; 
-        border-radius: 6px; 
-        padding: 8px 12px; 
-        font-family: 'Courier New', monospace; 
-        font-size: 13px; 
-        color: #555; 
-        text-align: center; 
-        width: 100%;
-    }
-
-    /* Math/Calc Box Style (Main Expander) */
     .math-card {
         background-color: #fdfefe; border: 1px solid #e0e6e9; border-radius: 8px;
         padding: 15px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02); height: 100%;
     }
     .math-header { font-weight: bold; color: #2e86c1; margin-bottom: 8px; border-bottom: 2px solid #f2f4f4; padding-bottom: 5px; }
-
-    /* Global */
+    
     .report-paper { background-color: #ffffff; padding: 40px; border: 1px solid #e5e7e9; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border-radius: 2px; max-width: 900px; margin: auto; }
     .report-header { font-size: 20px; font-weight: 800; color: #1a5276; margin-top: 25px; border-bottom: 2px solid #a9cce3; padding-bottom: 8px; }
     .report-line { font-family: 'Courier New', monospace; font-size: 16px; margin-bottom: 8px; color: #2c3e50; border-bottom: 1px dotted #eee; }
@@ -76,7 +101,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. INPUTS
+# 2. INPUTS (Logic เดิม)
 # ==========================================
 steel_db = {
     "H 150x75x5x7":     {"h": 150, "b": 75,  "tw": 5,   "tf": 7,   "Ix": 666,    "Zx": 88.8,  "w": 14.0},
@@ -92,7 +117,7 @@ steel_db = {
 
 with st.sidebar:
     st.title("Beam Insight V12")
-    st.caption("Modular Edition")
+    st.caption("Modular Edition (Pro UI)")
     st.divider()
     
     st.header("1. Design Method")
@@ -188,90 +213,86 @@ with tab1:
 
     # --- 2. Logic Source (Math Card Style) ---
     with st.expander(f"🕵️‍♂️ ดูที่มาการคำนวณแบบละเอียด (Calculations)", expanded=False):
-        st.caption("สมการหาค่าน้ำหนักบรรทุกปลอดภัย (w) ในหน่วย kg/m")
         c_cal1, c_cal2, c_cal3 = st.columns(3)
         L_cm_disp = user_span * 100
         
         with c_cal1:
-            st.markdown(f'<div class="math-card"><div class="math-header">1. Shear Control ({label_cap_v})</div>', unsafe_allow_html=True)
-            st.markdown(f"Cap = {V_cap:,.0f} kg")
-            st.latex(r''' w = \frac{2 \times V_{cap}}{L} \times 100 ''')
-            st.latex(fr''' w = \frac{{2 \times {V_cap:,.0f}}}{{{L_cm_disp:.0f}}} \times 100 ''')
-            st.markdown(f"<div style='text-align:center; font-weight:bold; color:#e74c3c;'>= {w_shear:,.0f} kg/m</div>", unsafe_allow_html=True)
+            st.markdown(f'<div class="math-card"><div class="math-header">1. Shear Control</div>', unsafe_allow_html=True)
+            st.latex(fr''' w = \frac{{2 \times {V_cap:,.0f}}}{{{L_cm_disp:.0f}}} \times 100 = \mathbf{{{w_shear:,.0f}}} ''')
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c_cal2:
-            st.markdown(f'<div class="math-card"><div class="math-header">2. Moment Control ({label_cap_m})</div>', unsafe_allow_html=True)
-            st.markdown(f"Cap = {M_cap:,.0f} kg.cm")
-            st.latex(r''' w = \frac{8 \times M_{cap}}{L^2} \times 100 ''')
-            st.latex(fr''' w = \frac{{8 \times {M_cap:,.0f}}}{{{L_cm_disp:.0f}^2}} \times 100 ''')
-            st.markdown(f"<div style='text-align:center; font-weight:bold; color:#f39c12;'>= {w_moment:,.0f} kg/m</div>", unsafe_allow_html=True)
+            st.markdown(f'<div class="math-card"><div class="math-header">2. Moment Control</div>', unsafe_allow_html=True)
+            st.latex(fr''' w = \frac{{8 \times {M_cap:,.0f}}}{{{L_cm_disp:.0f}^2}} \times 100 = \mathbf{{{w_moment:,.0f}}} ''')
             st.markdown("</div>", unsafe_allow_html=True)
 
         with c_cal3:
-            st.markdown(f'<div class="math-card"><div class="math-header">3. Deflection (L/{defl_lim_val})</div>', unsafe_allow_html=True)
-            st.markdown(f"Allow = {delta_allow:.2f} cm (Ix={Ix})")
-            st.latex(r''' w = \frac{384 E I \Delta}{5 L^4} \times 100 ''')
-            st.latex(fr''' w = \frac{{384 \cdot {E_mod:.2e} \cdot {Ix} \cdot {delta_allow:.1f}}}{{5 \cdot {L_cm_disp:.0f}^4}} \times 100 ''')
-            st.markdown(f"<div style='text-align:center; font-weight:bold; color:#27ae60;'>= {w_defl:,.0f} kg/m</div>", unsafe_allow_html=True)
+            st.markdown(f'<div class="math-card"><div class="math-header">3. Deflection</div>', unsafe_allow_html=True)
+            st.latex(fr''' w = \frac{{384 \cdot {E_mod:.2e} \cdot {Ix} \cdot {delta_allow:.1f}}}{{5 \cdot {L_cm_disp:.0f}^4}} \times 100 = \mathbf{{{w_defl:,.0f}}} ''')
             st.markdown("</div>", unsafe_allow_html=True)
             
     st.markdown("---")
 
-    # --- 3. Metrics (Clean & Beautiful) ---
+    # --- 3. PRO METRICS (The Fix) ---
     cm1, cm2, cm3 = st.columns(3)
     
-    def create_metric_card(title, actual, limit, unit, color_base, decimal=0):
-        # 1. Calculation Logic
+    def create_pro_card(icon, title, actual, limit, unit, color_base, decimal=0):
+        # 1. Logic
         pct = (actual / limit) * 100
-        bar_color = color_base if pct <= 100 else "#e74c3c"
         bar_width = min(pct, 100)
-        
-        # 2. String Formatting (Handle commas and decimals)
+        # Gradient effect for bar
+        bar_gradient = f"linear-gradient(90deg, {color_base} 0%, {color_base}dd 100%)"
+        if pct > 100:
+             bar_gradient = "linear-gradient(90deg, #e74c3c 0%, #c0392b 100%)"
+             color_text = "#e74c3c"
+        else:
+             color_text = color_base
+             
         fmt = f",.{decimal}f"
-        act_str = f"{actual:{fmt}}"
-        lim_str = f"{limit:{fmt}}"
         
-        # 3. HTML Structure (Cleaned up)
         return f"""
-        <div class="metric-box" style="border-top: 4px solid {bar_color};">
-            <div class="metric-header">
-                <span class="metric-title">{title}</span>
-                <span style="background:{bar_color}15; color:{bar_color}; padding:3px 10px; border-radius:12px; font-weight:bold; font-size:12px;">
-                    {pct:.1f}%
-                </span>
-            </div>
-            
-            <div class="val-row">
-                <div class="metric-value" style="color:{bar_color};">
-                    {act_str} <small style="font-size:16px; color:#aaa; font-weight:normal;">{unit}</small>
+        <div class="metric-card-pro" style="border-top: 5px solid {color_text};">
+            <div class="pro-header">
+                <div class="pro-title">
+                    <span>{icon}</span> {title}
                 </div>
-                <div class="metric-limit">
-                    Limit: <b>{lim_str}</b> {unit}
+                <div class="pro-percent" style="color:{color_text};">
+                    {pct:.1f}<small style="font-size:18px;">%</small>
                 </div>
             </div>
             
-            <div class="prog-bg">
-                <div class="prog-fill" style="width:{bar_width:.1f}%; background-color:{bar_color};"></div>
+            <div class="stat-grid">
+                <div class="stat-item">
+                    <span class="stat-label">Actual Load</span>
+                    <span class="stat-value">{actual:{fmt}}</span>
+                </div>
+                <div class="stat-item" style="align-items: flex-end;">
+                    <span class="stat-label">Capacity (Limit)</span>
+                    <span class="stat-value" style="color:#aaa;">{limit:{fmt}}</span>
+                </div>
             </div>
             
-            <div class="calc-mini">
-                ({act_str} / {lim_str}) × 100 = <b>{pct:.1f}%</b>
+            <div class="bar-container">
+                <div class="bar-fill" style="width:{bar_width}%; background:{bar_gradient};"></div>
+            </div>
+            
+            <div class="math-pill">
+                <span>Check:</span> {actual:{fmt}} / {limit:{fmt}} <small>{unit}</small>
             </div>
         </div>
         """
     
-    # 3.1 Shear Box
+    # 3.1 Shear
     with cm1:
-        st.markdown(create_metric_card("Shear (V)", V_actual, V_cap, "kg", "#27ae60"), unsafe_allow_html=True)
+        st.markdown(create_pro_card("✂️", "Shear (V)", V_actual, V_cap, "kg", "#2ecc71"), unsafe_allow_html=True)
         
-    # 3.2 Moment Box
+    # 3.2 Moment
     with cm2:
-        st.markdown(create_metric_card("Moment (M)", M_actual, M_cap/100, "kg.m", "#f39c12"), unsafe_allow_html=True)
+        st.markdown(create_pro_card("🔄", "Moment (M)", M_actual, M_cap/100, "kg.m", "#f1c40f"), unsafe_allow_html=True)
         
-    # 3.3 Deflection Box (Use 2 decimal places)
+    # 3.3 Deflection
     with cm3:
-        st.markdown(create_metric_card("Deflection", delta_actual, delta_allow, "cm", "#2980b9", decimal=2), unsafe_allow_html=True)
+        st.markdown(create_pro_card("📏", "Deflection", delta_actual, delta_allow, "cm", "#3498db", decimal=2), unsafe_allow_html=True)
 
     # --- 4. Graph ---
     st.markdown("<br>", unsafe_allow_html=True)
