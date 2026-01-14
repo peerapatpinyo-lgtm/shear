@@ -5,39 +5,48 @@ import plotly.graph_objects as go
 import math
 
 # ==========================================
-# 1. SETUP & CONFIG
+# 1. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="ProStructure: Ultimate Report", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="ProStructure: Typical Detail Generator", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
-    .calc-sheet {
+    .main-card {
         background-color: #ffffff;
-        padding: 25px;
-        border: 1px solid #dcdcdc;
-        border-radius: 5px;
-        font-family: sans-serif;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        border: 1px solid #e0e0e0;
         margin-bottom: 20px;
     }
-    .topic-header {
-        color: #154360;
-        border-bottom: 2px solid #154360;
-        padding-bottom: 5px;
-        margin-bottom: 15px;
-        font-weight: bold;
-        font-size: 20px;
-    }
-    .result-box {
+    .metric-box {
+        text-align: center;
         padding: 15px;
-        border-radius: 5px;
-        margin-top: 10px;
-        border: 1px solid #ccc;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+    }
+    .recommend-box {
+        background-color: #d1e7dd;
+        color: #0f5132;
+        padding: 20px;
+        border-radius: 8px;
+        border-left: 5px solid #198754;
+        font-size: 18px;
+        font-weight: bold;
+    }
+    .warning-box {
+        background-color: #fff3cd;
+        color: #664d03;
+        padding: 20px;
+        border-radius: 8px;
+        border-left: 5px solid #ffc107;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATA & INPUTS
+# 2. DATA & FUNCTIONS
 # ==========================================
 def get_sys_data():
     data = [
@@ -57,169 +66,214 @@ def get_sys_data():
     ]
     return pd.DataFrame(data, columns=["Section", "h", "b", "tw", "tf", "Ix", "Zx"])
 
-with st.sidebar:
-    st.header("⚙️ Project Parameters")
-    df = get_sys_data()
-    sec_name = st.selectbox("Select Section", df['Section'], index=6)
+def calculate_capacity(span_m, h, tw, Ix, Zx, Fy, E_val):
+    L_cm = span_m * 100
     
-    st.subheader("Material (ksc)")
-    Fy = st.number_input("Yield (Fy)", value=2400)
-    Fu = st.number_input("Ultimate (Fu)", value=4000)
+    # 1. Shear
+    Aw = (h/10) * (tw/10)
+    V_shear = 0.6 * Fy * Aw
+    
+    # 2. Moment (Simple Beam: M = PL/4 -> P = 4M/L)
+    M_allow = 0.6 * Fy * Zx
+    V_moment = (4 * M_allow) / L_cm
+    
+    # 3. Deflection (Simple Beam Point Load: P = 48EI d / L^3 ... simplified to equiv shear limit)
+    # Using standard limit L/360
+    # Delta = PL^3 / 48EI  => P = (Delta * 48EI) / L^3
+    # Delta_lim = L_cm / 360
+    # V_defl = ( (L_cm/360) * 48 * E_val * Ix ) / (L_cm**3)
+    # V_defl = (48 * E_val * Ix) / (360 * L_cm**2) ... (unit kg)
+    
+    # Note: Previous formula was 384/2400 (5wL^4 vs point load). 
+    # Let's use strict Point Load Center Span stiffness for conservative check:
+    V_defl = (48 * E_val * Ix) / (360 * (L_cm**2)) 
+
+    return min(V_shear, V_moment, V_defl)
+
+# ==========================================
+# 3. SIDEBAR INPUTS
+# ==========================================
+with st.sidebar:
+    st.header("🛠️ Design Input")
+    df = get_sys_data()
+    sec_name = st.selectbox("Select Section", df['Section'], index=5)
+    
+    st.markdown("---")
+    st.markdown("**Design Criteria**")
+    design_load = st.number_input("Typical Point Load (kg)", value=5000, step=500, help="แรงที่คาดว่าจะเกิดขึ้นจริง (Reaction)")
+    
+    Fy = 2400
     E_val = 2.04e6
     
-    st.subheader("Geometry")
-    span = st.slider("Span Length (m)", 1.0, 25.0, 6.0, 0.5)
-
+    # Get Properties
     p = df[df['Section'] == sec_name].iloc[0]
     h, tw, tf, Ix, Zx = p['h'], p['tw'], p['tf'], p['Ix'], p['Zx']
 
 # ==========================================
-# 3. CALCULATION
+# 4. MAIN CALCULATION & OPTIMIZATION
 # ==========================================
-L_cm = span * 100
-d_m = h / 1000
-ratio_L_d = span / d_m
+st.title(f"🏗️ Typical Detail Analysis: {sec_name}")
 
-# 1. Shear
-Aw = (h/10) * (tw/10)
-V_shear = 0.6 * Fy * Aw
+# --- LOOP TO FIND OPTIMAL RANGE ---
+spans = np.linspace(1, 20, 200) # Check 1m to 20m
+results = []
+valid_spans = []
 
-# 2. Moment
-M_allow = 0.6 * Fy * Zx
-V_moment = (4 * M_allow) / L_cm
-
-# 3. Deflection
-V_defl = (384 * E_val * Ix) / (2400 * (L_cm**2))
-
-# Design Control
-V_design = min(V_shear, V_moment, V_defl)
-if V_design == V_shear: gov = "Shear"
-elif V_design == V_moment: gov = "Moment"
-else: gov = "Deflection"
-
-# ==========================================
-# 4. DASHBOARD
-# ==========================================
-st.title(f"🏗️ Design Analysis: {sec_name}")
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Max Reaction", f"{V_design:,.0f} kg")
-c2.metric("Span", f"{span} m")
-c3.metric("L/d Ratio", f"{ratio_L_d:.1f}")
-c4.metric("Governing", gov)
-
-col_graph, col_insight = st.columns([2, 1])
-
-with col_graph:
-    st.subheader("📈 Capacity Envelope")
-    L_vals = np.linspace(1, 25, 100)
-    L_cm_vals = L_vals * 100
+for s in spans:
+    cap = calculate_capacity(s, h, tw, Ix, Zx, Fy, E_val)
+    util = design_load / cap
     
-    v1 = np.full_like(L_vals, V_shear)
-    v2 = (4 * M_allow) / L_cm_vals
-    v3 = (384 * E_val * Ix) / (2400 * (L_cm_vals**2))
-    v_min = np.minimum(np.minimum(v1, v2), v3)
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=L_vals, y=v1, name='Shear', line=dict(dash='dot', color='green')))
-    fig.add_trace(go.Scatter(x=L_vals, y=v2, name='Moment', line=dict(dash='dot', color='orange')))
-    fig.add_trace(go.Scatter(x=L_vals, y=v3, name='Deflection', line=dict(dash='dot', color='red')))
-    fig.add_trace(go.Scatter(x=L_vals, y=v_min, name='Capacity', fill='tozeroy', line=dict(color='#154360', width=3)))
-    fig.add_trace(go.Scatter(x=[span], y=[V_design], mode='markers', marker=dict(size=12, color='red'), name='Selected'))
-    
-    fig.update_layout(height=400, margin=dict(l=0,r=0,t=0,b=0))
-    st.plotly_chart(fig, use_container_width=True)
+    # Check criteria: 50% <= Util <= 70%
+    if 0.50 <= util <= 0.70:
+        valid_spans.append(s)
+        
+    results.append({
+        "span": s,
+        "capacity": cap,
+        "utilization": util * 100, # Convert to %
+        "L_d": s * 1000 / h
+    })
 
-with col_insight:
-    st.subheader("📊 Utilization")
-    st.write(f"Shear: {(V_design/V_shear*100):.1f}%")
-    st.progress(min(V_design/V_shear, 1.0))
-    st.write(f"Moment: {(V_design/V_moment*100):.1f}%")
-    st.progress(min(V_design/V_moment, 1.0))
+df_res = pd.DataFrame(results)
+
+# --- DETERMINE RECOMMENDATION ---
+if len(valid_spans) > 0:
+    min_s = min(valid_spans)
+    max_s = max(valid_spans)
+    status_html = f"""
+    <div class="recommend-box">
+        ✅ RECOMMENDED SPAN: {min_s:.1f} - {max_s:.1f} m<br>
+        <span style="font-size:14px; font-weight:normal;">
+        (ที่ Load {design_load:,.0f} kg จะใช้ประสิทธิภาพหน้าตัด 50-70%)
+        </span>
+    </div>
+    """
+else:
+    # Check why failed
+    min_util = df_res['utilization'].min()
+    if min_util > 70:
+        status_html = f"""
+        <div class="warning-box">
+            ⚠️ <b>Section Too Small!</b><br>
+            ที่ Load {design_load:,.0f} kg หน้าตัดนี้รับแรงเกิน 70% ตลอดทุกระยะ<br>
+            แนะนำให้: <b>เพิ่มขนาดหน้าตัด</b>
+        </div>
+        """
+    else:
+        status_html = f"""
+        <div class="warning-box">
+            ⚠️ <b>Section Too Big!</b><br>
+            ที่ Load {design_load:,.0f} kg หน้าตัดนี้ใช้น้อยกว่า 50% (Overdesign)<br>
+            แนะนำให้: <b>ลดขนาดหน้าตัด</b> หรือ <b>เพิ่มระยะ Span</b>
+        </div>
+        """
+
+st.markdown(status_html, unsafe_allow_html=True)
 
 # ==========================================
-# 5. DETAILED REPORT
+# 5. VISUALIZATION (THE "CLEAR" GRAPHS)
 # ==========================================
-st.markdown("---")
-tab1, tab2 = st.tabs(["📄 Calculation", "🔩 Connection"])
+st.markdown("### 📊 Analysis Charts")
+
+tab1, tab2 = st.tabs(["🎯 % Utilization Graph (Target)", "📈 Capacity Curve"])
 
 with tab1:
-    st.markdown("""<div class="calc-sheet">""", unsafe_allow_html=True)
-    st.markdown("""<div class="topic-header">CALCULATION REPORT</div>""", unsafe_allow_html=True)
+    # Graph showing Utilization % vs Span
+    # This answers "Write graph as %"
+    fig_util = go.Figure()
     
-    col_l, col_r = st.columns(2)
-    with col_l:
-        st.markdown("**Properties:**")
-        st.write(f"Section: {sec_name}")
-        st.latex(rf"d={h}, t_w={tw}, I_x={Ix:,}, Z_x={Zx:,}")
-        st.caption("Standard Section Properties")
+    # Plot the Utilization Curve
+    fig_util.add_trace(go.Scatter(
+        x=df_res['span'], 
+        y=df_res['utilization'],
+        mode='lines',
+        name='Actual Utilization',
+        line=dict(color='#154360', width=3)
+    ))
+    
+    # Add Green Zone (50-70%)
+    fig_util.add_shape(type="rect",
+        x0=df_res['span'].min(), y0=50, x1=df_res['span'].max(), y1=70,
+        fillcolor="green", opacity=0.15, layer="below", line_width=0,
+    )
+    
+    # Add Limit Line (100%)
+    fig_util.add_shape(type="line",
+        x0=df_res['span'].min(), y0=100, x1=df_res['span'].max(), y1=100,
+        line=dict(color="red", width=2, dash="dash"),
+    )
+    fig_util.add_annotation(x=df_res['span'].max(), y=100, text="Max Capacity (100%)", showarrow=False, yshift=10)
+    fig_util.add_annotation(x=df_res['span'].max()/2, y=60, text="TARGET ZONE (50-70%)", showarrow=False, font=dict(color="green", size=14, weight="bold"))
 
-    with col_r:
-         st.markdown(f"**Limit State: {gov}**")
-         st.markdown(f"**Capacity: {V_design:,.0f} kg**")
+    fig_util.update_layout(
+        title=f"Utilization (%) for Load = {design_load:,.0f} kg",
+        xaxis_title="Span Length (m)",
+        yaxis_title="% Utilization",
+        yaxis=dict(range=[0, 120]),
+        height=450,
+        hovermode="x unified"
+    )
+    st.plotly_chart(fig_util, use_container_width=True)
     
-    st.markdown("---")
-    
-    st.markdown("**1. Shear Capacity:**")
-    st.latex(rf"V_{{n}} = 0.6 F_y A_w = \mathbf{{{V_shear:,.0f}}} \ kg")
-    
-    st.markdown("**2. Moment Capacity:**")
-    st.latex(rf"M_{{n}} = 0.6 F_y Z_x = {M_allow:,.0f} \ kg \cdot cm")
-    st.latex(rf"V_{{moment}} = \frac{{4 M}}{{L}} = \mathbf{{{V_moment:,.0f}}} \ kg")
-    st.write("*(Ref: Simply Supported Beam Diagram)*")
-    
-    st.markdown("**3. Deflection Limit:**")
-    st.latex(rf"V_{{defl}} = \frac{{384 E I}}{{2400 L^2}} = \mathbf{{{V_defl:,.0f}}} \ kg")
-    
-    st.markdown("""</div>""", unsafe_allow_html=True)
+    st.caption("กราฟนี้แสดงให้เห็นว่า ถ้าคุณใช้หน้าตัดนี้รับแรงตามที่กำหนด ค่า % การใช้งานจะเปลี่ยนไปตามความยาวคานอย่างไร (ช่วงสีเขียวคือช่วงที่เหมาะสม)")
 
-# ==========================================
-# 6. CONNECTION DESIGN (FIXED)
-# ==========================================
 with tab2:
-    st.markdown("""<div class="calc-sheet">""", unsafe_allow_html=True)
-    st.markdown("""<div class="topic-header">CONNECTION CHECK</div>""", unsafe_allow_html=True)
+    # Standard Capacity Curve
+    fig_cap = go.Figure()
     
-    c_in, c_cal = st.columns([1, 2])
+    fig_cap.add_trace(go.Scatter(x=df_res['span'], y=df_res['capacity'], name='Max Capacity', line=dict(color='black', width=2)))
     
-    with c_in:
-        st.info(f"**Load ($V_u$):** {V_design:,.0f} kg")
-        dia = st.selectbox("Bolt Dia (mm)", [12, 16, 20, 22, 24], index=2)
-        rows = st.number_input("Rows (n)", 2, 8, 3)
-        tp = st.selectbox("Plate Thick (mm)", [6, 9, 12, 16], index=1)
-        weld = st.selectbox("Weld Size (mm)", [4, 6, 8], index=1)
+    # Plot the Design Load Line
+    fig_cap.add_trace(go.Scatter(
+        x=df_res['span'], 
+        y=[design_load]*len(df_res), 
+        name='Your Load', 
+        line=dict(color='red', dash='dash')
+    ))
     
-    with c_cal:
-        db = dia/10
-        Ab = math.pi*(db/2)**2
-        Fv = 3720 
-        
-        Rn_bolt = rows * Ab * Fv
-        Rn_bear = min(rows*1.2*Fu*db*(tw/10), rows*1.2*Fu*db*(tp/10))
-        L_w = (1.5*dia + (rows-1)*3*dia + 1.5*dia)/10
-        Rn_weld = 2 * L_w * 0.707 * (weld/10) * (0.3*4900)
-        
-        min_conn = min(Rn_bolt, Rn_bear, Rn_weld)
-        passed = min_conn >= V_design
-        
-        # --- SAFE STRING CONSTRUCTION ---
-        status_text = "PASSED" if passed else "FAILED"
-        color = "#155724" if passed else "#721c24"
-        bg_color = "#d4edda" if passed else "#f8d7da"
-        
-        st.markdown(f"""
-        <div class="result-box" style="background-color: {bg_color}; color: {color};">
-            <h3 style="margin:0;">Status: {status_text}</h3>
-            <p>Capacity: <b>{min_conn:,.0f} kg</b> (Ratio: {V_design/min_conn:.2f})</p>
-        </div>
-        """, unsafe_allow_html=True)
-        # --------------------------------
-        
-        st.markdown("**Checklist:**")
-        st.latex(rf"1. \ Bolt \ Shear: {Rn_bolt:,.0f} \ kg")
-        st.caption("*(Check: Single Shear Plane)*") 
-        
-        st.latex(rf"2. \ Bearing: {Rn_bear:,.0f} \ kg")
-        st.latex(rf"3. \ Weld: {Rn_weld:,.0f} \ kg")
-        
-    st.markdown("""</div>""", unsafe_allow_html=True)
+    fig_cap.update_layout(
+        title="Load (kg) vs Capacity",
+        xaxis_title="Span Length (m)",
+        yaxis_title="Load (kg)",
+        height=450
+    )
+    st.plotly_chart(fig_cap, use_container_width=True)
+
+# ==========================================
+# 6. TYPICAL DETAIL SUMMARY
+# ==========================================
+st.markdown("---")
+st.markdown("""<div class="topic-header">📝 TYPICAL DETAIL SPECIFICATION</div>""", unsafe_allow_html=True)
+
+c1, c2, c3 = st.columns(3)
+
+with c1:
+    st.markdown("**1. Selected Section**")
+    st.markdown(f"### {sec_name}")
+    st.write(f"Depth: {h} mm")
+    st.write(f"Weight: Est. {p['h']*0.1:.1f} kg/m") # Simplified estimation
+
+with c2:
+    st.markdown(f"**2. Design Load**")
+    st.markdown(f"### {design_load:,.0f} kg")
+    st.write("(Point Load / Reaction)")
+
+with c3:
+    st.markdown("**3. Approved Span Range**")
+    if len(valid_spans) > 0:
+        st.markdown(f"<h3 style='color:green'>{min_s:.1f} m  —  {max_s:.1f} m</h3>", unsafe_allow_html=True)
+        st.write("Criteria: 50% - 70% Usage")
+    else:
+        st.markdown("<h3 style='color:red'>N/A</h3>", unsafe_allow_html=True)
+        st.write("Please adjust Load or Section")
+
+st.markdown("""
+<div class="main-card" style="margin-top:20px;">
+    <b>Engineering Note for Detailer:</b><br>
+    <ul>
+        <li>ใช้สำหรับทำแบบ Typical Detail แนะนำให้ระบุช่วงความยาวตามที่คำนวณได้ด้านบน</li>
+        <li>หากความยาวเกินกว่านี้ (Utilization > 70%) ควรขยับไปใช้หน้าตัดถัดไป</li>
+        <li>หากความยาวสั้นกว่านี้ (Utilization < 50%) หน้าตัดจะใหญ่เกินความจำเป็น (Overdesign)</li>
+    </ul>
+</div>
+""", unsafe_allow_html=True)
