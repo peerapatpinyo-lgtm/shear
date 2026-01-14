@@ -103,7 +103,7 @@ def analyze_beam(L_m, props, Fy, E, Fb_r, Fv_r=0.4, def_lim=300, load_mode="Poin
     else: 
         P_shear = (2 * V_max_cap) - (w_kgm * L_m)
         P_moment = ((8 * M_max_cap) / L_cm) - (w_kgm * L_m)
-        P_defl = ((384 * E * Ix * (Delta_allow - D_sw)) * 5) / (5 * L_cm**3) # Simplified algebra
+        P_defl = ((384 * E * Ix * (Delta_allow - D_sw)) * 5) / (5 * L_cm**3)
 
     safe_load = max(0, min(P_shear, P_moment, P_defl))
     
@@ -128,11 +128,10 @@ res = analyze_beam(current_L, props, fy, E_val, Fb_ratio, 0.4, defl_limit, load_
 st.title("🏗️ Ultimate H-Beam Analyzer")
 
 # --- Tabs Setup ---
-tab1, tab2 = st.tabs(["📊 Dashboard & Recommendation", "📈 Compare 3 Cases (Graphs)"])
+tab1, tab2 = st.tabs(["📊 Dashboard & Recommendation", "📈 Compare & Economical Span"])
 
 # --- TAB 1: SUMMARY ---
 with tab1:
-    # Big Metrics
     c1, c2, c3 = st.columns([1.5, 1, 1])
     with c1:
         st.markdown(f"""
@@ -151,7 +150,6 @@ with tab1:
         else:
             st.error(f"⚠️ LTB Check\n\n{res['LTB_Msg']}")
 
-    # Utilization Bars
     st.subheader("Utilization Check")
     caps = res['Caps']
     safe = res['Safe_Load']
@@ -161,28 +159,24 @@ with tab1:
     u_de = (safe/caps['Deflect'])*100 if caps['Deflect']>0 else 0
     
     uc1, uc2, uc3 = st.columns(3)
-    uc1.progress(min(u_sh/100, 1.0), text=f"Shear Limit: {caps['Shear']:.2f} T ({u_sh:.0f}%)")
-    uc2.progress(min(u_mo/100, 1.0), text=f"Moment Limit: {caps['Moment']:.2f} T ({u_mo:.0f}%)")
-    uc3.progress(min(u_de/100, 1.0), text=f"Deflection Limit: {caps['Deflect']:.2f} T ({u_de:.0f}%)")
+    uc1.progress(min(u_sh/100, 1.0), text=f"Shear: {u_sh:.0f}%")
+    uc2.progress(min(u_mo/100, 1.0), text=f"Moment: {u_mo:.0f}%")
+    uc3.progress(min(u_de/100, 1.0), text=f"Deflection: {u_de:.0f}%")
     
     st.divider()
-    
-    # Recommendation
-    st.subheader("💡 Engineer's Recommendation")
     if "Deflection" in res['Gov']:
-        st.warning(f"**ปัญหา:** คานแอ่นตัวมากเกินไป (Deflection Controlled) ที่ระยะ {current_L}m\n\n**วิธีแก้:** 1. เพิ่มความลึกหน้าตัด (h) เท่านั้น \n2. การเพิ่มเกรดเหล็ก (Fy) ไม่ช่วย")
+        st.warning(f"**Recommendation:** คานแอ่นตัว (Deflection) เป็นตัวควบคุมการออกแบบที่ระยะนี้")
     elif "Moment" in res['Gov']:
-        st.info(f"**สถานะ:** คานรับแรงดัดเต็มพิกัด (Moment Controlled)\n\n**วิธีแก้:** เพิ่มหน้าตัดที่มี Zx สูงขึ้น หรือลดระยะค้ำยัน (Lb)")
+        st.info(f"**Recommendation:** โมเมนต์ (Moment) เป็นตัวควบคุมการออกแบบ")
     else:
-        st.success("**สถานะ:** คานรับแรงเฉือนเต็มพิกัด (Shear Controlled) \n\n**Note:** แสดงว่าคานสั้นมากและรับแรงกดมหาศาล")
+        st.success("**Recommendation:** แรงเฉือน (Shear) เป็นตัวควบคุม (คานสั้นและแข็งแรงมาก)")
 
-# --- TAB 2: COMPARE 3 CASES ---
+# --- TAB 2: COMPARE & ECON SPAN ---
 with tab2:
-    st.subheader(f"📉 Comparative Analysis: {section_name}")
-    st.markdown("กราฟนี้ช่วยให้คุณเห็น **'จุดตัด' (Crossover Points)** ว่าที่ความยาวเท่าไหร่ ระบบจะเปลี่ยนจากการพังแบบหนึ่ง ไปเป็นอีกแบบหนึ่ง")
+    st.subheader(f"📉 Analysis Chart: {section_name}")
     
-    # Generate Data Range
-    spans = np.linspace(1, 15, 50)
+    # 1. Prepare Data
+    spans = np.linspace(1, 18, 100)
     data_points = []
     
     for s in spans:
@@ -194,46 +188,45 @@ with tab2:
             "Deflect": r['Caps']['Deflect'],
             "Safe": r['Safe_Load']
         })
-    
     df_graph = pd.DataFrame(data_points)
     
-    # Plotly Graph
+    # 2. Calculate Economical Range (Rule of Thumb: Span = 15-24 times Depth)
+    beam_depth_m = props['h'] / 1000
+    econ_min = beam_depth_m * 15 # Conservative / Heavy Load
+    econ_max = beam_depth_m * 24 # Roof / Light Load
+    
     fig = go.Figure()
     
-    # 1. Shear Line (Red Dashed)
-    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Shear, name="Shear Limit (ขาด)", 
-                             line=dict(color='red', dash='dash', width=1)))
+    # Zone: Economical Span
+    fig.add_vrect(
+        x0=econ_min, x1=econ_max,
+        fillcolor="green", opacity=0.1,
+        layer="below", line_width=0,
+        annotation_text="Economical Span (Rule of Thumb)", annotation_position="top left"
+    )
+
+    # Lines
+    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Shear, name="Shear Limit", line=dict(color='red', dash='dash', width=1)))
+    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Moment, name="Moment Limit", line=dict(color='green', dash='dash', width=1)))
+    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Deflect, name="Deflection Limit", line=dict(color='blue', dash='dash', width=1)))
+    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Safe, name="Net Safe Load", line=dict(color='black', width=3)))
     
-    # 2. Moment Line (Green Dashed)
-    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Moment, name="Moment Limit (หัก/งอ)", 
-                             line=dict(color='green', dash='dash', width=1)))
-    
-    # 3. Deflection Line (Blue Dashed)
-    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Deflect, name="Deflection Limit (แอ่น)", 
-                             line=dict(color='blue', dash='dash', width=1)))
-    
-    # 4. Net Safe Load (Black Solid - The Real Capacity)
-    fig.add_trace(go.Scatter(x=df_graph.Span, y=df_graph.Safe, name="Net Safe Load (รับได้จริง)", 
-                             line=dict(color='black', width=4)))
-    
-    # 5. Current Point Marker
-    fig.add_trace(go.Scatter(x=[current_L], y=[res['Safe_Load']], mode='markers', name='Current Design',
+    # Current Point
+    fig.add_trace(go.Scatter(x=[current_L], y=[res['Safe_Load']], mode='markers', name='Your Design',
                              marker=dict(size=15, color='orange', symbol='diamond', line=dict(color='white', width=2))))
     
     fig.update_layout(
         xaxis_title="Span Length (m)",
-        yaxis_title="Load Capacity (Ton)",
+        yaxis_title="Safe Load (Ton)",
         hovermode="x unified",
-        height=500,
-        legend=dict(orientation="h", y=1.1, x=0.5, xanchor="center")
+        height=550,
+        legend=dict(orientation="h", y=1.05, x=0.5, xanchor="center")
     )
-    
     st.plotly_chart(fig, use_container_width=True)
     
-    # Explanation
-    st.info("""
-    **วิธีอ่านกราฟ:**
-    * เส้นทึบสีดำ คือน้ำหนักที่รับได้จริง (วิ่งตามเส้นที่ต่ำที่สุดเสมอ)
-    * **ช่วงสั้น (ซ้าย):** มักจะถูกคุมด้วย :red[**Shear**] หรือ :green[**Moment**]
-    * **ช่วงยาว (ขวา):** กราฟ :blue[**Deflection**] จะดิ่งลงเหวอย่างรวดเร็วและกลายเป็นตัวควบคุมหลัก
+    st.markdown(f"""
+    **คำอธิบายกราฟ:**
+    * **พื้นที่สีเขียวจางๆ (Economical Span):** คือช่วงความยาวที่เหมาะสมของหน้าตัดนี้ (Rule of Thumb: 15-24 เท่าของความลึก)
+    * หากจุดส้ม (Your Design) อยู่ **ทางซ้าย** ของสีเขียว = คานแข็งแรงเกินไป (Oversize) อาจพิจารณาลดขนาด
+    * หากจุดส้ม (Your Design) อยู่ **ทางขวา** ของสีเขียว = คานเริ่มยาวเกินไป (Undersize) มักจะเจอปัญหาเรื่องการแอ่นตัว (Deflection)
     """)
