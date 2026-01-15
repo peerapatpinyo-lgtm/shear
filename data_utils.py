@@ -22,5 +22,5 @@ STEEL_DB = {
 BOLT_GRADES = {
     "A325 (High Strength)": {"Fnv": 3720, "Ft": 6200, "Fu_bolt": 8400}, 
     "Grade 8.8 (Standard)": {"Fnv": 3200, "Ft": 5600, "Fu_bolt": 8000},
-    "A490 (Premium)":       {"Fnv": 4960, "Ft": 7800, "Fu_bolt": 10500}
+    "A490 (Premium)":        {"Fnv": 4960, "Ft": 7800, "Fu_bolt": 10500}
 }
