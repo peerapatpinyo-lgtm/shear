@@ -1,114 +1,68 @@
 import streamlit as st
 
 def render_report_tab(method, is_lrfd, sec_name, fy, p, res, bolt):
-    # 1. นิยามสไตล์ (CSS) แยกไว้ เพื่อให้ HTML สะอาด
-    report_css = """
-    <style>
-        .report-container {
-            font-family: 'Sarabun', sans-serif;
-            background-color: white;
-            padding: 40px;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            color: #1e293b;
-            max-width: 850px;
-            margin: auto;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-        }
-        .report-header {
-            border-bottom: 3px solid #1e40af;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-            padding-bottom: 15px;
-            margin-bottom: 30px;
-        }
-        .table-report {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-        .table-report th {
-            background-color: #f8fafc;
-            border: 1px solid #e2e8f0;
-            padding: 12px;
-            text-align: left;
-            color: #475569;
-        }
-        .table-report td {
-            border: 1px solid #e2e8f0;
-            padding: 12px;
-        }
-        .status-pass {
-            color: #15803d;
-            font-weight: bold;
-            background: #f0fdf4;
-            padding: 4px 8px;
-            border-radius: 4px;
-        }
-    </style>
-    """
+    # ป้องกัน Error หากข้อมูลใน Dictionary มาไม่ครบ
+    w_safe = res.get('w_safe', 0)
+    cause = res.get('cause', 'N/A')
+    v_act = res.get('v_act', 0)
+    v_cap = res.get('v_cap', 1) # กันหารศูนย์
+    m_act = res.get('m_act', 0)
+    m_cap = res.get('m_cap', 1)
 
-    # 2. เนื้อหา HTML
-    report_content = f"""
-    <div class="report-container">
-        <div class="report-header">
-            <div>
-                <h1 style="margin:0; color:#1e40af; font-size:28px;">STRUCTURAL ANALYSIS REPORT</h1>
-                <p style="margin:5px 0 0 0; color:#64748b;">Beam Design Verification System</p>
-            </div>
-            <div style="text-align:right; font-size:14px; color:#64748b;">
-                Method: <b>{method}</b><br>
-                Section: <b>{sec_name}</b>
-            </div>
+    # รวมทุกอย่างเข้าเป็น String เดียว
+    # สำคัญ: ห้ามเคาะ Space หรือขึ้นบรรทัดใหม่มั่วซั่วในระหว่าง Tag HTML
+    html_content = f"""
+    <div style="background-color:#ffffff; padding:30px; border-radius:10px; border:1px solid #d1d5db; font-family:sans-serif; color:#111827;">
+        <div style="border-bottom:2px solid #1e40af; margin-bottom:20px; padding-bottom:10px;">
+            <h2 style="margin:0; color:#1e40af;">DESIGN CALCULATION REPORT</h2>
+            <p style="margin:0; font-size:14px; color:#6b7280;">Steel Beam Verification | Method: {method}</p>
         </div>
-
-        <div style="background:#eff6ff; padding:20px; border-radius:8px; margin-bottom:25px;">
-            <h3 style="margin:0 0 10px 0; color:#1e40af; font-size:16px;">DESIGN SUMMARY</h3>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:18px;">Maximum Allowable Load:</span>
-                <span style="font-size:32px; font-weight:bold; color:#1e40af;">{res['w_safe']:,.0f} <span style="font-size:18px;">kg/m</span></span>
-            </div>
-            <p style="margin:10px 0 0 0; color:#475569;">Governing Limit State: <b>{res['cause'].upper()}</b></p>
-        </div>
-
-        <h3 style="font-size:16px; color:#1e40af;">CAPACITY VERIFICATION</h3>
-        <table class="table-report">
-            <thead>
+        
+        <div style="margin-bottom:20px;">
+            <table style="width:100%; border-collapse:collapse;">
                 <tr>
-                    <th>Description</th>
-                    <th>Actual Force</th>
-                    <th>Design Capacity</th>
-                    <th>Status</th>
+                    <td style="padding:10px; background:#f3f4f6; font-weight:bold; border:1px solid #e5e7eb;">Selected Section:</td>
+                    <td style="padding:10px; border:1px solid #e5e7eb;">{sec_name}</td>
+                </tr>
+                <tr>
+                    <td style="padding:10px; background:#f3f4f6; font-weight:bold; border:1px solid #e5e7eb;">Governing Safe Load:</td>
+                    <td style="padding:10px; border:1px solid #e5e7eb; color:#dc2626; font-weight:bold; font-size:18px;">{w_safe:,.0f} kg/m</td>
+                </tr>
+                <tr>
+                    <td style="padding:10px; background:#f3f4f6; font-weight:bold; border:1px solid #e5e7eb;">Failure Mode:</td>
+                    <td style="padding:10px; border:1px solid #e5e7eb;">{cause}</td>
+                </tr>
+            </table>
+        </div>
+
+        <h4 style="color:#1e40af;">Capacity Check Details</h4>
+        <table style="width:100%; border-collapse:collapse; text-align:center;">
+            <thead>
+                <tr style="background:#1e40af; color:white;">
+                    <th style="padding:8px; border:1px solid #e5e7eb;">Check</th>
+                    <th style="padding:8px; border:1px solid #e5e7eb;">Actual</th>
+                    <th style="padding:8px; border:1px solid #e5e7eb;">Capacity</th>
+                    <th style="padding:8px; border:1px solid #e5e7eb;">Ratio</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td>Shear Force (V)</td>
-                    <td>{res['v_act']:,.0f} kg</td>
-                    <td>{res['v_cap']:,.0f} kg</td>
-                    <td><span class="status-pass">PASS</span></td>
+                    <td style="padding:8px; border:1px solid #e5e7eb; text-align:left;">Shear Strength</td>
+                    <td style="padding:8px; border:1px solid #e5e7eb;">{v_act:,.0f} kg</td>
+                    <td style="padding:8px; border:1px solid #e5e7eb;">{v_cap:,.0f} kg</td>
+                    <td style="padding:8px; border:1px solid #e5e7eb; font-weight:bold;">{(v_act/v_cap):.2f}</td>
                 </tr>
                 <tr>
-                    <td>Bending Moment (M)</td>
-                    <td>{res['m_act']:,.0f} kg.m</td>
-                    <td>{res['m_cap']/100:,.0f} kg.m</td>
-                    <td><span class="status-pass">PASS</span></td>
-                </tr>
-                <tr>
-                    <td>Deflection (Δ)</td>
-                    <td>{res['d_act']:.3f} cm</td>
-                    <td>{res['d_all']:.3f} cm</td>
-                    <td><span class="status-pass">PASS</span></td>
+                    <td style="padding:8px; border:1px solid #e5e7eb; text-align:left;">Moment Resistance</td>
+                    <td style="padding:8px; border:1px solid #e5e7eb;">{m_act:,.0f} kg.m</td>
+                    <td style="padding:8px; border:1px solid #e5e7eb;">{m_cap/100:,.0f} kg.m</td>
+                    <td style="padding:8px; border:1px solid #e5e7eb; font-weight:bold;">{(m_act/(m_cap/100)):.2f}</td>
                 </tr>
             </tbody>
         </table>
-
-        <div style="margin-top:40px; border-top:1px dashed #cbd5e1; padding-top:20px; font-size:12px; color:#94a3b8; text-align:center;">
-            * This report is generated automatically based on the provided input parameters. *
-        </div>
     </div>
     """
-
-    # 3. แสดงผล (ใช้คำสั่งเดียวจบ ไม่มีการ return ค่าใดๆ)
-    st.markdown(report_css + report_content, unsafe_allow_html=True)
+    
+    # จุดตาย: ต้องใช้ st.markdown และต้องระบุ unsafe_allow_html=True
+    # และ "ห้าม" มีการ return ใดๆ ท้ายฟังก์ชัน
+    st.markdown(html_content, unsafe_allow_html=True)
