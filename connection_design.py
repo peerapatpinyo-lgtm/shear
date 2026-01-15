@@ -2,16 +2,36 @@ import streamlit as st
 import drawing_utils as du 
 import calculation_report as calc 
 
-def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade, T_design=0):
-    
+# --- 🆕 DATABASE วัสดุ ---
+STEEL_GRADES = {
+    "A36 (ASTM)":  {"Fy": 250, "Fu": 400},
+    "SS400 (JIS)": {"Fy": 245, "Fu": 400},
+    "SM520 (JIS)": {"Fy": 355, "Fu": 520},
+    "A572 Gr.50":  {"Fy": 345, "Fu": 450}
+}
+
+BOLT_GRADES = {
+    "A325 (ASTM)": {"Fnv": 372},   # Shear Strength (N)
+    "A490 (ASTM)": {"Fnv": 469},
+    "Gr. 8.8 (ISO)": {"Fnv": 375}, # approx 0.6 * 800 * reduction
+    "F10T (JIS)":  {"Fnv": 380}    # Common practice
+}
+
+def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade_input, T_design=0): 
+    # bolt_grade_input ของเดิมอาจจะไม่ได้ใช้แล้ว เพราะเราจะเลือกใหม่ในนี้
+
     st.markdown(f"### 📐 Design Detail: **{conn_type}**")
     
-    # --- 1. INPUTS ---
+    # =========================================================================
+    # 1. INPUTS
+    # =========================================================================
     c1, c2, c3 = st.columns(3)
     d_mm = int(bolt_size[1:])
     
     with c1:
-        st.caption("🔩 Bolt Layout")
+        st.caption("🔩 Bolt Config")
+        # 🆕 เลือกเกรดน็อต
+        selected_bolt_grade = st.selectbox("Bolt Grade", list(BOLT_GRADES.keys()), index=0)
         n_rows = st.number_input("Rows", 2, 20, 3)
         n_cols = st.number_input("Cols", 1, 4, 2)
     
@@ -22,27 +42,34 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         s_h = st.number_input("Pitch H", float(min_pitch), 150.0, float(max(60, min_pitch)))
         
     with c3:
-        st.caption("🧱 Plate & Weld (mm)")
-        e1_mm = st.number_input("Gap to Bolt (e1)", 10.0, 100.0, 50.0)
+        st.caption("🧱 Plate & Material")
+        # 🆕 เลือกเกรดเหล็ก
+        selected_steel_grade = st.selectbox("Plate Grade", list(STEEL_GRADES.keys()), index=0)
         t_plate = st.number_input("Thickness", 6.0, 40.0, 10.0)
-        # 🆕 เพิ่ม Input รอยเชื่อม (Fillet Weld)
         weld_size = st.selectbox("Weld Size (mm)", [4, 6, 8, 10, 12], index=1)
+        e1_mm = st.number_input("Gap to Bolt (e1)", 10.0, 100.0, 50.0)
+
+    # ดึงค่า Property จาก Database
+    fy_val = STEEL_GRADES[selected_steel_grade]["Fy"]
+    fu_val = STEEL_GRADES[selected_steel_grade]["Fu"]
+    fnv_val = BOLT_GRADES[selected_bolt_grade]["Fnv"]
 
     st.divider()
     
-    # --- Custom Plate Dimensions ---
+    # ... (ส่วน Code คำนวณขนาดเพลท และ Drawing เหมือนเดิมเป๊ะ ไม่ต้องแก้) ...
+    # ... (ก๊อปปี้ส่วน Plate Dimensions, Data Packaging, Drawing มาวางตรงนี้) ...
+
+    # --- ส่วน Custom Plate Dimensions (เหมือนเดิม) ---
     st.markdown("##### 📏 Plate Dimensions (Customizable)")
     c4, c5 = st.columns(2)
-    
     req_h = (n_rows - 1) * s_v + 80 
     req_w = e1_mm + (n_cols - 1) * s_h + 40
-    
     with c4:
         plate_h = st.number_input(f"Plate Height (Min {req_h:.0f})", min_value=float(req_h), value=float(req_h), step=10.0)
     with c5:
         plate_w = st.number_input(f"Plate Width (Min {req_w:.0f})", min_value=float(req_w), value=float(req_w), step=5.0)
 
-    # --- 2. DATA PACKAGING ---
+    # --- Data Packaging (เหมือนเดิม แต่เพิ่ม weld_size) ---
     real_lv = (plate_h - (n_rows - 1) * s_v) / 2
     l_side = plate_w - (e1_mm + (n_cols - 1) * s_h)
 
@@ -52,40 +79,24 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         'tf': float(section_data.get('tf', 11)), 
         'tw': float(section_data.get('tw', 7))
     }
-    
     plate_data = {
-        'h': plate_h, 
-        'w': plate_w, 
-        't': t_plate, 
-        'e1': e1_mm, 
-        'lv': real_lv, 
-        'l_side': l_side,
-        'weld_size': weld_size # 🆕 ส่งค่า weld size ไปด้วย
+        'h': plate_h, 'w': plate_w, 't': t_plate, 
+        'e1': e1_mm, 'lv': real_lv, 'l_side': l_side,
+        'weld_size': weld_size,
+        'Fy': fy_val, 'Fu': fu_val # 🆕 ส่งค่า Material Property ไปด้วย
     }
-    
-    bolt_data = {'d': d_mm, 'rows': n_rows, 'cols': n_cols, 's_v': s_v, 's_h': s_h}
-
-    # --- 3. DRAWINGS ---
-    plotly_config = {
-        'displayModeBar': True, 'displaylogo': False,
-        'modeBarButtonsToRemove': ['zoom', 'pan', 'select', 'lasso2d', 'autoScale', 'resetScale'],
-        'toImageButtonOptions': {'format': 'png', 'filename': f'connection_{conn_type}', 'height': 800, 'width': 800, 'scale': 2}
+    bolt_data = {
+        'd': d_mm, 'rows': n_rows, 'cols': n_cols, 
+        's_v': s_v, 's_h': s_h,
+        'Fnv': fnv_val # 🆕 ส่งค่า Bolt Strength ไปด้วย
     }
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        fig1 = du.create_plan_view(beam_data, plate_data, bolt_data)
-        st.plotly_chart(fig1, use_container_width=True, config=plotly_config)
-    with col2:
-        fig2 = du.create_front_view(beam_data, plate_data, bolt_data)
-        st.plotly_chart(fig2, use_container_width=True, config=plotly_config)
-    with col3:
-        fig3 = du.create_side_view(beam_data, plate_data, bolt_data)
-        st.plotly_chart(fig3, use_container_width=True, config=plotly_config)
+    # ... (Drawing Part เหมือนเดิม) ...
+    # ...
 
     # --- 4. CALCULATION REPORT ---
     st.divider()
-    st.markdown("### 🧮 Calculation Results (AISC 360-16)")
+    st.markdown("### 🧮 Calculation Results")
     
     report_markdown = calc.generate_report(
         V_load=V_design,
@@ -93,8 +104,8 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         plate=plate_data,
         bolts=bolt_data,
         is_lrfd=is_lrfd,
-        material_grade="A36", 
-        bolt_grade=bolt_grade
+        material_grade=selected_steel_grade, # ส่งชื่อเกรดไปโชว์
+        bolt_grade=selected_bolt_grade       # ส่งชื่อเกรดไปโชว์
     )
     
     with st.expander("📄 Click to view full calculation details", expanded=True):
