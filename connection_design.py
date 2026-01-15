@@ -3,13 +3,13 @@ import math
 import plotly.graph_objects as go
 
 # ==========================================
-# HELPER FUNCTION: DRAWING DIMENSIONS
+# HELPER: DRAWING DIMENSIONS
 # ==========================================
 def add_dim_line(fig, x0, y0, x1, y1, text, color="black", offset=0, type="horiz", font_size=12, bold=False):
-    """วาดเส้นบอกระยะแบบชัดเจน พร้อมพื้นหลังข้อความ (ใช้ร่วมกันทั้ง 2 view)"""
+    """วาดเส้นบอกระยะมาตรฐาน Engineering"""
     arrow_len = 8
     arrow_wid = 1.0
-    text_bg = "rgba(255, 255, 255, 0.9)" # พื้นหลังขาวจางๆ
+    text_bg = "rgba(255, 255, 255, 0.9)" 
     font_weight = "bold" if bold else "normal"
 
     if type == "horiz":
@@ -36,18 +36,15 @@ def add_dim_line(fig, x0, y0, x1, y1, text, color="black", offset=0, type="horiz
 # ==========================================
 def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade, T_design=0):
     
-    # 1. SETUP & CONSTANTS
-    is_double_shear = "Double" in conn_type
-    shear_planes = 2.0 if is_double_shear else 1.0
+    # 1. SETUP
     is_beam_to_beam = "Beam to Beam" in conn_type
     
     d_mm = int(bolt_size[1:]) 
     d_cm = d_mm / 10
     Ab = {"M16": 2.01, "M20": 3.14, "M22": 3.80, "M24": 4.52}.get(bolt_size, 3.14)
     
-    # Beam Geometry (เพิ่ม b_beam)
     h_beam = float(section_data.get('h', 300))
-    b_beam = float(section_data.get('b', 150)) # Flange width
+    b_beam = float(section_data.get('b', 150))
     tf_beam = float(section_data.get('tf', 10))
     tw_beam = float(section_data.get('tw', 8))
     clear_web_h = h_beam - 2*(tf_beam * 1.5) 
@@ -85,114 +82,127 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     # 3. GEOMETRY CHECK & CALCULATION (Simplified)
     fit_status = "CLASH" if plate_h > clear_web_h else "OK"
     n_total = n_rows * n_cols
-    # ... (Calculation Logic shortened for brevity, same as V53) ...
-    # Assume V_res, Design_Shear, Design_Bear are calculated here
-    # Placeholder for demo visualization behavior:
-    V_res, Design_Shear, Design_Bear = V_design/n_total, 10000, 15000
+    
+    # Placeholder Calc for demo
+    V_res, Design_Shear, Design_Bear = V_design/n_total, 10000, 15000 
 
     # ==========================================
-    # 5. VISUALIZATION (DUAL VIEW)
+    # 5. VISUALIZATION (CORRECTED VIEWS)
     # ==========================================
     st.divider()
-    st.subheader("📐 Connection Details & Dimensions")
+    st.subheader("📐 Shop Drawings (Standard Views)")
     
-    # แบ่งคอลัมน์สำหรับ 2 รูป และ 1 ผลลัพธ์
-    col_front, col_side, col_res = st.columns([1, 1.5, 0.8])
+    # แบ่งคอลัมน์: ซ้าย(Section), กลาง(Elevation), ขวา(Result)
+    col_sec, col_elev, col_res = st.columns([0.8, 1.4, 0.8])
     
     supp_col = "#6b21a8" if is_beam_to_beam else "#1e293b"
     supp_label = "MAIN BEAM WEB" if is_beam_to_beam else "COLUMN FLANGE"
 
-    # --- VIEW 1: FRONT VIEW (Section A-A) ---
-    with col_front:
-        st.markdown("**VIEW A-A: Front Section**")
-        fig_f = go.Figure()
+    # --- VIEW 1: SECTION A-A (รูปตัดด้านข้าง) ---
+    with col_sec:
+        st.markdown("**SECTION A-A** (ภาพตัดขวาง)")
+        fig_sec = go.Figure()
         
-        # Coordinates (Center at 0,0)
+        # Coordinates
         btm, top = -h_beam/2, h_beam/2
         flg_w = b_beam
         
-        # 1. Draw Beam Section (Gray)
+        # 1. BEAM SECTION (I-Shape)
         # Top Flange
-        fig_f.add_shape(type="rect", x0=-flg_w/2, y0=top-tf_beam, x1=flg_w/2, y1=top, fillcolor="#71717a", line_color="black")
+        fig_sec.add_shape(type="rect", x0=-flg_w/2, y0=top-tf_beam, x1=flg_w/2, y1=top, fillcolor="#71717a", line_color="black")
         # Bottom Flange
-        fig_f.add_shape(type="rect", x0=-flg_w/2, y0=btm, x1=flg_w/2, y1=btm+tf_beam, fillcolor="#71717a", line_color="black")
+        fig_sec.add_shape(type="rect", x0=-flg_w/2, y0=btm, x1=flg_w/2, y1=btm+tf_beam, fillcolor="#71717a", line_color="black")
         # Web
-        fig_f.add_shape(type="rect", x0=-tw_beam/2, y0=btm+tf_beam, x1=tw_beam/2, y1=top-tf_beam, fillcolor="#71717a", line_width=0)
+        fig_sec.add_shape(type="rect", x0=-tw_beam/2, y0=btm+tf_beam, x1=tw_beam/2, y1=top-tf_beam, fillcolor="#71717a", line_width=0)
         
-        # 2. Draw Support Face (Left side)
-        fig_f.add_shape(type="rect", x0=-flg_w/2 - 20, y0=btm-20, x1=-flg_w/2, y1=top+20, fillcolor=supp_col, line_color="black")
-        fig_f.add_annotation(x=-flg_w/2 - 10, y=0, text=supp_label, textangle=-90, showarrow=False, font=dict(color="white", size=9))
-
-        # 3. Draw Fin Plate (Blue - Cross Section)
-        # Plate extends from support face to past the web
-        plate_x_start = -flg_w/2
-        plate_x_end = tw_beam/2 + 10 # Extend slightly past web
+        # 2. PLATE SECTION (Fin Plate)
+        # มองจากด้านตัด เพลทจะอยู่ติดกับ Support (สมมติอยู่ซ้าย) แล้วยื่นเข้ามาประกบ Web
+        # ในรูปตัด เราจะเห็นความหนาของเพลท (t_plate) ประกบกับเอวคาน (tw_beam)
+        plate_x_center = -tw_beam/2 - t_plate_mm/2
         p_color = "#ef4444" if fit_status == "CLASH" else "#2563eb"
-        fig_f.add_shape(type="rect", x0=plate_x_start, y0=-plate_h/2, x1=plate_x_end, y1=plate_h/2, fillcolor=p_color, opacity=0.6, line_color="black")
-
-        # 4. Draw Bolt cross-section (Red line/rect passing through)
+        
+        # Draw Plate Thickness
+        fig_sec.add_shape(type="rect", x0=-tw_beam/2 - t_plate_mm, y0=-plate_h/2, x1=-tw_beam/2, y1=plate_h/2, fillcolor=p_color, opacity=0.8, line_color="black")
+        
+        # 3. BOLT SHANK (ร้อยทะลุ)
+        bolt_len = t_plate_mm + tw_beam + 20 # เผื่อหัวท้าย
         bolt_y_start_coord = plate_h/2 - real_lv
+        
         for r in range(n_rows):
             by = bolt_y_start_coord - r*s_v
-            # Draw bolt shank passing through web and plate
-            fig_f.add_shape(type="rect", x0=-tw_beam/2 - t_plate_mm - 5, y0=by-d_mm/2, x1=tw_beam/2 + 5, y1=by+d_mm/2, fillcolor="#b91c1c", line_width=1)
-            # Bolt Centerline
-            fig_f.add_shape(type="line", x0=-flg_w/2, y0=by, x1=flg_w/2, y1=by, line=dict(color="black", width=0.5, dash="dashdot"))
+            # ตัวน็อต
+            fig_sec.add_shape(type="rect", x0=-tw_beam/2 - t_plate_mm - 10, y0=by-d_mm/2, x1=tw_beam/2 + 10, y1=by+d_mm/2, fillcolor="#b91c1c", line_width=1)
+            # เส้น Centerline
+            fig_sec.add_shape(type="line", x0=-flg_w/2-10, y0=by, x1=flg_w/2+10, y1=by, line=dict(color="black", width=0.5, dash="dashdot"))
 
-        # Dimensions for Front View
-        add_dim_line(fig_f, -flg_w/2, btm, -flg_w/2, top, f"h={h_beam:.0f}", offset=-35, type="vert", bold=True)
-        add_dim_line(fig_f, plate_x_start, -plate_h/2, plate_x_end, -plate_h/2, f"t_pl={t_plate_mm:.0f}", offset=-20, type="horiz")
+        # Dimensions
+        add_dim_line(fig_sec, -flg_w/2, btm, -flg_w/2, top, f"h={h_beam:.0f}", offset=-25, type="vert", bold=True)
+        add_dim_line(fig_sec, -tw_beam/2 - t_plate_mm, -plate_h/2, -tw_beam/2, -plate_h/2, f"t={t_plate_mm:.0f}", offset=-20, type="horiz")
 
-        fig_f.update_layout(height=500, xaxis=dict(visible=False, fixedrange=True), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1, fixedrange=True),
-                            margin=dict(l=5, r=5, t=20, b=20), plot_bgcolor="white")
-        st.plotly_chart(fig_f, use_container_width=True)
+        # Label Components
+        fig_sec.add_annotation(x=tw_beam/2, y=0, text="Beam Web", ax=40, ay=0, showarrow=True, arrowhead=2)
+        fig_sec.add_annotation(x=-tw_beam/2 - t_plate_mm/2, y=-plate_h/2, text="Plate", ax=0, ay=40, showarrow=True, arrowhead=2)
 
-    # --- VIEW 2: SIDE VIEW (ELEVATION) - (Code from V53) ---
-    with col_side:
-        st.markdown("**VIEW B-B: Side Elevation**")
-        fig_s = go.Figure()
+        fig_sec.update_layout(height=550, xaxis=dict(visible=False, fixedrange=True), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1, fixedrange=True),
+                            margin=dict(l=10, r=10, t=30, b=30), plot_bgcolor="white", title=dict(text="SECTION VIEW", x=0.5, y=0.05))
+        st.plotly_chart(fig_sec, use_container_width=True)
+
+    # --- VIEW 2: FRONT ELEVATION (รูปด้านหน้า) ---
+    with col_elev:
+        st.markdown("**FRONT ELEVATION** (รูปด้านหน้า)")
+        fig_elev = go.Figure()
         
         beam_top, beam_bot = h_beam/2, -h_beam/2
         plate_top, plate_bot = plate_h/2, -plate_h/2
         bolt_x_start, bolt_y_start = e1_mm, plate_top - real_lv
         
-        # Beam Limits & Support
-        fig_s.add_shape(type="rect", x0=-20, y0=beam_top-tf_beam, x1=plate_w+50, y1=beam_top, fillcolor="#71717a", opacity=0.3, line_width=0)
-        fig_s.add_shape(type="rect", x0=-20, y0=beam_bot, x1=plate_w+50, y1=beam_bot+tf_beam, fillcolor="#71717a", opacity=0.3, line_width=0)
-        fig_s.add_shape(type="rect", x0=-30, y0=beam_bot-30, x1=0, y1=beam_top+30, fillcolor=supp_col, line_color="black")
-        fig_s.add_annotation(x=0, y=beam_bot-40, text="SUPPORT FACE", showarrow=False, font=dict(size=10, weight="bold"))
+        # Beam Web & Flanges (Ghosted)
+        fig_elev.add_shape(type="rect", x0=-20, y0=beam_top-tf_beam, x1=plate_w+50, y1=beam_top, fillcolor="#71717a", opacity=0.2, line_width=0)
+        fig_elev.add_shape(type="rect", x0=-20, y0=beam_bot, x1=plate_w+50, y1=beam_bot+tf_beam, fillcolor="#71717a", opacity=0.2, line_width=0)
+        
+        # Support Face (Left Side)
+        fig_elev.add_shape(type="rect", x0=-40, y0=beam_bot-20, x1=0, y1=beam_top+20, fillcolor=supp_col, line_color="black")
+        fig_elev.add_annotation(x=0, y=beam_bot-30, text="SUPPORT FACE", showarrow=False, font=dict(size=10, weight="bold"))
 
-        # Plate & Bolts
-        p_bg = "rgba(239, 68, 68, 0.5)" if fit_status == "CLASH" else "rgba(59, 130, 246, 0.3)"
-        fig_s.add_shape(type="rect", x0=0, y0=plate_bot, x1=plate_w, y1=plate_top, fillcolor=p_bg, line=dict(color="#2563eb", width=2))
+        # Plate Face
+        fig_elev.add_shape(type="rect", x0=0, y0=plate_bot, x1=plate_w, y1=plate_top, fillcolor="rgba(37, 99, 235, 0.2)", line=dict(color="#2563eb", width=2))
+        
+        # Bolts (Heads)
         for r in range(n_rows):
             for c in range(n_cols):
-                fig_s.add_trace(go.Scatter(x=[bolt_x_start + c*s_h], y=[bolt_y_start - r*s_v], mode='markers', marker=dict(size=9, color='#b91c1c', line=dict(width=1, color='white')), showlegend=False))
+                bx, by = bolt_x_start + c*s_h, bolt_y_start - r*s_v
+                # Bolt Head
+                fig_elev.add_trace(go.Scatter(x=[bx], y=[by], mode='markers', marker=dict(size=10, color='#b91c1c'), showlegend=False))
+                # Cross center
+                fig_elev.add_shape(type="line", x0=bx-8, y0=by, x1=bx+8, y1=by, line=dict(color="black", width=0.5))
+                fig_elev.add_shape(type="line", x0=bx, y0=by-8, x1=bx, y1=by+8, line=dict(color="black", width=0.5))
 
         # Dimensions (Horizontal)
         off_h1, off_h2 = 40, 70
-        add_dim_line(fig_s, 0, plate_top, e1_mm, plate_top, f"e1={e1_mm:.0f}", color="#d97706", offset=off_h1, type="horiz")
-        if n_cols > 1: add_dim_line(fig_s, bolt_x_start, plate_top, bolt_x_start + (n_cols-1)*s_h, plate_top, f"({n_cols-1})@sh={s_h:.0f}", color="#c0392b", offset=off_h1, type="horiz")
-        add_dim_line(fig_s, bolt_x_start + (n_cols-1)*s_h, plate_top, plate_w, plate_top, f"Ls={l_side:.0f}", color="#16a34a", offset=off_h2, type="horiz")
-        add_dim_line(fig_s, 0, plate_bot, plate_w, plate_bot, f"W_plate = {plate_w:.0f}", color="#1e40af", offset=-40, type="horiz", bold=True)
+        add_dim_line(fig_elev, 0, plate_top, e1_mm, plate_top, f"e1={e1_mm:.0f}", color="#d97706", offset=off_h1, type="horiz")
+        if n_cols > 1: 
+            add_dim_line(fig_elev, bolt_x_start, plate_top, bolt_x_start + (n_cols-1)*s_h, plate_top, f"{n_cols-1}@sh={s_h:.0f}", color="#c0392b", offset=off_h1, type="horiz")
+        add_dim_line(fig_elev, bolt_x_start + (n_cols-1)*s_h, plate_top, plate_w, plate_top, f"Ls={l_side:.0f}", color="#16a34a", offset=off_h2, type="horiz")
+        add_dim_line(fig_elev, 0, plate_bot, plate_w, plate_bot, f"W_plate = {plate_w:.0f}", color="#1e40af", offset=-40, type="horiz", bold=True)
 
         # Dimensions (Vertical)
         off_v1, off_v2, off_v3 = 40, 70, 110
-        add_dim_line(fig_s, plate_w, plate_top, plate_w, bolt_y_start, f"Lv={real_lv:.0f}", color="#16a34a", offset=off_v1, type="vert")
-        if n_rows > 1: add_dim_line(fig_s, plate_w, bolt_y_start, plate_w, bolt_y_start - (n_rows-1)*s_v, f"({n_rows-1})@sv={s_v:.0f}", color="#c0392b", offset=off_v2, type="vert")
-        add_dim_line(fig_s, plate_w, plate_top, plate_w, plate_bot, f"H_plate = {plate_h:.0f}", color="#1e40af", offset=off_v3, type="vert", bold=True)
+        add_dim_line(fig_elev, plate_w, plate_top, plate_w, bolt_y_start, f"Lv={real_lv:.0f}", color="#16a34a", offset=off_v1, type="vert")
+        if n_rows > 1: 
+            add_dim_line(fig_elev, plate_w, bolt_y_start, plate_w, bolt_y_start - (n_rows-1)*s_v, f"{n_rows-1}@sv={s_v:.0f}", color="#c0392b", offset=off_v2, type="vert")
+        add_dim_line(fig_elev, plate_w, plate_top, plate_w, plate_bot, f"H_plate = {plate_h:.0f}", color="#1e40af", offset=off_v3, type="vert", bold=True)
 
         max_h, max_w = max(h_beam, plate_h) + 150, plate_w + 150
-        fig_s.update_layout(height=600, xaxis=dict(visible=False, range=[-40, max_w], fixedrange=True), yaxis=dict(visible=False, range=[-max_h/2, max_h/2], scaleanchor="x", scaleratio=1, fixedrange=True),
-                            margin=dict(l=5, r=5, t=20, b=20), plot_bgcolor="white")
-        st.plotly_chart(fig_s, use_container_width=True)
+        fig_elev.update_layout(height=550, xaxis=dict(visible=False, range=[-50, max_w], fixedrange=True), yaxis=dict(visible=False, range=[-max_h/2, max_h/2], scaleanchor="x", scaleratio=1, fixedrange=True),
+                            margin=dict(l=10, r=10, t=30, b=30), plot_bgcolor="white", title=dict(text="ELEVATION VIEW", x=0.5, y=0.05))
+        st.plotly_chart(fig_elev, use_container_width=True)
 
-    # --- RESULTS COLUMN ---
+    # --- VIEW 3: RESULTS ---
     with col_res:
         st.subheader("📝 Check Results")
         if fit_status == "CLASH": st.error(f"❌ CLASH! Plate hits flanges.")
         with st.expander("Ratio Check", expanded=True):
             st.metric("Bolt Shear", f"{(V_res*n_total)/Design_Shear:.2f}")
             st.metric("Bearing", f"{V_design/Design_Bear:.2f}")
-            
+
     return n_total, Design_Shear
