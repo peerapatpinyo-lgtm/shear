@@ -1,3 +1,4 @@
+# connection_design.py (V13 - Complete Version)
 import streamlit as st
 import math
 import plotly.graph_objects as go
@@ -5,6 +6,7 @@ import plotly.graph_objects as go
 def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type="Beam-to-Column (Flange)", support_data=None):
     """
     ฟังก์ชันคำนวณจุดต่อแบบมืออาชีพ รองรับ Beam-to-Beam และ Beam-to-Column
+    แก้ไขให้รองรับ Arguments ครบถ้วนตามที่เรียกจาก app.py
     """
     p = section_data
     h_cm, tw_cm = p['h']/10, p['tw']/10
@@ -25,7 +27,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     
     # Bearing Strength (1.2 * Fu * d * t)
     F_u = 4000 # ksc
-    v_bearing = 1.2 * F_u * dia_cm * tw_cm
+    v_bearing = 1.2 * F_u * dia_cm * tw_cm * bolt_factor
     
     # Governing Bolt Capacity
     v_bolt_cap = min(v_shear, v_bearing)
@@ -63,13 +65,13 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     
     with col1:
         st.info(f"**Target Force:** {V_design:,.0f} kg")
-        st.write(f"**Bolt Capacity:** {v_bolt_cap:,.0f} kg/bolt")
+        st.write(f"**Bolt Capacity:** {v_bolt_cap * reduction_factor:,.0f} kg/bolt")
         st.metric("Required Bolts", f"{n_bolts} Nos", delta=f"{n_bolts-req_bolt_calc:.2f} extra", delta_color="normal")
         
         # แสดงสถานะความสูง
         status = "✅ Space OK" if is_ok else "❌ Insufficient Space"
         st.markdown(f"**Geom Check:** {status}")
-        st.progress(min(h_req/h_avail, 1.0))
+        st.progress(min(max(h_req/h_avail, 0.0), 1.0))
         st.caption(f"Req: {h_req:.0f}mm / Avail: {h_avail:.0f}mm")
 
     with col2:
@@ -87,14 +89,23 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         # 2. Draw Beam Web
         fig.add_shape(type="rect", x0=-100, y0=0, x1=150, y1=p['h'], line_color="RoyalBlue", fillcolor="rgba(65, 105, 225, 0.1)")
         
-        # 3. Draw Bolts
+        # 3. Draw Bolts (ปรับตำแหน่ง x ให้อยู่บนคานตัวรอง)
         start_y = (p['h']/2) - ((n_rows-1)*pitch)/2
         for r in range(n_rows):
             y = start_y + r*pitch
-            for x in [-30, 30]: # Gage 60mm
+            for x in [-70, -30]: # ปรับตำแหน่ง Bolt ให้อยู่ในช่วงแผ่นเหล็กประกับ (Fin Plate Area)
                 fig.add_trace(go.Scatter(x=[x], y=[y], mode='markers', marker=dict(size=12, color='#ef4444', line=dict(width=1, color='white'))))
 
-        fig.update_layout(showlegend=False, height=350, margin=dict(l=0,r=0,t=0,b=0), xaxis_visible=False, yaxis_visible=False, plot_bgcolor='white')
+        fig.update_layout(
+            showlegend=False, 
+            height=350, 
+            margin=dict(l=0,r=0,t=0,b=0), 
+            xaxis_visible=False, 
+            yaxis_visible=False, 
+            plot_bgcolor='white',
+            xaxis=dict(range=[-160, 160]),
+            yaxis=dict(range=[-30, p['h']+30])
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     return n_bolts, v_bolt_cap
