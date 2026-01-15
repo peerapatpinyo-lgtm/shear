@@ -34,13 +34,13 @@ def add_dim_line(fig, x0, y0, x1, y1, text, color="black", offset=0, type="horiz
 def create_ishape(h, b, tw, tf, cx=0, cy=0, fill_col="#cbd5e1", line_col="black"):
     """สร้าง Shape I-Beam แบบง่าย"""
     shapes = []
-    # Web
+    # Web (ตัวตั้ง)
     shapes.append(dict(type="rect", x0=cx-tw/2, y0=cy-h/2+tf, x1=cx+tw/2, y1=cy+h/2-tf, fillcolor=fill_col, line_width=0))
-    # Top Flange
+    # Top Flange (ปีกบน)
     shapes.append(dict(type="rect", x0=cx-b/2, y0=cy+h/2-tf, x1=cx+b/2, y1=cy+h/2, fillcolor=fill_col, line=dict(color=line_col, width=1.5)))
-    # Bottom Flange
+    # Bottom Flange (ปีกล่าง)
     shapes.append(dict(type="rect", x0=cx-b/2, y0=cy-h/2, x1=cx+b/2, y1=cy-h/2+tf, fillcolor=fill_col, line=dict(color=line_col, width=1.5)))
-    # Vertical Lines for Web
+    # เส้นขอบ Web (เพื่อให้ดูสวย)
     shapes.append(dict(type="line", x0=cx-tw/2, y0=cy-h/2+tf, x1=cx-tw/2, y1=cy+h/2-tf, line=dict(color=line_col, width=1.5)))
     shapes.append(dict(type="line", x0=cx+tw/2, y0=cy-h/2+tf, x1=cx+tw/2, y1=cy+h/2-tf, line=dict(color=line_col, width=1.5)))
     return shapes
@@ -105,7 +105,6 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     with c_opt: 
         use_true_scale = st.checkbox("🔒 Fix Aspect Ratio (1:1)", value=False)
     
-    # [FIX] Define Color Variables here
     supp_col = "#334155" # Dark Slate for Column/Support
 
     col_sec, col_elev, col_res = st.columns([1.1, 1.1, 0.8])
@@ -115,43 +114,60 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         st.markdown("**SECTION A-A** (Support Interface)")
         fig_sec = go.Figure()
         
+        # --- SUPPORT DRAWING LOGIC ---
         if is_beam_to_beam:
-            # === Beam to Beam: Show Main Beam I-Shape ===
+            # === กรณี Beam to Beam: ต้องแปะที่ "WEB" ของคานแม่ ===
+            # สมมติขนาดคานแม่ให้ใหญ่กว่าคานลูก
             h_main, b_main = h_beam * 1.5, b_beam * 1.2
             tw_main, tf_main = tw_beam * 1.2, tf_beam * 1.2
-            main_cx = -tw_main / 2
             
+            # จุดสำคัญ: ผิวหน้า Web ของ Main Beam ต้องอยู่ที่ X = 0 (จุดเริ่ม Plate)
+            # ดังนั้นจุดศูนย์กลาง Main Beam ต้องขยับไปทางซ้ายเท่ากับครึ่งหนึ่งของ Web Thickness
+            main_cx = -tw_main / 2  
+            
+            # วาดรูปคานแม่ (I-Shape)
             main_shapes = create_ishape(h_main, b_main, tw_main, tf_main, cx=main_cx, cy=0, fill_col="#475569", line_col="black")
             for s in main_shapes: fig_sec.add_shape(s)
-            fig_sec.add_annotation(x=main_cx, y=-h_main/2-30, text="MAIN BEAM", showarrow=False, font=dict(weight="bold", color="#475569"))
+            
+            # Label ชี้ชัดๆ
+            fig_sec.add_annotation(x=main_cx, y=-h_main/2-20, text="MAIN BEAM (WEB)", showarrow=False, font=dict(weight="bold", color="#475569"))
+            
         else:
-            # === Beam to Column: Show Column Flange & Web ===
+            # === กรณี Beam to Column: ปกติแปะที่ "FLANGE" ของเสา ===
             t_flange_col = 16 
             t_web_col = 10
             col_depth_visible = 100
             
-            # Flange
-            fig_sec.add_shape(type="rect", x0=-t_flange_col, y0=-h_beam, x1=0, y1=h_beam, fillcolor="#334155", line_color="black")
-            # Web
-            fig_sec.add_shape(type="rect", x0=-(t_flange_col + col_depth_visible), y0=-t_web_col/2, x1=-t_flange_col, y1=t_web_col/2, fillcolor="#475569", line_color="black")
-            fig_sec.add_annotation(x=-t_flange_col/2, y=-h_beam-30, text="COLUMN", showarrow=False, font=dict(weight="bold", color="#334155"))
+            # 1. Column Flange (สี่เหลี่ยมผืนผ้าแนวตั้ง อยู่ซ้ายมือของ X=0)
+            fig_sec.add_shape(type="rect", x0=-t_flange_col, y0=-h_beam*1.2, x1=0, y1=h_beam*1.2, 
+                              fillcolor="#334155", line_color="black")
+            
+            # 2. Column Web (ยื่นออกไปด้านหลังซ้าย)
+            fig_sec.add_shape(type="rect", x0=-(t_flange_col + col_depth_visible), y0=-t_web_col/2, x1=-t_flange_col, y1=t_web_col/2, 
+                              fillcolor="#475569", line_color="black")
+            
+            # Label
+            fig_sec.add_annotation(x=-t_flange_col/2, y=-h_beam*1.2-20, text="COLUMN FLANGE", showarrow=False, font=dict(weight="bold", color="#334155"))
 
-        # --- Fin Plate & Weld ---
+        # --- Fin Plate (เริ่มที่ X=0 เสมอ) ---
         plate_x0, plate_x1 = 0, t_plate_mm
         p_color = "#ef4444" if fit_status == "CLASH" else "#3b82f6"
         fig_sec.add_shape(type="rect", x0=plate_x0, y0=-plate_h/2, x1=plate_x1, y1=plate_h/2, fillcolor=p_color, line_color="black", opacity=0.9)
         
-        # Weld
+        # Weld Symbol (เชื่อม Plate เข้ากับ Support)
         weld_size = 6
         fig_sec.add_trace(go.Scatter(x=[0, weld_size, 0, 0], y=[plate_h/2, plate_h/2, plate_h/2+weld_size, plate_h/2], fill="toself", fillcolor="black", mode="lines", line=dict(width=1), showlegend=False))
         fig_sec.add_trace(go.Scatter(x=[0, weld_size, 0, 0], y=[-plate_h/2, -plate_h/2, -plate_h/2-weld_size, -plate_h/2], fill="toself", fillcolor="black", mode="lines", line=dict(width=1), showlegend=False))
 
-        # --- Secondary Beam ---
+        # --- Secondary Beam (คานลูก) ---
         beam_web_x0 = plate_x1
         beam_web_x1 = plate_x1 + tw_beam
         beam_center_x = (beam_web_x0 + beam_web_x1) / 2 
+        
+        # Web
         fig_sec.add_shape(type="rect", x0=beam_web_x0, y0=-h_beam/2 + tf_beam, x1=beam_web_x1, y1=h_beam/2 - tf_beam, fillcolor="#d4d4d8", line_color="black")
         
+        # Flanges
         flange_x0 = beam_center_x - b_beam/2
         flange_x1 = beam_center_x + b_beam/2
         fig_sec.add_shape(type="rect", x0=flange_x0, y0=h_beam/2 - tf_beam, x1=flange_x1, y1=h_beam/2, fillcolor="#a1a1aa", line_color="black")
@@ -162,9 +178,12 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         bolt_head_h, nut_h = d_mm * 0.6, d_mm * 0.8
         for r in range(n_rows):
             by = bolt_y_start_coord - r*s_v
+            # Shank
             fig_sec.add_shape(type="rect", x0=plate_x0-5, y0=by-d_mm/2, x1=beam_web_x1+5, y1=by+d_mm/2, fillcolor="#b91c1c", line_width=0)
+            # Head & Nut
             fig_sec.add_shape(type="rect", x0=plate_x0 - bolt_head_h, y0=by-d_mm*0.8, x1=plate_x0, y1=by+d_mm*0.8, fillcolor="#7f1d1d", line_color="black")
             fig_sec.add_shape(type="rect", x0=beam_web_x1, y0=by-d_mm*0.8, x1=beam_web_x1 + nut_h, y1=by+d_mm*0.8, fillcolor="#7f1d1d", line_color="black")
+            # Centerline
             fig_sec.add_shape(type="line", x0=-20, y0=by, x1=flange_x1+20, y1=by, line=dict(color="black", width=0.5, dash="dashdot"))
 
         # Dimensions
@@ -175,7 +194,9 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
 
         layout_sec = dict(height=550, plot_bgcolor="white", margin=dict(l=10, r=10, t=30, b=30), title=dict(text="SECTION A-A", x=0.5, y=0.02), dragmode="pan")
         if use_true_scale:
-            layout_sec['xaxis'] = dict(visible=False, fixedrange=False, range=[-80, flange_x1+50])
+            # ถ้า 1:1 ต้องเผื่อที่ด้านซ้ายเยอะหน่อยเพราะมีคานแม่/เสา
+            left_margin = -120 if is_beam_to_beam else -80
+            layout_sec['xaxis'] = dict(visible=False, fixedrange=False, range=[left_margin, flange_x1+50])
             layout_sec['yaxis'] = dict(visible=False, scaleanchor="x", scaleratio=1, fixedrange=False)
         else:
             layout_sec['xaxis'] = dict(visible=False, fixedrange=False)
@@ -192,13 +213,17 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         plate_top, plate_bot = plate_h/2, -plate_h/2
         bolt_x_start, bolt_y_start = e1_mm, plate_top - real_lv
         
-        # [FIX] Use supp_col here (defined above)
+        # Support
         fig_elev.add_shape(type="rect", x0=-40, y0=beam_bot-20, x1=0, y1=beam_top+20, fillcolor=supp_col, line_color="black") 
         
+        # Beam Ghost
         fig_elev.add_shape(type="rect", x0=-20, y0=beam_top-tf_beam, x1=plate_w+50, y1=beam_top, fillcolor="#e4e4e7", opacity=0.5, line_width=0) 
         fig_elev.add_shape(type="rect", x0=-20, y0=beam_bot, x1=plate_w+50, y1=beam_bot+tf_beam, fillcolor="#e4e4e7", opacity=0.5, line_width=0) 
         
+        # Plate
         fig_elev.add_shape(type="rect", x0=0, y0=plate_bot, x1=plate_w, y1=plate_top, fillcolor="rgba(59, 130, 246, 0.2)", line=dict(color="#2563eb", width=2))
+        
+        # Bolts
         for r in range(n_rows):
             for c in range(n_cols):
                 bx, by = bolt_x_start + c*s_h, bolt_y_start - r*s_v
@@ -206,6 +231,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
                 fig_elev.add_shape(type="line", x0=bx-6, y0=by, x1=bx+6, y1=by, line=dict(color="black", width=0.5))
                 fig_elev.add_shape(type="line", x0=bx, y0=by-6, x1=bx, y1=by+6, line=dict(color="black", width=0.5))
 
+        # Dims
         add_dim_line(fig_elev, 0, plate_bot, plate_w, plate_bot, f"W={plate_w:.0f}", color="#1e40af", offset=-40, type="horiz", bold=True)
         add_dim_line(fig_elev, plate_w, plate_top, plate_w, plate_bot, f"H={plate_h:.0f}", color="#1e40af", offset=90, type="vert", bold=True)
         add_dim_line(fig_elev, 0, plate_top, e1_mm, plate_top, f"e1={e1_mm:.0f}", color="#d97706", offset=40, type="horiz")
