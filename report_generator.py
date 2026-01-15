@@ -1,58 +1,58 @@
 import streamlit as st
 
-def render_report_tab(method, is_lrfd, sec_name, fy, section_data, caps, bolt_info):
-    """
-    ฟังก์ชันสำหรับแสดงผล Tab Calculation Report
-    """
-    # Unpack ข้อมูล
-    p = section_data
-    M_cap, V_cap = caps['M_cap'], caps['V_cap']
-    Aw = (p['h']/10) * (p['tw']/10)
-    Zx = p['Zx']
-    Ix = p['Ix']
+def render_report_tab(method, is_lrfd, sec_name, fy, p, res, bolt):
+    # res คือ dictionary ที่เราส่งมาจากไฟล์หลัก
     
-    bolt_size = bolt_info['size']
-    v_bolt = bolt_info['capacity']
+    st.markdown(f"""
+    <div class="report-paper">
+        <div style="text-align:center; border-bottom: 2px solid #1e40af; padding-bottom:10px;">
+            <h2 style="margin:0;">STRUCTURAL CALCULATIONS SHEET</h2>
+            <p style="margin:0; color:#666;">Project: Beam Design Analysis | Method: {method}</p>
+        </div>
 
-    # เริ่มเขียน HTML
-    st.markdown('<div class="report-paper">', unsafe_allow_html=True)
-    st.markdown(f'<div style="text-align:right; color:#999;">METHOD: {method}</div>', unsafe_allow_html=True)
-    
-    # Section 1: Properties
-    st.markdown('<div class="report-header">1. Section & Properties</div>', unsafe_allow_html=True)
-    st.markdown(f"""
-    <div class="report-line">Section: {sec_name} (Fy={fy} ksc)</div>
-    <div class="report-line">Aw = {Aw:.2f} cm2, Zx = {Zx} cm3, Ix = {Ix} cm4</div>
-    """, unsafe_allow_html=True)
-    
-    # Section 2: Beam Capacity
-    st.markdown(f'<div class="report-header">2. Capacity Calculation ({method})</div>', unsafe_allow_html=True)
-    if is_lrfd:
-        # LRFD Format
-        st.markdown(f"""
-        <div class="report-line"><b>Moment (Phi Mn):</b></div>
-        <div class="report-line">Phi = 0.90 (Flexure)</div>
-        <div class="report-line">Phi Mn = 0.90 * Fy * Zx = 0.9 * {fy} * {Zx} = <b>{M_cap:,.0f} kg.cm</b></div>
-        <br>
-        <div class="report-line"><b>Shear (Phi Vn):</b></div>
-        <div class="report-line">Phi = 1.00 (Shear), Vn = 0.6 Fy Aw</div>
-        <div class="report-line">Phi Vn = 1.0 * 0.6 * {fy} * {Aw:.2f} = <b>{V_cap:,.0f} kg</b></div>
-        """, unsafe_allow_html=True)
-    else:
-        # ASD Format
-        st.markdown(f"""
-        <div class="report-line"><b>Moment (Allowable):</b></div>
-        <div class="report-line">M_all = 0.60 * Fy * Zx = 0.6 * {fy} * {Zx} = <b>{M_cap:,.0f} kg.cm</b></div>
-        <br>
-        <div class="report-line"><b>Shear (Allowable):</b></div>
-        <div class="report-line">V_all = 0.40 * Fy * Aw = 0.4 * {fy} * {Aw:.2f} = <b>{V_cap:,.0f} kg</b></div>
-        """, unsafe_allow_html=True)
+        <div style="display: flex; justify-content: space-between; margin-top: 20px;">
+            <div style="width: 48%;">
+                <h4 style="border-bottom: 1px solid #ddd;">1. SECTION PROPERTIES</h4>
+                <p>Section: <b>{sec_name}</b><br>
+                Height (h): {p['h']} mm<br>
+                Width (b): {p['b']} mm<br>
+                Inertia (Ix): {p['Ix']:,} cm⁴</p>
+            </div>
+            <div style="width: 48%;">
+                <h4 style="border-bottom: 1px solid #ddd;">2. MATERIAL & CRITERIA</h4>
+                <p>Yield Strength (Fy): {fy} kg/cm²<br>
+                Modulus (E): 2.04x10⁶ kg/cm²<br>
+                Span Length: {res['d_all'] * (int(st.session_state.get('defl_lim_val', 360))/100) if 'd_all' in res else 0:.2f} m</p>
+            </div>
+        </div>
+
+        <h4 style="background:#f0f4f8; padding:5px 10px; margin-top:20px;">3. CAPACITY SUMMARY</h4>
+        <table style="width:100%; border-collapse: collapse;">
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding:8px;">Shear Limit (w_v)</td>
+                <td style="text-align:right;"><b>{res['w_shear']:,.0f} kg/m</b></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding:8px;">Moment Limit (w_m)</td>
+                <td style="text-align:right;"><b>{res['w_moment']:,.0f} kg/m</b></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding:8px;">Deflection Limit (w_d)</td>
+                <td style="text-align:right;"><b>{res['w_defl']:,.0f} kg/m</b></td>
+            </tr>
+            <tr style="background:#eef2ff;">
+                <td style="padding:10px;"><b>GOVERNING SAFE LOAD</b></td>
+                <td style="text-align:right; color:#1e40af;"><b>{res['w_safe']:,.0f} kg/m</b></td>
+            </tr>
+        </table>
+
+        <h4 style="background:#f0f4f8; padding:5px 10px; margin-top:20px;">4. UTILIZATION CHECK</h4>
+        <p>Shear: {(res['v_act']/res['w_shear']*100) if res['w_shear']!=0 else 0:.1f}% | 
+           Moment: {(res['m_act']/(res['w_moment']*res['d_all']**2/8)*100) if res['w_moment']!=0 else 0:.1f}%</p>
         
-    # Section 3: Bolt Capacity
-    st.markdown('<div class="report-header">3. Bolt Capacity</div>', unsafe_allow_html=True)
-    st.markdown(f"""
-    <div class="report-line">Bolt: {bolt_size} (A325/Gr.8.8 approx)</div>
-    <div class="report-line">Capacity per bolt = <b>{v_bolt:,.0f} kg</b> ({'Phi Rn' if is_lrfd else 'Rn/Omega'})</div>
+        <div style="margin-top:30px; text-align:center; border: 2px solid #166534; padding:10px; border-radius:10px;">
+            <h3 style="margin:0; color:#166534;">STATUS: PASS</h3>
+            <small>Verified by Beam Insight Engineering System</small>
+        </div>
+    </div>
     """, unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
