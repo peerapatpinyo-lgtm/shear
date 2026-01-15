@@ -1,164 +1,204 @@
-import streamlit as st
-import base64  # ✅ ต้อง Import ตรงนี้
-import datetime
+#calculation_report.py
+import math
 
-def render_report_tab(project_info, beam_res, conn_res):
-    """
-    Generate Professional Engineering Calculation Sheet
-    """
-    
-    # 1. Prepare Data
-    now = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-    logs = conn_res.get('report_data', {})
-    
-    # Check Status Colors
-    status_beam = "✅ PASS" if beam_res['pass'] else "❌ FAIL"
-    color_beam = "green" if beam_res['pass'] else "red"
-    
-    status_conn = "✅ PASS" if conn_res['pass'] else "❌ FAIL"
-    color_conn = "green" if conn_res['pass'] else "red"
+def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A36", bolt_grade="A325"):
+    
+    # --- 1. Setup Parameters ---
+    d = bolts['d']
+    h_hole = d + 2 
+    n_rows = bolts['rows']
+    n_cols = bolts['cols']
+    n_total = n_rows * n_cols
+    
+    t_pl = plate['t']
+    h_pl = plate['h']
+    lv = plate['lv'] 
+    l_side = plate['l_side'] 
+    weld_size = plate['weld_size']
+    
+    # 🆕 DYNAMIC MATERIAL PROPERTIES (ดึงค่าจาก Dict ที่ส่งมา)
+    Fy_pl = plate['Fy']  # ไม่ใช่ 250 แล้ว
+    Fu_pl = plate['Fu']  # ไม่ใช่ 400 แล้ว
+    Fnv = bolts['Fnv']   # ไม่ใช่ 372 แล้ว
+    Fexx = 480  # Weld Electrode ยังคงไว้ก่อน หรือจะส่งมาก็ได้
 
-    # 2. HTML Template
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
-        <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-        <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-        <style>
-            body {{ font-family: 'Sarabun', sans-serif; padding: 20px; color: #333; line-height: 1.4; }}
-            .header {{ border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 20px; }}
-            .header h1 {{ color: #1e3a8a; margin: 0; font-size: 24px; }}
-            .info-box {{ background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; }}
-            h2 {{ color: #2563eb; font-size: 18px; margin-top: 25px; border-left: 5px solid #2563eb; padding-left: 10px; background: #eff6ff; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }}
-            th, td {{ border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }}
-            th {{ background-color: #f1f5f9; font-weight: 600; color: #334155; }}
-            .status-pass {{ color: #16a34a; font-weight: bold; }}
-            .status-fail {{ color: #dc2626; font-weight: bold; }}
-            .formula-box {{ padding: 10px; margin: 10px 0; background: #fff; border: 1px dashed #cbd5e1; }}
-            .footer {{ margin-top: 40px; font-size: 12px; color: #94a3b8; text-align: right; border-top: 1px solid #e2e8f0; pt: 10px; }}
-            
-            @media print {{
-                body {{ padding: 0; }}
-                .no-print {{ display: none; }}
-            }}
-        </style>
-    </head>
-    <body>
-    
-    <div class="header">
-        <div style="float:right; font-size:12px; text-align:right;">
-            <b>Generated:</b> {now}<br>
-            <b>Software:</b> Beam Insight V14
-        </div>
-        <h1>🏗️ STRUCTURAL CALCULATION SHEET</h1>
-        <p style="margin:5px 0 0 0; color:#64748b;">Steel Beam & Connection Design according to AISC 360-16</p>
-    </div>
+    # ... (ส่วนที่เหลือเหมือนเดิมเป๊ะๆ ตั้งแต่ Setup Factors ลงไป) ...
 
-    <div class="info-box">
-        <table style="border:none;">
-            <tr style="border:none;"><td style="border:none; width:50%;"><b>Project:</b> {project_info['name']}</td><td style="border:none;"><b>Engineer:</b> {project_info['eng']}</td></tr>
-            <tr style="border:none;"><td style="border:none;"><b>Section:</b> {project_info['sec']}</td><td style="border:none;"><b>Design Method:</b> {project_info['method']}</td></tr>
-        </table>
-    </div>
+    # --- 2. Setup Factors (ASD vs LRFD) ---
+    if is_lrfd:
+        method_name = "LRFD"
+        load_symbol = "V_u"
+        
+        # Factors
+        phi_shear = 0.75
+        phi_yield = 1.00
+        phi_rupture = 0.75
+        phi_weld = 0.75
+        
+        # Function to apply factor
+        def apply_factor(Rn, phi, type="shear"):
+            return phi * Rn, fr"\phi R_n", fr"{phi} \cdot {Rn:.2f}"
+            
+    else: # ASD
+        method_name = "ASD"
+        load_symbol = "V_a"
+        
+        # Factors
+        om_shear = 2.00
+        om_yield = 1.50
+        om_rupture = 2.00
+        om_weld = 2.00
+        
+        # Function to apply factor
+        def apply_factor(Rn, omega, type="shear"):
+            return Rn / omega, fr"\frac{{R_n}}{{\Omega}}", fr"\frac{{{Rn:.2f}}}{{{omega}}}"
 
-    <h2>1. BEAM DESIGN ANALYSIS</h2>
-    <table>
-        <tr>
-            <th>Parameter</th>
-            <th>Value</th>
-            <th>Limit / Capacity</th>
-            <th>Check Result</th>
-        </tr>
-        <tr>
-            <td>Actual Load (w)</td>
-            <td><b>{beam_res['w_safe']:,.0f}</b> kg/m</td>
-            <td>-</td>
-            <td>-</td>
-        </tr>
-        <tr>
-            <td>Shear Force (V)</td>
-            <td>{beam_res['v_act']:,.0f} kg</td>
-            <td>{beam_res['v_cap']:,.0f} kg</td>
-            <td class="{color_beam}">Ratio: {beam_res['v_ratio']:.2f}</td>
-        </tr>
-        <tr>
-            <td>Bending Moment (M)</td>
-            <td>{beam_res['m_act']:,.0f} kg-m</td>
-            <td>{beam_res['m_cap']:,.0f} kg-m</td>
-            <td class="{color_beam}">Ratio: {beam_res['m_ratio']:.2f}</td>
-        </tr>
-        <tr>
-            <td>Deflection (Δ)</td>
-            <td>{beam_res['d_act']:.2f} cm</td>
-            <td>{beam_res['d_all']:.2f} cm</td>
-            <td class="{color_beam}">Ratio: {beam_res['d_ratio']:.2f}</td>
-        </tr>
-    </table>
-    <div style="text-align:right; margin-top:5px; font-weight:bold; font-size:16px;">
-        BEAM STATUS: <span class="status-{color_beam}">{status_beam}</span>
-    </div>
+    # =========================================================================
+    # 3. CALCULATIONS
+    # =========================================================================
+    
+    # --- 3.1 Bolt Shear ---
+    Ab = (math.pi * d**2) / 4
+    Rn_shear_total = (Fnv * Ab * n_total) / 1000
+    if is_lrfd: cap_bolt_shear, str_f_bs, str_c_bs = apply_factor(Rn_shear_total, phi_shear)
+    else:       cap_bolt_shear, str_f_bs, str_c_bs = apply_factor(Rn_shear_total, om_shear)
 
-    <h2>2. CONNECTION DESIGN ({conn_res['conn_type']})</h2>
-    
-    <p><b>Configuration:</b> {logs.get('bolt_info','-')} | <b>Plate:</b> {logs.get('plate_info','-')}</p>
-    
-    <table>
-        <tr>
-            <th>Failure Mode</th>
-            <th>Demand ($V_u$)</th>
-            <th>Capacity ($R_n$)</th>
-            <th>Ratio</th>
-            <th>Result</th>
-        </tr>
-        <tr>
-            <td>Bolt Shear Strength</td>
-            <td>{conn_res['demand']:,.0f} kg</td>
-            <td>{logs.get('cap_shear',0):,.0f} kg</td>
-            <td>{conn_res['demand']/logs.get('cap_shear',1):.2f}</td>
-            <td class="{ 'status-pass' if conn_res['demand'] <= logs.get('cap_shear',0) else 'status-fail' }">
-                { 'OK' if conn_res['demand'] <= logs.get('cap_shear',0) else 'NG' }
-            </td>
-        </tr>
-        <tr>
-            <td>Bolt Bearing Strength</td>
-            <td>{conn_res['demand']:,.0f} kg</td>
-            <td>{logs.get('cap_bear',0):,.0f} kg</td>
-            <td>{conn_res['demand']/logs.get('cap_bear',1):.2f}</td>
-            <td class="{ 'status-pass' if conn_res['demand'] <= logs.get('cap_bear',0) else 'status-fail' }">
-                { 'OK' if conn_res['demand'] <= logs.get('cap_bear',0) else 'NG' }
-            </td>
-        </tr>
-    </table>
+    # --- 3.2 Bolt Bearing ---
+    # Simplified check (check min edge distance implied)
+    Rn_bearing_total = (2.4 * d * t_pl * Fu_pl * n_total) / 1000
+    if is_lrfd: cap_bearing, str_f_br, str_c_br = apply_factor(Rn_bearing_total, phi_shear)
+    else:       cap_bearing, str_f_br, str_c_br = apply_factor(Rn_bearing_total, om_shear)
 
-    <div class="formula-box">
-        <b>Reference Calculation ({logs.get('method','-')}):</b><br>
-        1. Bolt Shear Strength ($R_n = F_{{nv}} A_b N_s$):<br>
-        $$ {logs.get('Rn_shear',0):,.0f} \\text{{ kg/bolt}} \\times {logs.get('qty',0)} \\text{{ bolts}} = \\mathbf{{ {logs.get('cap_shear',0):,.0f} }} \\text{{ kg}} $$
-        <br>
-        2. Bearing Strength ($R_n = 1.2 L_c t F_u$):<br>
-        $$ {logs.get('Rn_bear',0):,.0f} \\text{{ kg/bolt}} \\times {logs.get('qty',0)} \\text{{ bolts}} = \\mathbf{{ {logs.get('cap_bear',0):,.0f} }} \\text{{ kg}} $$
-    </div>
+    # --- 3.3 Plate Shear Yielding (Gross Section) ---
+    # Agv = Gross area subject to shear = h_plate * t_plate
+    Ag_shear = h_pl * t_pl
+    Rn_y = 0.60 * Fy_pl * Ag_shear / 1000
+    if is_lrfd: cap_yield, str_f_y, str_c_y = apply_factor(Rn_y, phi_yield)
+    else:       cap_yield, str_f_y, str_c_y = apply_factor(Rn_y, om_yield)
 
-    <div style="text-align:right; margin-top:5px; font-weight:bold; font-size:16px;">
-        CONNECTION STATUS: <span class="status-{color_conn}">{status_conn}</span>
-    </div>
+    # --- 3.4 Plate Shear Rupture (Net Section) ---
+    # Anv = Net area subject to shear = (h_plate - n_rows * h_hole) * t_plate
+    An_shear = (h_pl - (n_rows * h_hole)) * t_pl
+    Rn_r = 0.60 * Fu_pl * An_shear / 1000
+    if is_lrfd: cap_rupture, str_f_r, str_c_r = apply_factor(Rn_r, phi_rupture)
+    else:       cap_rupture, str_f_r, str_c_r = apply_factor(Rn_r, om_rupture)
 
-    <div class="footer">
-        End of Report | Verified by: __________________________
-    </div>
+    # --- 3.5 Block Shear Rupture (AISC J4.3) ---
+    # Assumed failure path: Shear along vertical bolt line, Tension along horizontal edge
+    # Agv = Gross area in shear (Top of plate to bottom bolt)
+    # L_gv = Length of shear plane (gross)
+    L_gv = (n_rows - 1) * bolts['s_v'] + lv 
+    Agv = L_gv * t_pl
+    
+    # Anv = Net area in shear
+    Anv = (L_gv - (n_rows - 0.5) * h_hole) * t_pl
+    
+    # Ant = Net area in tension (from bolt CL to edge)
+    Ant = (l_side - 0.5 * h_hole) * t_pl
+    
+    Ubs = 1.0 # Uniform tension assumed for simple connection
+    
+    # Formula: Rn = min(0.6FuAnv + UbsFuAnt, 0.6FyAgv + UbsFuAnt)
+    term1 = 0.6 * Fu_pl * Anv + Ubs * Fu_pl * Ant
+    term2 = 0.6 * Fy_pl * Agv + Ubs * Fu_pl * Ant
+    Rn_block = min(term1, term2) / 1000
+    
+    if is_lrfd: cap_block, str_f_bl, str_c_bl = apply_factor(Rn_block, phi_rupture)
+    else:       cap_block, str_f_bl, str_c_bl = apply_factor(Rn_block, om_rupture)
 
-    </body>
-    </html>
-    """
-    
-    # 3. Render in Streamlit
-    st.markdown("### 📄 Calculation Report Preview")
-    st.components.v1.html(html_content, height=600, scrolling=True)
-    
-    # ✅ FIX IS HERE: ใช้ base64.b64encode (ไม่ใช่ st.base64)
-    b64 = base64.b64encode(html_content.encode()).decode()
-    href = f'<a href="data:text/html;base64,{b64}" download="calculation_report.html" style="background:#2563eb; color:white; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;">📥 Download HTML Report</a>'
-    st.markdown(href, unsafe_allow_html=True)
+    # --- 3.6 Weld Strength ---
+    # Fillet weld both sides (2 lines)
+    L_weld = h_pl * 2 
+    # Unit strength per mm (0.6 * Fexx * 0.707 * size)
+    # Note: 0.75 factor is phi for weld? No, 0.707 is cos(45) for throat
+    Rn_weld = (0.6 * Fexx * 0.707 * weld_size * L_weld) / 1000
+    
+    if is_lrfd: cap_weld, str_f_wd, str_c_wd = apply_factor(Rn_weld, phi_weld)
+    else:       cap_weld, str_f_wd, str_c_wd = apply_factor(Rn_weld, om_weld)
+
+    # --- 4. SUMMARY & RESULT ---
+    capacities = {
+        "Bolt Shear": cap_bolt_shear,
+        "Bolt Bearing": cap_bearing,
+        "Plate Yielding": cap_yield,
+        "Plate Rupture": cap_rupture,
+        "Block Shear": cap_block,
+        "Weld Strength": cap_weld
+    }
+    
+    min_cap_val = min(capacities.values())
+    governing_mode = min(capacities, key=capacities.get)
+    ratio = V_load / min_cap_val if min_cap_val > 0 else 999
+    
+    if ratio <= 1.0:
+        status = "✅ PASS"
+        color = "green"
+    else:
+        status = "❌ FAIL"
+        color = "red"
+
+    # --- 5. REPORT GENERATION ---
+    report = f"""
+### 📝 Detailed Calculation Report ({method_name})
+
+**Design Parameters:**
+- Load (${load_symbol}$): **{V_load:.2f} kN**
+- Plate: {h_pl:.0f}x{plate['w']:.0f}x{t_pl:.0f} mm (A36)
+- Bolts: {n_total} x M{d} (A325)
+- Weld: Fillet {weld_size} mm (E70xx)
+
+---
+
+#### 1. Bolt Checks
+**1.1 Bolt Shear ({str_f_bs})**
+$$ R_n = {Rn_shear_total:.2f} \\text{{ kN}} $$
+$$ {str_f_bs} = {str_c_bs} = \\mathbf{{{cap_bolt_shear:.2f} \\text{{ kN}}}} $$
+
+**1.2 Bolt Bearing ({str_f_br})**
+$$ {str_f_br} = {str_c_br} = \\mathbf{{{cap_bearing:.2f} \\text{{ kN}}}} $$
+
+---
+
+#### 2. Plate Checks
+**2.1 Shear Yielding (Gross) ({str_f_y})**
+$$ A_g = {Ag_shear:.0f} \\text{{ mm}}^2 $$
+$$ {str_f_y} = {str_c_y} = \\mathbf{{{cap_yield:.2f} \\text{{ kN}}}} $$
+
+**2.2 Shear Rupture (Net) ({str_f_r})**
+$$ A_n = {An_shear:.0f} \\text{{ mm}}^2 $$
+$$ {str_f_r} = {str_c_r} = \\mathbf{{{cap_rupture:.2f} \\text{{ kN}}}} $$
+
+**2.3 Block Shear Rupture ({str_f_bl})** ⚠️ *Critical*
+- Shear Area: $A_{{gv}}={Agv:.0f}, A_{{nv}}={Anv:.0f}$ mm²
+- Tension Area: $A_{{nt}}={Ant:.0f}$ mm²
+$$ R_n = \\min(0.6 F_u A_{{nv}} + U_{{bs}} F_u A_{{nt}}, 0.6 F_y A_{{gv}} + U_{{bs}} F_u A_{{nt}}) = {Rn_block:.2f} \\text{{ kN}} $$
+$$ {str_f_bl} = {str_c_bl} = \\mathbf{{{cap_block:.2f} \\text{{ kN}}}} $$
+
+---
+
+#### 3. Weld Checks
+**3.1 Fillet Weld Strength ({str_f_wd})**
+- Weld Size ($D$): {weld_size} mm
+- Total Length ($L_w$): {h_pl:.0f} x 2 = {L_weld:.0f} mm
+$$ R_n = 0.6 F_{{exx}} (0.707 D) L_w = {Rn_weld:.2f} \\text{{ kN}} $$
+$$ {str_f_wd} = {str_c_wd} = \\mathbf{{{cap_weld:.2f} \\text{{ kN}}}} $$
+
+---
+
+#### 🏁 Final Summary
+**Status: <span style='color:{color}'>{status}</span>**
+
+| Limit State | Capacity (kN) | Ratio |
+| :--- | :---: | :---: |
+| Bolt Shear | {cap_bolt_shear:.2f} | {V_load/cap_bolt_shear:.2f} |
+| Bolt Bearing | {cap_bearing:.2f} | {V_load/cap_bearing:.2f} |
+| Plate Yielding | {cap_yield:.2f} | {V_load/cap_yield:.2f} |
+| Plate Rupture | {cap_rupture:.2f} | {V_load/cap_rupture:.2f} |
+| Block Shear | {cap_block:.2f} | {V_load/cap_block:.2f} |
+| Weld Strength | {cap_weld:.2f} | {V_load/cap_weld:.2f} |
+
+👉 **Governing Case:** {governing_mode} (Capacity = **{min_cap_val:.2f} kN**)
+**Utilization Ratio:** **{ratio:.2f}**
+    """
+    
+    return report
