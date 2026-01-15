@@ -48,7 +48,7 @@ def add_centerline(fig, x0, y0, x1, y1):
     fig.add_shape(type="line", x0=x0, y0=y0, x1=x1, y1=y1, line=dict(color=C_CL, width=1, dash="dashdot"), opacity=0.7)
 
 # =============================================================================
-# 1. PLAN VIEW (TOP)
+# 1. PLAN VIEW (TOP) - Adjusted Scale
 # =============================================================================
 def create_plan_view(beam, plate, bolts):
     fig = go.Figure()
@@ -56,29 +56,32 @@ def create_plan_view(beam, plate, bolts):
     w_pl, t_pl, e1, l_side = plate['w'], plate['t'], plate['e1'], plate['l_side']
     d_bolt, n_cols, s_h = bolts['d'], bolts['cols'], bolts['s_h']
     
-    zoom_y = max(bf, 160) * 0.7
-    zoom_x = w_pl + 80
+    # --- SCALING ADJUSTMENT ---
+    # Y-Limit: อิงจากความกว้างปีกคาน + เผื่อที่ให้ Callout นิดหน่อย (กระชับขึ้น)
+    zoom_y = bf/2 + 50  
+    # X-Limit: อิงจากความยาวเพลท + เผื่อที่ให้ Leader line ด้านขวา
+    zoom_x_end = w_pl + 60
+    zoom_x_start = -30 # เผื่อให้เห็นเสาด้านซ้าย
 
-    # Column (Blue Section)
-    fig.add_shape(type="rect", x0=-20, y0=-zoom_y, x1=0, y1=zoom_y, line=dict(color=C_BEAM_OUT, width=2), fillcolor=C_COL_FILL)
+    # Column
+    fig.add_shape(type="rect", x0=zoom_x_start, y0=-zoom_y, x1=0, y1=zoom_y, line=dict(color=C_BEAM_OUT, width=2), fillcolor=C_COL_FILL)
     
-    # Beam Web (Light Grey Section)
-    fig.add_shape(type="rect", x0=10, y0=-tw/2, x1=zoom_x, y1=tw/2, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL)
-    add_centerline(fig, -30, 0, zoom_x, 0)
+    # Beam Web
+    fig.add_shape(type="rect", x0=10, y0=-tw/2, x1=zoom_x_end, y1=tw/2, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL)
+    add_centerline(fig, zoom_x_start, 0, zoom_x_end, 0)
 
-    # Fin Plate (Bright Blue Section)
+    # Fin Plate
     py_max = tw/2 + t_pl
     fig.add_shape(type="rect", x0=0, y0=tw/2, x1=w_pl, y1=py_max, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_PLATE_FILL)
-    # Weld Triangle
     fig.add_trace(go.Scatter(x=[0, 6, 0, 0], y=[py_max, py_max, py_max+6, py_max], fill="toself", line_color="black", fillcolor="black", mode='lines', hoverinfo='skip'))
 
-    # Bolts (Red)
+    # Bolts
     bx_start = e1
     for i in range(n_cols):
         bx = bx_start + i*s_h
         fig.add_shape(type="rect", x0=bx-d_bolt/2, y0=-tw/2, x1=bx+d_bolt/2, y1=py_max, line_width=1, fillcolor=C_BOLT_FILL)
         fig.add_shape(type="rect", x0=bx-d_bolt, y0=py_max, x1=bx+d_bolt, y1=py_max+(d_bolt*0.6), line_width=1, fillcolor=C_BOLT_FILL)
-        add_centerline(fig, bx, -zoom_y+20, bx, zoom_y-20)
+        add_centerline(fig, bx, -zoom_y+10, bx, zoom_y-10)
 
     # Dimensions
     dim_y = -zoom_y + 20
@@ -91,15 +94,16 @@ def create_plan_view(beam, plate, bolts):
             curr_x += s_h
     add_cad_dim(fig, curr_x, dim_y, w_pl, dim_y, f"{l_side:.0f}")
 
-    add_leader(fig, w_pl/2, py_max, f"<b>PL-{t_pl}mm</b>", ax=20, ay=-40, color=C_PLATE_FILL)
+    add_leader(fig, w_pl/2, py_max, f"<b>PL-{t_pl}mm</b>", ax=20, ay=-35, color=C_PLATE_FILL)
 
-    fig.update_layout(title="<b>PLAN VIEW</b> (Top Section)", plot_bgcolor="white", margin=dict(l=10,r=10,t=30,b=10), height=280,
-                      xaxis=dict(visible=False, range=[-30, zoom_x], fixedrange=True),
+    # Layout (กระชับ Margin)
+    fig.update_layout(title="<b>PLAN VIEW</b>", plot_bgcolor="white", margin=dict(l=5,r=5,t=30,b=5), height=280,
+                      xaxis=dict(visible=False, range=[zoom_x_start, zoom_x_end], fixedrange=True),
                       yaxis=dict(visible=False, range=[-zoom_y, zoom_y], scaleanchor="x", scaleratio=1, fixedrange=True), showlegend=False)
     return fig
 
 # =============================================================================
-# 2. FRONT VIEW (ELEVATION)
+# 2. FRONT VIEW (ELEVATION) - Adjusted Scale
 # =============================================================================
 def create_front_view(beam, plate, bolts):
     fig = go.Figure()
@@ -108,13 +112,20 @@ def create_front_view(beam, plate, bolts):
     s_v, s_h = bolts['s_v'], bolts['s_h']
     d_bolt, n_rows, n_cols = bolts['d'], bolts['rows'], bolts['cols']
 
-    # Beam Outline
-    fig.add_shape(type="rect", x0=0, y0=-h_beam/2, x1=w_pl+60, y1=h_beam/2, line=dict(color="#94a3b8", width=1, dash="dash"))
-    fig.add_shape(type="line", x0=0, y0=h_beam/2-tf, x1=w_pl+60, y1=h_beam/2-tf, line=dict(color="#94a3b8", width=0.5, dash="dash"))
-    fig.add_shape(type="line", x0=0, y0=-h_beam/2+tf, x1=w_pl+60, y1=-h_beam/2+tf, line=dict(color="#94a3b8", width=0.5, dash="dash"))
+    # --- SCALING ADJUSTMENT ---
+    # Y-Limit: อิงความลึกคาน + เผื่อที่สำหรับ Dimension ด้านล่างและบน
+    zoom_y_limit = h_beam/2 + 40
+    # X-Limit: อิงความกว้างเพลท + เผื่อที่สำหรับ Dimension ด้านขวา
+    zoom_x_end = w_pl + 60
+    zoom_x_start = -25 # เผื่อเห็นเสา
 
-    # Column (Blue Side)
-    fig.add_shape(type="rect", x0=-20, y0=-h_beam/2-20, x1=0, y1=h_beam/2+20, line=dict(color=C_BEAM_OUT, width=2), fillcolor=C_COL_FILL)
+    # Beam Outline
+    fig.add_shape(type="rect", x0=0, y0=-h_beam/2, x1=zoom_x_end, y1=h_beam/2, line=dict(color="#94a3b8", width=1, dash="dash"))
+    fig.add_shape(type="line", x0=0, y0=h_beam/2-tf, x1=zoom_x_end, y1=h_beam/2-tf, line=dict(color="#94a3b8", width=0.5, dash="dash"))
+    fig.add_shape(type="line", x0=0, y0=-h_beam/2+tf, x1=zoom_x_end, y1=-h_beam/2+tf, line=dict(color="#94a3b8", width=0.5, dash="dash"))
+
+    # Column
+    fig.add_shape(type="rect", x0=zoom_x_start, y0=-zoom_y_limit, x1=0, y1=zoom_y_limit, line=dict(color=C_BEAM_OUT, width=2), fillcolor=C_COL_FILL)
 
     # Plate
     fig.add_shape(type="rect", x0=0, y0=-h_pl/2, x1=w_pl, y1=h_pl/2, line=dict(color=C_PLATE_FILL, width=2), fillcolor="rgba(14, 165, 233, 0.1)")
@@ -139,15 +150,16 @@ def create_front_view(beam, plate, bolts):
             add_cad_dim(fig, dim_x, curr_y, dim_x, curr_y-s_v, f"{s_v:.0f}", "vert")
             curr_y -= s_v
     add_cad_dim(fig, dim_x, curr_y, dim_x, -h_pl/2, f"{lv:.0f}", "vert")
-    add_cad_dim(fig, dim_x+30, h_pl/2, dim_x+30, -h_pl/2, f"H={h_pl:.0f}", "vert", offset=0)
+    add_cad_dim(fig, dim_x+35, h_pl/2, dim_x+35, -h_pl/2, f"H={h_pl:.0f}", "vert", offset=0)
 
-    fig.update_layout(title="<b>ELEVATION</b> (Front View)", plot_bgcolor="white", margin=dict(l=10,r=35,t=30,b=10), height=280,
-                      xaxis=dict(visible=False, range=[-30, w_pl+70], fixedrange=True),
-                      yaxis=dict(visible=False, range=[-h_beam/2-40, h_beam/2+40], scaleanchor="x", scaleratio=1, fixedrange=True), showlegend=False)
+    # Layout (กระชับ Margin)
+    fig.update_layout(title="<b>ELEVATION</b> (Front View)", plot_bgcolor="white", margin=dict(l=5,r=30,t=30,b=5), height=280,
+                      xaxis=dict(visible=False, range=[zoom_x_start, zoom_x_end], fixedrange=True),
+                      yaxis=dict(visible=False, range=[-zoom_y_limit, zoom_y_limit], scaleanchor="x", scaleratio=1, fixedrange=True), showlegend=False)
     return fig
 
 # =============================================================================
-# 3. SIDE VIEW (SECTION) - Fixed Column Representation
+# 3. SIDE VIEW (SECTION) - Adjusted Scale
 # =============================================================================
 def create_side_view(beam, plate, bolts):
     fig = go.Figure()
@@ -155,37 +167,27 @@ def create_side_view(beam, plate, bolts):
     t_pl, h_pl, lv = plate['t'], plate['h'], plate['lv']
     d_bolt, n_rows, s_v = bolts['d'], bolts['rows'], bolts['s_v']
 
-    # --- 1. COLUMN BACKGROUND (The Fix) ---
-    # สมมติเสากว้างกว่าคานเล็กน้อย และอยู่ด้านหลัง (Background)
-    col_w_visual = b + 80  # ให้เสากว้างกว่าคาน 80mm
-    col_h_visual = h + 60
-    
-    # วาดเส้นขอบเสา (Column Face Lines) ซ้ายและขวา
-    # ซ้าย
-    fig.add_shape(type="line", x0=-col_w_visual/2, y0=-col_h_visual/2, x1=-col_w_visual/2, y1=col_h_visual/2, 
-                  line=dict(color=C_COL_FILL, width=3))
-    # ขวา
-    fig.add_shape(type="line", x0=col_w_visual/2, y0=-col_h_visual/2, x1=col_w_visual/2, y1=col_h_visual/2, 
-                  line=dict(color=C_COL_FILL, width=3))
-    
-    # ถมสีพื้นหลังจางๆ ระหว่างเสา เพื่อให้รู้ว่าเป็น Support
-    fig.add_trace(go.Scatter(
-        x=[-col_w_visual/2, col_w_visual/2, col_w_visual/2, -col_w_visual/2],
-        y=[-col_h_visual/2, -col_h_visual/2, col_h_visual/2, col_h_visual/2],
-        fill="toself", mode='none', fillcolor='rgba(71, 85, 105, 0.1)', hoverinfo='skip'
-    ))
+    # --- SCALING ADJUSTMENT ---
+    col_w_visual = b + 80
+    # Y-Limit: อิงความลึกคาน + เผื่อที่สำหรับ Callout ด้านบน/ล่าง
+    zoom_y_limit = h/2 + 40
+    # X-Limit: อิงความกว้างเสาที่สมมติขึ้น + เผื่อที่ด้านข้างนิดหน่อย
+    zoom_x_limit = col_w_visual/2 + 30
 
-    # --- 2. BEAM SECTION (Foreground) ---
-    # I-Beam Section (Light Grey Fill)
-    fig.add_shape(type="rect", x0=-b/2, y0=h/2-tf, x1=b/2, y1=h/2, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL) # Top Flange
-    fig.add_shape(type="rect", x0=-b/2, y0=-h/2, x1=b/2, y1=-h/2+tf, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL) # Bot Flange
-    fig.add_shape(type="rect", x0=-tw/2, y0=-h/2+tf, x1=tw/2, y1=h/2-tf, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL) # Web
+    # Column Background
+    fig.add_shape(type="line", x0=-col_w_visual/2, y0=-zoom_y_limit, x1=-col_w_visual/2, y1=zoom_y_limit, line=dict(color=C_COL_FILL, width=3))
+    fig.add_shape(type="line", x0=col_w_visual/2, y0=-zoom_y_limit, x1=col_w_visual/2, y1=zoom_y_limit, line=dict(color=C_COL_FILL, width=3))
+    fig.add_trace(go.Scatter(x=[-col_w_visual/2, col_w_visual/2, col_w_visual/2, -col_w_visual/2],
+                             y=[-zoom_y_limit, -zoom_y_limit, zoom_y_limit, zoom_y_limit],
+                             fill="toself", mode='none', fillcolor='rgba(71, 85, 105, 0.1)', hoverinfo='skip'))
 
-    # --- 3. PLATE & BOLTS ---
-    # Plate (Bright Blue Fill) attached to web
+    # I-Beam Section
+    fig.add_shape(type="rect", x0=-b/2, y0=h/2-tf, x1=b/2, y1=h/2, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL)
+    fig.add_shape(type="rect", x0=-b/2, y0=-h/2, x1=b/2, y1=-h/2+tf, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL)
+    fig.add_shape(type="rect", x0=-tw/2, y0=-h/2+tf, x1=tw/2, y1=h/2-tf, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL)
+
+    # Plate & Bolts
     fig.add_shape(type="rect", x0=tw/2, y0=-h_pl/2, x1=tw/2+t_pl, y1=h_pl/2, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_PLATE_FILL)
-
-    # Bolts (Red Fill)
     bolt_x = tw/2 + t_pl
     by_start = h_pl/2 - lv
     for r in range(n_rows):
@@ -193,14 +195,14 @@ def create_side_view(beam, plate, bolts):
         fig.add_shape(type="rect", x0=bolt_x, y0=by-d_bolt/2, x1=bolt_x+(d_bolt*0.6), y1=by+d_bolt/2, line=dict(color=C_BOLT_FILL, width=1), fillcolor=C_BOLT_FILL)
         add_centerline(fig, -b/2, by, b/2, by)
 
-    add_centerline(fig, 0, -h/2-30, 0, h/2+30)
+    add_centerline(fig, 0, -zoom_y_limit, 0, zoom_y_limit)
 
     # Labels
     add_leader(fig, b/2, h/2-tf/2, f"<b>Beam {h:.0f}</b>", ax=30, ay=-20, color=C_BEAM_OUT)
-    # Label Column Background
-    fig.add_annotation(x=-col_w_visual/2, y=0, text="<b>Column</b>", ax=-40, ay=0, showarrow=True, arrowcolor=C_COL_FILL, font=dict(color=C_COL_FILL, size=10))
+    fig.add_annotation(x=-col_w_visual/2, y=-zoom_y_limit+10, text="<b>Column</b>", ax=-30, ay=0, showarrow=True, arrowcolor=C_COL_FILL, font=dict(color=C_COL_FILL, size=10))
 
-    fig.update_layout(title="<b>SIDE VIEW</b> (Section)", plot_bgcolor="white", margin=dict(l=10,r=10,t=30,b=10), height=280,
-                      xaxis=dict(visible=False, range=[-col_w_visual/2-50, col_w_visual/2+50], fixedrange=True),
-                      yaxis=dict(visible=False, range=[-h/2-40, h/2+40], scaleanchor="x", scaleratio=1, fixedrange=True), showlegend=False)
+    # Layout (กระชับ Margin)
+    fig.update_layout(title="<b>SIDE VIEW</b> (Section)", plot_bgcolor="white", margin=dict(l=5,r=5,t=30,b=5), height=280,
+                      xaxis=dict(visible=False, range=[-zoom_x_limit, zoom_x_limit], fixedrange=True),
+                      yaxis=dict(visible=False, range=[-zoom_y_limit, zoom_y_limit], scaleanchor="x", scaleratio=1, fixedrange=True), showlegend=False)
     return fig
