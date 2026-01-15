@@ -1,4 +1,4 @@
-# app.py (Full Updated Version - Combined Load & Ratio Calculation)
+# app.py (Updated Version - Full Load & Ratio Calculation)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,18 +9,20 @@ try:
     import connection_design as conn
     import report_generator as rep
 except ImportError:
-    st.warning("Warning: connection_design.py or report_generator.py not found.")
+    st.warning("Warning: connection_design.py or report_generator.py not found. Some tabs may not work.")
 
 # ==========================================
-# 1. SETUP & STYLE
+# 1. SETUP & STYLE (Engineering Professional)
 # ==========================================
 st.set_page_config(page_title="Beam Insight V12", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
     
+    html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
+
+    /* --- Metric Card (Detail Version) --- */
     .detail-card {
         background: white; border-radius: 12px; padding: 20px;
         border: 1px solid #e5e7eb; border-top: 6px solid #2563eb;
@@ -32,33 +34,52 @@ st.markdown("""
     }
     .pass { background-color: #dcfce7; color: #166534; }
     .fail { background-color: #fee2e2; color: #991b1b; }
-    
+
+    /* --- Highlight Card --- */
     .highlight-card { 
         background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
         padding: 25px; border-radius: 20px; border-left: 8px solid #2563eb; 
         box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08); margin-bottom: 25px; border: 1px solid #e5e7eb;
     }
     .big-num { color: #1e40af; font-size: 42px; font-weight: 800; font-family: 'Roboto Mono', monospace; }
+    .sub-text { color: #6b7280; font-size: 14px; font-weight: 600; text-transform: uppercase; }
+
+    /* --- Report Paper Style --- */
+    .report-paper {
+        background: white; padding: 40px; border: 1px solid #ddd;
+        box-shadow: 0 0 15px rgba(0,0,0,0.1); color: #333; line-height: 1.6;
+        max-width: 900px; margin: auto; font-family: 'Sarabun', sans-serif;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. STEEL DATA
+# 2. FULL DATA (ตารางเหล็ก)
 # ==========================================
 steel_db = {
     "H 100x100x6x8":    {"h": 100, "b": 100, "tw": 6,   "tf": 8,   "Ix": 383,    "Zx": 76.5,  "w": 17.2},
+    "H 125x125x6.5x9":  {"h": 125, "b": 125, "tw": 6.5, "tf": 9,   "Ix": 847,    "Zx": 136,   "w": 23.8},
+    "H 150x75x5x7":     {"h": 150, "b": 75,  "tw": 5,   "tf": 7,   "Ix": 666,    "Zx": 88.8,  "w": 14.0},
     "H 150x150x7x10":   {"h": 150, "b": 150, "tw": 7,   "tf": 10,  "Ix": 1640,   "Zx": 219,   "w": 31.5},
+    "H 200x100x5.5x8":  {"h": 200, "b": 100, "tw": 5.5, "tf": 8,   "Ix": 1840,   "Zx": 184,   "w": 21.3},
     "H 200x200x8x12":   {"h": 200, "b": 200, "tw": 8,   "tf": 12,  "Ix": 4720,   "Zx": 472,   "w": 49.9},
+    "H 250x125x6x9":    {"h": 250, "b": 125, "tw": 6,   "tf": 9,   "Ix": 3690,   "Zx": 295,   "w": 29.6},
+    "H 250x250x9x14":   {"h": 250, "b": 250, "tw": 9,   "tf": 14,  "Ix": 10800,  "Zx": 867,   "w": 72.4},
     "H 300x150x6.5x9":  {"h": 300, "b": 150, "tw": 6.5, "tf": 9,   "Ix": 7210,   "Zx": 481,   "w": 36.7},
+    "H 300x300x10x15":  {"h": 300, "b": 300, "tw": 10,  "tf": 15,  "Ix": 20400,  "Zx": 1360,  "w": 94.0},
+    "H 350x175x7x11":   {"h": 350, "b": 175, "tw": 7,   "tf": 11,  "Ix": 13600,  "Zx": 775,   "w": 49.6},
     "H 400x200x8x13":   {"h": 400, "b": 200, "tw": 8,   "tf": 13,  "Ix": 23700,  "Zx": 1190,  "w": 66.0},
+    "H 450x200x9x14":   {"h": 450, "b": 200, "tw": 9,   "tf": 14,  "Ix": 33500,  "Zx": 1490,  "w": 76.0},
     "H 500x200x10x16":  {"h": 500, "b": 200, "tw": 10,  "tf": 16,  "Ix": 47800,  "Zx": 1910,  "w": 89.6},
+    "H 600x200x11x17":  {"h": 600, "b": 200, "tw": 11,  "tf": 17,  "Ix": 77600,  "Zx": 2590,  "w": 106},
 }
 
 with st.sidebar:
     st.title("🏗️ Beam Insight V12")
+    st.divider()
     method = st.radio("Method", ["ASD (Allowable Stress)", "LRFD (Limit State)"])
     is_lrfd = method == "LRFD"
-    sec_name = st.selectbox("Steel Section", list(steel_db.keys()), index=3)
+    sec_name = st.selectbox("Steel Section", list(steel_db.keys()), index=11)
     user_span = st.number_input("Span Length (m)", min_value=1.0, value=6.0, step=0.5)
     fy = st.number_input("Fy (kg/cm²)", 2400)
     defl_ratio = st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1)
@@ -66,6 +87,7 @@ with st.sidebar:
     bolt_size = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
     design_mode = st.radio("Load for Connection:", ["Actual Load", "Fixed % Capacity"])
     target_pct = st.slider("Target Usage %", 50, 100, 75) if design_mode == "Fixed % Capacity" else None
+    E_mod = 2.04e6 
 
 # ==========================================
 # 3. CORE CALCULATIONS
@@ -73,7 +95,6 @@ with st.sidebar:
 p = steel_db[sec_name]
 Aw = (p['h']/10) * (p['tw']/10) 
 Ix, Zx = p['Ix'], p['Zx']
-E_mod = 2.04e6 
 
 if is_lrfd:
     M_cap = 0.9 * fy * Zx
@@ -97,9 +118,8 @@ w_shear, w_moment, w_defl, user_safe_load, user_cause = get_capacity(user_span)
 
 V_actual = user_safe_load * user_span / 2
 M_actual = user_safe_load * user_span**2 / 8
-delta_allow = (user_span*100) / defl_lim_val
 delta_actual = (5 * (user_safe_load/100) * ((user_span*100)**4)) / (384 * E_mod * Ix)
-
+delta_allow = (user_span*100) / defl_lim_val
 V_design = V_actual if design_mode == "Actual Load" else V_cap * (target_pct / 100)
 
 # ==========================================
@@ -111,52 +131,71 @@ with tab1:
     st.subheader(f"Engineering Analysis: {sec_name}")
     cause_color = "#dc2626" if user_cause == "Shear" else ("#d97706" if user_cause == "Moment" else "#059669")
 
-    # --- Highlight Card ---
+    # --- 1. Main Highlight Card ---
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div><span style="color:#6b7280; font-weight:600; text-transform:uppercase;">Max Allowed {label_load}</span><br>
-            <span class="big-num">{user_safe_load:,.0f}</span> <span style="font-size:20px; color:#4b5563;">kg/m</span></div>
-            <div style="text-align: right;"><span style="color:#6b7280; font-weight:600; text-transform:uppercase;">Governing Limit</span><br>
-            <span style="font-size: 22px; font-weight:bold; color:{cause_color}; background-color:{cause_color}15; padding: 8px 20px; border-radius:15px; border: 1px solid {cause_color}30;">{user_cause.upper()}</span></div>
+            <div><span class="sub-text">Maximum Allowed {label_load}</span><br>
+                <span class="big-num">{user_safe_load:,.0f}</span> <span style="font-size:20px; color:#4b5563;">kg/m</span></div>
+            <div style="text-align: right;"><span class="sub-text">Governing Limit</span><br>
+                <span style="font-size: 22px; font-weight:bold; color:{cause_color}; background-color:{cause_color}15; padding: 8px 20px; border-radius:15px; border: 1px solid {cause_color}30;">{user_cause.upper()}</span></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # --- Combined Calculation Section ---
-    st.markdown("### 🔍 Detailed Verification (Load & Capacity)")
+    # --- 2. Detailed Verification (Ratio + W Calculation) ---
+    st.markdown("### 🔍 Detailed Verification (Ratio & Capacity)")
     
+    def render_check_ratio_with_w(title, act, lim, ratio_label, eq_w, eq_act, eq_ratio):
+        ratio = act / lim
+        is_pass = ratio <= 1.01 
+        status_class = "pass" if is_pass else "fail"
+        border_color = "#10b981" if is_pass else "#ef4444"
+
+        st.markdown(f"""
+        <div class="detail-card" style="border-top-color: {border_color}">
+            <span class="status-badge {status_class}">{'PASS' if is_pass else 'FAIL'}</span>
+            <h4 style="margin:0; color:#374151;">{title}</h4>
+            <div style="margin-top:10px;">
+                <small style="color:#6b7280;">Usage Ratio ({ratio_label}):</small>
+                <div style="font-size:24px; font-weight:700; color:{border_color};">{ratio:.3f}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        with st.expander(f"View {title} Step-by-Step Calculation"):
+            st.info(f"**Step 1: Calculate Max Load (w) from {title}**")
+            st.latex(eq_w)
+            st.divider()
+            st.info(f"**Step 2: Compare Actual Stress vs Capacity**")
+            st.latex(eq_act)
+            st.latex(eq_ratio)
+
     c1, c2, c3 = st.columns(3)
     L_cm_disp = user_span * 100
-
+    
     with c1:
-        st.markdown(f'<div class="detail-card" style="border-top-color: #ef4444">', unsafe_allow_html=True)
-        st.markdown(f'<span class="status-badge {"pass" if user_cause != "Shear" else "fail"}">Ratio: {V_actual/V_cap:.3f}</span>', unsafe_allow_html=True)
-        st.markdown(f'<h4 style="margin:0;">1. Shear Limit</h4><hr>', unsafe_allow_html=True)
-        st.latex(fr"V_{{cap}} = {V_cap:,.0f} \text{{ kg}}")
-        st.latex(fr"w_{{limit}} = \frac{{2 \cdot V_{{cap}}}}{{L}} \cdot 100")
-        st.latex(fr"w_{{limit}} = \mathbf{{{w_shear:,.0f}}} \text{{ kg/m}}")
-        st.markdown('</div>', unsafe_allow_html=True)
-
+        render_check_ratio_with_w(
+            "Shear Check", V_actual, V_cap, "V/V_cap",
+            fr"w_{{limit}} = \frac{{2 \cdot V_{{cap}}}}{{L}} = \frac{{2 \cdot {V_cap:,.0f}}}{{{L_cm_disp:,.0f}}} \cdot 100 = {w_shear:,.0f} \text{{ kg/m}}",
+            fr"V_{{act}} = \frac{{w \cdot L}}{{2}} = \frac{{{user_safe_load:,.0f} \cdot {user_span}}}{{2}} = {V_actual:,.0f} \text{{ kg}}",
+            fr"Ratio = \frac{{{V_actual:,.0f}}}{{{V_cap:,.0f}}} = {V_actual/V_cap:.3f}"
+        )
     with c2:
-        st.markdown(f'<div class="detail-card" style="border-top-color: #f59e0b">', unsafe_allow_html=True)
-        st.markdown(f'<span class="status-badge {"pass" if user_cause != "Moment" else "fail"}">Ratio: {M_actual/(M_cap/100):.3f}</span>', unsafe_allow_html=True)
-        st.markdown(f'<h4 style="margin:0;">2. Moment Limit</h4><hr>', unsafe_allow_html=True)
-        st.latex(fr"M_{{cap}} = {M_cap:,.0f} \text{{ kg.cm}}")
-        st.latex(fr"w_{{limit}} = \frac{{8 \cdot M_{{cap}}}}{{L^2}} \cdot 100")
-        st.latex(fr"w_{{limit}} = \mathbf{{{w_moment:,.0f}}} \text{{ kg/m}}")
-        st.markdown('</div>', unsafe_allow_html=True)
-
+        render_check_ratio_with_w(
+            "Moment Check", M_actual, (M_cap/100), "M/M_cap",
+            fr"w_{{limit}} = \frac{{8 \cdot M_{{cap}}}}{{L^2}} = \frac{{8 \cdot {M_cap:,.0f}}}{{{L_cm_disp:,.0f}^2}} \cdot 100 = {w_moment:,.0f} \text{{ kg/m}}",
+            fr"M_{{act}} = \frac{{w \cdot L^2}}{{8}} = \frac{{{user_safe_load:,.0f} \cdot {user_span}^2}}{{8}} = {M_actual:,.0f} \text{{ kg.m}}",
+            fr"Ratio = \frac{{{M_actual:,.0f}}}{{{M_cap/100:,.0f}}} = {M_actual/(M_cap/100):.3f}"
+        )
     with c3:
-        st.markdown(f'<div class="detail-card" style="border-top-color: #3b82f6">', unsafe_allow_html=True)
-        st.markdown(f'<span class="status-badge {"pass" if user_cause != "Deflection" else "fail"}">Ratio: {delta_actual/delta_allow:.3f}</span>', unsafe_allow_html=True)
-        st.markdown(f'<h4 style="margin:0;">3. Deflection Limit</h4><hr>', unsafe_allow_html=True)
-        st.latex(fr"\Delta_{{allow}} = {delta_allow:.2f} \text{{ cm}}")
-        st.latex(fr"w_{{limit}} = \frac{{384 E I \Delta}}{{5 L^4}} \cdot 100")
-        st.latex(fr"w_{{limit}} = \mathbf{{{w_defl:,.0f}}} \text{{ kg/m}}")
-        st.markdown('</div>', unsafe_allow_html=True)
+        render_check_ratio_with_w(
+            "Deflection Check", delta_actual, delta_allow, "Δ/Δ_allow",
+            fr"w_{{limit}} = \frac{{384 E I \Delta_{{all}}}}{{5 L^4}} = \frac{{384 \cdot 2.04e6 \cdot {Ix} \cdot {delta_allow:.2f}}}{{5 \cdot {L_cm_disp:,.0f}^4}} \cdot 100 = {w_defl:,.0f} \text{{ kg/m}}",
+            fr"\Delta_{{act}} = \frac{{5 w L^4}}{{384 E I}} = {delta_actual:.3f} \text{{ cm}}",
+            fr"Ratio = \frac{{{delta_actual:.3f}}}{{{delta_allow:.3f}}} = {delta_actual/delta_allow:.3f}"
+        )
 
-    # --- Capacity Curve ---
+    # --- 3. Capacity Graphic Graph ---
     st.markdown("### Capacity Envelope Curve")
     spans = np.linspace(2, 12, 100)
     data = [get_capacity(s) for s in spans]
@@ -171,15 +210,15 @@ with tab1:
 with tab2:
     try:
         req_bolt, v_bolt = conn.render_connection_tab(V_design, bolt_size, method, is_lrfd, p)
-    except:
-        st.info("Connection module processing...")
+    except Exception as e:
+        st.info("Connection module is being updated...")
         req_bolt, v_bolt = 0, 0
 
 with tab3:
     st.subheader("Span-Load Reference Table")
     tbl_spans = np.arange(2.0, 12.5, 0.5)
     tbl_data = [get_capacity(s) for s in tbl_spans]
-    df = pd.DataFrame({"Span (m)": tbl_spans, f"Max {label_load} (kg/m)": [d[3] for d in tbl_data], "Control": [d[4] for d in tbl_data]})
+    df = pd.DataFrame({"Span (m)": tbl_spans, f"Max {label_load} (kg/m)": [d[3] for d in tbl_data], "Control Factor": [d[4] for d in tbl_data]})
     st.dataframe(df.style.format("{:,.0f}", subset=[f"Max {label_load} (kg/m)"]), use_container_width=True)
 
 with tab4:
@@ -187,5 +226,5 @@ with tab4:
         caps = {'M_cap': M_cap, 'V_cap': V_cap}
         bolt_info = {'size': bolt_size, 'capacity': v_bolt, 'qty': req_bolt}
         rep.render_report_tab(method, is_lrfd, sec_name, fy, p, caps, bolt_info)
-    except:
-        st.info("Generating Report...")
+    except Exception as e:
+        st.info("Report generator is being updated...")
