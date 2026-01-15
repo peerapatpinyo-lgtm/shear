@@ -2,7 +2,7 @@ import streamlit as st
 import drawing_utils as du 
 import calculation_report as calc 
 
-# --- 🆕 DATABASE วัสดุ ---
+# --- DATABASE วัสดุ (เหมือนเดิม) ---
 STEEL_GRADES = {
     "A36 (ASTM)":  {"Fy": 250, "Fu": 400},
     "SS400 (JIS)": {"Fy": 245, "Fu": 400},
@@ -11,15 +11,15 @@ STEEL_GRADES = {
 }
 
 BOLT_GRADES = {
-    "A325 (ASTM)": {"Fnv": 372},   # Shear Strength (N)
+    "A325 (ASTM)": {"Fnv": 372},   
     "A490 (ASTM)": {"Fnv": 469},
-    "Gr. 8.8 (ISO)": {"Fnv": 375}, # approx 0.6 * 800 * reduction
-    "F10T (JIS)":  {"Fnv": 380}    # Common practice
+    "Gr. 8.8 (ISO)": {"Fnv": 375}, 
+    "F10T (JIS)":  {"Fnv": 380}    
 }
 
-def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade_input, T_design=0): 
-    # bolt_grade_input ของเดิมอาจจะไม่ได้ใช้แล้ว เพราะเราจะเลือกใหม่ในนี้
-
+# ⚠️ แก้ชื่อตัวแปรตรงนี้กลับเป็น bolt_grade
+def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade, T_design=0): 
+    
     st.markdown(f"### 📐 Design Detail: **{conn_type}**")
     
     # =========================================================================
@@ -30,10 +30,13 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     
     with c1:
         st.caption("🔩 Bolt Config")
-        # 🆕 เลือกเกรดน็อต
+        # เราสร้างตัวแปรใหม่ชื่อ selected_bolt_grade มารับค่าจาก Dropdown แทน
+        # (ค่า bolt_grade ที่รับเข้ามาจากฟังก์ชันหลัก เราปล่อยทิ้งไปเลย หรือจะเอามาตั้งเป็น default ก็ได้ แต่เพื่อให้ง่าย ใช้แบบนี้ไปก่อนครับ)
         selected_bolt_grade = st.selectbox("Bolt Grade", list(BOLT_GRADES.keys()), index=0)
         n_rows = st.number_input("Rows", 2, 20, 3)
         n_cols = st.number_input("Cols", 1, 4, 2)
+    
+    # ... (ส่วนที่เหลือเหมือนเดิม) ...
     
     with c2:
         st.caption("📏 Spacing (mm)")
