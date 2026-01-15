@@ -1,4 +1,4 @@
-# app.py (V13 - Complete Version - NO CUTS)
+# app.py (V13.1 - Fully Integrated Version)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,7 +9,7 @@ try:
     import connection_design as conn
     import report_generator as rep
 except ImportError:
-    st.warning("Warning: connection_design.py or report_generator.py not found. Some tabs may not work.")
+    st.warning("Warning: connection_design.py or report_generator.py not found. Please ensure files are in the same directory.")
 
 # ==========================================
 # 1. SETUP & STYLE (Engineering Professional)
@@ -73,7 +73,6 @@ with st.sidebar:
     method = st.radio("Method", ["ASD (Allowable Stress)", "LRFD (Limit State)"])
     is_lrfd = method == "LRFD"
     
-    # --- เพิ่ม Steel Grade ---
     st.subheader("🛠️ Material Grade")
     grade_opts = {"SS400 (Fy 2450)": 2450, "SM490 (Fy 3250)": 3250, "A36 (Fy 2500)": 2500, "Custom": 2400}
     grade_choice = st.selectbox("Steel Grade", list(grade_opts.keys()))
@@ -87,7 +86,6 @@ with st.sidebar:
     st.subheader("🔩 Connection Design")
     conn_type = st.selectbox("Connection Type", ["Beam-to-Column (Flange)", "Beam-to-Column (Web)", "Beam-to-Beam"])
     
-    # --- เพิ่ม Bolt Grade ---
     bolt_grade_opts = ["A325 (High Strength)", "Grade 8.8 (Standard)", "A490 (Premium)"]
     bolt_grade = st.selectbox("Bolt Grade", bolt_grade_opts)
     bolt_size = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
@@ -149,7 +147,6 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- ส่วนที่ผมดึงของคุณกลับมาครบทุกบรรทัด ---
     def render_check_ratio_with_w(title, act, lim, ratio_label, eq_w, eq_act, eq_ratio):
         ratio = act / lim
         is_pass = ratio <= 1.01 
@@ -199,7 +196,6 @@ with tab1:
             fr"Ratio = \frac{{{d_act:.3f}}}{{{d_all:.3f}}} = {d_act/d_all:.3f}"
         )
 
-    # --- Envelope Graph ---
     st.markdown("### Capacity Envelope Curve")
     spans = np.linspace(2, 12, 100)
     data_env = [get_capacity(s) for s in spans]
@@ -214,7 +210,7 @@ with tab1:
 
 with tab2:
     try:
-        # ส่ง bolt_grade เพิ่มเข้าไปตามที่เราอัปเกรด
+        # รับค่า req_bolt และ v_bolt จากโมดูลคำนวณ โดยส่ง bolt_grade เข้าไปด้วย
         req_bolt, v_bolt = conn.render_connection_tab(V_design, bolt_size, method, is_lrfd, p, conn_type, bolt_grade)
     except Exception as e:
         st.error(f"Error in Connection Tab: {e}")
@@ -227,8 +223,8 @@ with tab3:
     st.dataframe(df.style.format("{:,.0f}", subset=[f"Max {label_load} (kg/m)"]), use_container_width=True)
 
 with tab4:
+    # รวบรวมข้อมูลทั้งหมดส่งไปยัง report_generator
     full_res = {'w_safe': user_safe_load, 'cause': user_cause, 'v_cap': V_cap, 'v_act': v_act, 'm_cap': M_cap, 'm_act': m_act, 'd_all': d_all, 'd_act': d_act}
     bolt_data = {'size': bolt_size, 'qty': req_bolt if 'req_bolt' in locals() else 0, 'cap': v_bolt if 'v_bolt' in locals() else 0, 'type': conn_type, 'grade': bolt_grade}
     
-    # ส่ง grade_choice (ชื่อเกรดเหล็ก) ไปโชว์ในหัวรายงานด้วย
     rep.render_report_tab(method, is_lrfd, sec_name, grade_choice, p, full_res, bolt_data)
