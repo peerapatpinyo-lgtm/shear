@@ -1,4 +1,4 @@
-# app.py (V12.1 - Corrected Dictionary Keys)
+# app.py (V13 - Complete Version)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -14,7 +14,7 @@ except ImportError:
 # ==========================================
 # 1. SETUP & STYLE (Engineering Professional)
 # ==========================================
-st.set_page_config(page_title="Beam Insight V12", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V13", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
@@ -74,7 +74,7 @@ steel_db = {
 }
 
 with st.sidebar:
-    st.title("🏗️ Beam Insight V12")
+    st.title("🏗️ Beam Insight V13")
     st.divider()
     method = st.radio("Method", ["ASD (Allowable Stress)", "LRFD (Limit State)"])
     is_lrfd = method == "LRFD"
@@ -83,6 +83,9 @@ with st.sidebar:
     fy = st.number_input("Fy (kg/cm²)", 2400)
     defl_ratio = st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1)
     defl_lim_val = int(defl_ratio.split("/")[1])
+    
+    st.subheader("🔩 Connection Design")
+    conn_type = st.selectbox("Connection Type", ["Beam-to-Column (Flange)", "Beam-to-Column (Web)", "Beam-to-Beam"])
     bolt_size = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
     design_mode = st.radio("Load for Connection:", ["Actual Load", "Fixed % Capacity"])
     target_pct = st.slider("Target Usage %", 50, 100, 75) if design_mode == "Fixed % Capacity" else None
@@ -205,10 +208,10 @@ with tab1:
 
 with tab2:
     try:
-        req_bolt, v_bolt = conn.render_connection_tab(V_design, bolt_size, method, is_lrfd, p)
+        # ส่งค่า conn_type ไปด้วยเพื่อความสมจริง
+        req_bolt, v_bolt = conn.render_connection_tab(V_design, bolt_size, method, is_lrfd, p, conn_type)
     except Exception as e:
-        st.info("Connection module updating...")
-        req_bolt, v_bolt = 0, 0
+        st.error(f"Error in Connection Tab: {e}")
 
 with tab3:
     st.subheader("Span-Load Reference Table")
@@ -218,7 +221,6 @@ with tab3:
     st.dataframe(df.style.format("{:,.0f}", subset=[f"Max {label_load} (kg/m)"]), use_container_width=True)
 
 with tab4:
-    # 1. รวบรวมข้อมูลให้เป็นระเบียบ
     full_res = {
         'w_safe': user_safe_load,
         'cause': user_cause,
@@ -233,8 +235,8 @@ with tab4:
     bolt_data = {
         'size': bolt_size,
         'qty': req_bolt if 'req_bolt' in locals() else 0,
-        'cap': v_bolt if 'v_bolt' in locals() else 0
+        'cap': v_bolt if 'v_bolt' in locals() else 0,
+        'type': conn_type # เพิ่มประเภทเข้าไปในรายงานด้วย
     }
 
-    # 2. เรียกใช้ฟังก์ชันจากไฟล์แยก (เรียกเพียวๆ แบบนี้เลย)
     rep.render_report_tab(method, is_lrfd, sec_name, fy, p, full_res, bolt_data)
