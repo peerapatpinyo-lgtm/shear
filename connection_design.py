@@ -1,111 +1,99 @@
-# connection_design.py (V13 - Complete Version)
+# connection_design.py (V13 - Updated Calculation Logic)
 import streamlit as st
 import math
 import plotly.graph_objects as go
 
-def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type="Beam-to-Column (Flange)", support_data=None):
+def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade):
     """
-    ฟังก์ชันคำนวณจุดต่อแบบมืออาชีพ รองรับ Beam-to-Beam และ Beam-to-Column
-    แก้ไขให้รองรับ Arguments ครบถ้วนตามที่เรียกจาก app.py
+    ฟังก์ชันคำนวณจุดต่อตามมาตรฐาน AISC 360
+    V_design: แรงเฉือนออกแบบ (kg)
+    bolt_grade: เกรดน็อตที่เลือก (A325, 8.8, A490)
     """
     p = section_data
-    h_cm, tw_cm = p['h']/10, p['tw']/10
+    h_mm, tw_mm = p['h'], p['tw']
+    tw_cm = tw_mm / 10
     
-    # 1. ตั้งค่าพื้นฐาน Bolt
-    bolt_factor = 1.5 if is_lrfd else 1.0 
-    dia_mm = int(bolt_size[1:])
-    dia_cm = dia_mm/10
-    
-    # Area (cm2)
+    # 1. ข้อมูล Bolt (Area & Nominal Stress ตามมาตรฐาน AISC)
     b_areas = {"M16": 2.01, "M20": 3.14, "M22": 3.80, "M24": 4.52}
     b_area = b_areas.get(bolt_size, 3.14)
+    dia_cm = int(bolt_size[1:]) / 10
+
+    # กำหนดค่า Fnv (Nominal Shear Stress - Threads Included: N-Type)
+    # ค่ามาตรฐาน AISC 360: A325 = 54 ksi (~3795 ksc), A490 = 68 ksi (~4780 ksc)
+    bolt_stress_map = {
+        "A325 (High Strength)": 3795,
+        "Grade 8.8 (Standard)": 3200,
+        "A490 (Premium)": 4780
+    }
+    F_nv = bolt_stress_map.get(bolt_grade, 3795)
+
+    # 2. ปัจจัยความปลอดภัย (Safety/Resistance Factors)
+    if is_lrfd:
+        phi_shear = 0.75
+        phi_bearing = 0.75
+        v_bolt_shear = phi_shear * (F_nv * b_area)
+        # Bearing: Rn = 2.4 * d * t * Fu (SS400 Fu ~ 4000 ksc)
+        v_bolt_bearing = phi_bearing * (2.4 * dia_cm * tw_cm * 4000)
+    else:
+        omega_shear = 2.00
+        omega_bearing = 2.00
+        v_bolt_shear = (F_nv * b_area) / omega_shear
+        v_bolt_bearing = (2.4 * dia_cm * tw_cm * 4000) / omega_bearing
+
+    # กำลังสุทธิของ Bolt 1 ตัว (ค่าน้อยสุดระหว่าง Shear และ Bearing)
+    v_bolt_cap = min(v_bolt_shear, v_bolt_bearing)
     
-    # 2. Capacity Calculation
-    # Shear Strength
-    F_v = 1000 * bolt_factor # ksc (Base simulation)
-    v_shear = F_v * b_area 
-    
-    # Bearing Strength (1.2 * Fu * d * t)
-    F_u = 4000 # ksc
-    v_bearing = 1.2 * F_u * dia_cm * tw_cm * bolt_factor
-    
-    # Governing Bolt Capacity
-    v_bolt_cap = min(v_shear, v_bearing)
-    
-    # 3. Connection Type Logic (สมจริงขึ้น)
-    # ถ้าเป็น Beam-to-Beam มักต้องบากคาน (Cope) ทำให้กำลังรับแรงเฉือนลดลง
-    reduction_factor = 1.0
-    if conn_type == "Beam-to-Beam":
-        reduction_factor = 0.85 # สมมติลดทอนกำลังจากการบากคาน (Coping)
-        st.caption("⚠️ Note: Capacity reduced by 15% due to beam coping.")
+    # 3. การลดทอนกำลัง (Reduction Factors)
+    reduction = 0.85 if conn_type == "Beam-to-Beam" else 1.0
+    v_final_cap = v_bolt_cap * reduction
 
     # 4. จำนวนน็อต
-    req_bolt_calc = V_design / (v_bolt_cap * reduction_factor)
+    req_bolt_calc = V_design / v_final_cap
     n_bolts = math.ceil(req_bolt_calc)
     if n_bolts < 2: n_bolts = 2
-    if n_bolts % 2 != 0: n_bolts += 1 # ปรับให้เป็นเลขคู่เพื่อความสวยงามในงานติดตั้ง
-    
-    # 5. Layout Check (AISC Standard)
-    n_rows = int(n_bolts / 2)
-    pitch = 3.0 * dia_mm # ระยะห่างระหว่างแถว
-    edge = 1.5 * dia_mm  # ระยะขอบ
-    h_req = (n_rows - 1) * pitch + (2 * edge)
-    
-    # ความสูงที่ใช้งานได้ (Available Height)
-    h_avail = p['h'] - (2 * p['tf']) - 20 # หักปีกและระยะมน
-    if conn_type == "Beam-to-Beam":
-        h_avail -= 40 # หักส่วนที่บากปีกออก (Top Cope)
+    if n_bolts % 2 != 0: n_bolts += 1 
 
+    # 5. Layout Check
+    n_rows = int(n_bolts / 2)
+    pitch, edge = 3.0 * (dia_cm * 10), 1.5 * (dia_cm * 10)
+    h_req = (n_rows - 1) * pitch + (2 * edge)
+    h_avail = h_mm - (2 * p['tf']) - (40 if conn_type == "Beam-to-Beam" else 20)
     is_ok = h_req <= h_avail
 
     # --- UI Rendering ---
-    st.markdown(f"### 🔩 {conn_type} Details")
+    st.markdown(f"### 🔩 {conn_type} Analysis")
     
-    col1, col2 = st.columns([1, 1.2])
-    
-    with col1:
-        st.info(f"**Target Force:** {V_design:,.0f} kg")
-        st.write(f"**Bolt Capacity:** {v_bolt_cap * reduction_factor:,.0f} kg/bolt")
-        st.metric("Required Bolts", f"{n_bolts} Nos", delta=f"{n_bolts-req_bolt_calc:.2f} extra", delta_color="normal")
+    c1, c2 = st.columns([1, 1.2])
+    with c1:
+        st.success(f"Bolt Grade: {bolt_grade}")
+        st.write(f"**Calculated Capacity:**")
+        st.write(f"- Shear Limit: {v_bolt_shear:,.0f} kg")
+        st.write(f"- Bearing Limit: {v_bolt_bearing:,.0f} kg")
         
-        # แสดงสถานะความสูง
-        status = "✅ Space OK" if is_ok else "❌ Insufficient Space"
-        st.markdown(f"**Geom Check:** {status}")
-        st.progress(min(max(h_req/h_avail, 0.0), 1.0))
-        st.caption(f"Req: {h_req:.0f}mm / Avail: {h_avail:.0f}mm")
-
-    with col2:
-        # Drawing Logic
-        fig = go.Figure()
+        st.divider()
+        st.metric("Final Bolt Strength", f"{v_final_cap:,.0f} kg/ea")
+        st.metric("Required Quantity", f"{n_bolts} Nos")
         
-        # 1. Draw Support (Column or Main Beam)
-        if "Column" in conn_type:
-            # วาดหน้าตัดเสาเป็นสีเทาเข้ม
-            fig.add_shape(type="rect", x0=-120, y0=-20, x1=-100, y1=p['h']+20, fillcolor="#475569")
+        if not is_ok:
+            st.error(f"❌ Layout Fail: Web height insufficient (Req: {h_req}mm > Avail: {h_avail}mm)")
         else:
-            # คานตัวหลัก (Main Beam)
-            fig.add_shape(type="rect", x0=-150, y0=-20, x1=-110, y1=p['h']+20, fillcolor="#94a3b8")
+            st.info(f"✅ Layout OK (Used: {h_req}mm / Avail: {h_avail}mm)")
 
-        # 2. Draw Beam Web
-        fig.add_shape(type="rect", x0=-100, y0=0, x1=150, y1=p['h'], line_color="RoyalBlue", fillcolor="rgba(65, 105, 225, 0.1)")
-        
-        # 3. Draw Bolts (ปรับตำแหน่ง x ให้อยู่บนคานตัวรอง)
-        start_y = (p['h']/2) - ((n_rows-1)*pitch)/2
+    with c2:
+        # Drawing Logic (คงเดิมแต่ปรับตำแหน่ง)
+        fig = go.Figure()
+        # Support
+        fig.add_shape(type="rect", x0=-120, y0=-20, x1=-100, y1=h_mm+20, fillcolor="#475569")
+        # Beam Web
+        fig.add_shape(type="rect", x0=-100, y0=0, x1=150, y1=h_mm, line_color="RoyalBlue", fillcolor="rgba(65, 105, 225, 0.1)")
+        # Bolts
+        start_y = (h_mm/2) - ((n_rows-1)*pitch)/2
         for r in range(n_rows):
             y = start_y + r*pitch
-            for x in [-70, -30]: # ปรับตำแหน่ง Bolt ให้อยู่ในช่วงแผ่นเหล็กประกับ (Fin Plate Area)
+            for x in [-75, -45]:
                 fig.add_trace(go.Scatter(x=[x], y=[y], mode='markers', marker=dict(size=12, color='#ef4444', line=dict(width=1, color='white'))))
-
-        fig.update_layout(
-            showlegend=False, 
-            height=350, 
-            margin=dict(l=0,r=0,t=0,b=0), 
-            xaxis_visible=False, 
-            yaxis_visible=False, 
-            plot_bgcolor='white',
-            xaxis=dict(range=[-160, 160]),
-            yaxis=dict(range=[-30, p['h']+30])
-        )
+        
+        fig.update_layout(showlegend=False, height=350, margin=dict(l=0,r=0,t=0,b=0), xaxis_visible=False, yaxis_visible=False, plot_bgcolor='white')
         st.plotly_chart(fig, use_container_width=True)
 
-    return n_bolts, v_bolt_cap
+    return n_bolts, v_final_cap
