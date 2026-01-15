@@ -33,7 +33,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     with col1:
         st.info(f"**🔩 Bolt Config ({bolt_size})**")
         n_rows = st.number_input("Rows (V)", 2, 12, 3)
-        n_cols = st.number_input("Cols (H)", 1, 3, 2) # Default 2 cols to show horizontal dims
+        n_cols = st.number_input("Cols (H)", 1, 3, 2)
         s_v = st.number_input("Vert. Pitch (sv)", 0.0, 300.0, float(max(75, min_pitch)))
         s_h = st.number_input("Horiz. Pitch (sh)", 0.0, 150.0, float(max(60, min_pitch))) if n_cols > 1 else 0
 
@@ -72,17 +72,16 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     if plate_h > clear_web_h: fit_status = "CLASH"
     
     # ==========================================
-    # 4. CALCULATION (Simplified for brevity)
+    # 4. CALCULATION (Simplified)
     # ==========================================
     n_total = n_rows * n_cols
-    # Eccentricity Analysis
+    # Eccentricity
     e_total_cm = (e1_mm + (n_cols-1)*s_h/2) / 10
     y_coords = [(r - (n_rows-1)/2) * (s_v/10) for r in range(n_rows)]
     x_coords = [(c - (n_cols-1)/2) * (s_h/10) for c in range(n_cols)]
     Ip = (sum([y**2 for y in y_coords]) * n_cols) + (sum([x**2 for x in x_coords]) * n_rows)
     
     V_dir = V_design / n_total
-    # Prevent division by zero if Ip is 0 (single bolt)
     if Ip == 0: V_ecc_x, V_ecc_y = 0, 0
     else:
         V_ecc_x = (V_design * e_total_cm * max([abs(y) for y in y_coords])) / Ip
@@ -90,7 +89,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     V_res = math.sqrt((V_dir + V_ecc_y)**2 + V_ecc_x**2)
 
     # Capacities
-    Fnv = 3200 # Simplified Grade 8.8
+    Fnv = 3200 
     Rn_shear = n_total * Fnv * Ab * shear_planes
     
     t_crit_cm = min(t_plate_mm/10, tw_beam/10)
@@ -106,10 +105,10 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     Design_Bear = Rn_bear * phi
 
     # ==========================================
-    # 5. VISUALIZATION (FULL DIMENSIONS)
+    # 5. VISUALIZATION (FULL CLEAR DIMENSIONS)
     # ==========================================
     st.divider()
-    c_draw, c_calc = st.columns([1.8, 1]) # เพิ่มพื้นที่รูป
+    c_draw, c_calc = st.columns([2, 1]) # เพิ่มพื้นที่รูปอีกนิด
     
     with c_draw:
         st.subheader("📐 Fully Dimensioned Drawing")
@@ -121,111 +120,113 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         bolt_x_start = e1_mm
         bolt_y_start = plate_top - real_lv
         
-        # 1. DRAW SHAPES (Beam, Support, Plate)
-        # Beam Flanges (Limits)
-        fig.add_shape(type="rect", x0=-20, y0=beam_top-tf_beam, x1=plate_w+60, y1=beam_top, fillcolor="#71717a", opacity=0.3, line_width=0)
-        fig.add_shape(type="rect", x0=-20, y0=beam_bot, x1=plate_w+60, y1=beam_bot+tf_beam, fillcolor="#71717a", opacity=0.3, line_width=0)
+        # 1. DRAW OBJECTS
+        # Beam Flanges
+        fig.add_shape(type="rect", x0=-50, y0=beam_top-tf_beam, x1=plate_w+60, y1=beam_top, fillcolor="#71717a", opacity=0.3, line_width=0)
+        fig.add_shape(type="rect", x0=-50, y0=beam_bot, x1=plate_w+60, y1=beam_bot+tf_beam, fillcolor="#71717a", opacity=0.3, line_width=0)
         # Support
         supp_col = "#6b21a8" if is_beam_to_beam else "#1e293b"
-        fig.add_shape(type="rect", x0=-30, y0=beam_bot-20, x1=0, y1=beam_top+20, fillcolor=supp_col, line_color="black")
+        fig.add_shape(type="rect", x0=-40, y0=beam_bot-30, x1=0, y1=beam_top+30, fillcolor=supp_col, line_color="black", line_width=2)
         # Plate
         p_color = "rgba(239, 68, 68, 0.5)" if fit_status == "CLASH" else "rgba(59, 130, 246, 0.3)"
         fig.add_shape(type="rect", x0=0, y0=plate_bot, x1=plate_w, y1=plate_top, fillcolor=p_color, line=dict(color="#2563eb", width=2))
-        
-        # 2. DRAW BOLTS
+        # Bolts
         for r in range(n_rows):
             for c in range(n_cols):
                 fig.add_trace(go.Scatter(x=[bolt_x_start + c*s_h], y=[bolt_y_start - r*s_v], mode='markers', marker=dict(size=9, color='#b91c1c', line=dict(width=1, color='white')), showlegend=False))
 
         # ==================================================
-        # --- HELPER FUNCTION FOR ENGINEERING DIMENSIONS ---
+        # --- ENHANCED DIMENSION FUNCTION ---
         # ==================================================
-        def add_dim_line(fig, x0, y0, x1, y1, text, color="black", offset=0, type="horiz"):
-            """วาดเส้นบอกระยะพร้อมหัวลูกศรและตัวหนังสือ"""
-            font_size = 11
-            arrow_len = 8
-            arrow_wid = 0.8
+        def add_dim_line(fig, x0, y0, x1, y1, text, color="black", offset=0, type="horiz", font_size=12, bold=False):
+            """วาดเส้นบอกระยะแบบชัดเจน พร้อมพื้นหลังข้อความ"""
+            arrow_len = 10
+            arrow_wid = 1.2
+            text_bg = "rgba(255, 255, 255, 0.95)" # พื้นหลังขาวจางๆ ให้อ่านง่าย
+            font_weight = "bold" if bold else "normal"
 
             if type == "horiz":
                 y_pos = y0 + offset
-                # Main line
-                fig.add_shape(type="line", x0=x0, y0=y_pos, x1=x1, y1=y_pos, line=dict(color=color, width=1))
-                # Extension lines
+                # Extension lines (เส้นประช่วยบอกแนว)
                 fig.add_shape(type="line", x0=x0, y0=y0, x1=x0, y1=y_pos, line=dict(color=color, width=0.5, dash="dot"))
                 fig.add_shape(type="line", x0=x1, y0=y1, x1=x1, y1=y_pos, line=dict(color=color, width=0.5, dash="dot"))
-                # Arrows (using annotations)
+                # Main line & Arrows
+                fig.add_shape(type="line", x0=x0, y0=y_pos, x1=x1, y1=y_pos, line=dict(color=color, width=1.2))
                 fig.add_annotation(x=x0, y=y_pos, ax=arrow_len, ay=0, arrowcolor=color, arrowwidth=arrow_wid, arrowhead=2, text="")
                 fig.add_annotation(x=x1, y=y_pos, ax=-arrow_len, ay=0, arrowcolor=color, arrowwidth=arrow_wid, arrowhead=2, text="")
-                # Text label center
-                fig.add_annotation(x=(x0+x1)/2, y=y_pos, text=text, showarrow=False, yshift=10 if offset>0 else -10, font=dict(color=color, size=font_size))
+                # Text label
+                fig.add_annotation(x=(x0+x1)/2, y=y_pos, text=text, showarrow=False, yshift=12 if offset>0 else -12, 
+                                   font=dict(color=color, size=font_size, weight=font_weight), bgcolor=text_bg)
 
             elif type == "vert":
                 x_pos = x0 + offset
-                # Main line
-                fig.add_shape(type="line", x0=x_pos, y0=y0, x1=x_pos, y1=y1, line=dict(color=color, width=1))
                 # Extension lines
                 fig.add_shape(type="line", x0=x0, y0=y0, x1=x_pos, y1=y0, line=dict(color=color, width=0.5, dash="dot"))
                 fig.add_shape(type="line", x0=x1, y0=y1, x1=x_pos, y1=y1, line=dict(color=color, width=0.5, dash="dot"))
-                # Arrows
+                # Main line & Arrows
+                fig.add_shape(type="line", x0=x_pos, y0=y0, x1=x_pos, y1=y1, line=dict(color=color, width=1.2))
                 fig.add_annotation(x=x_pos, y=y0, ax=0, ay=-arrow_len, arrowcolor=color, arrowwidth=arrow_wid, arrowhead=2, text="")
                 fig.add_annotation(x=x_pos, y=y1, ax=0, ay=arrow_len, arrowcolor=color, arrowwidth=arrow_wid, arrowhead=2, text="")
-                # Text label center
-                fig.add_annotation(x=x_pos, y=(y0+y1)/2, text=text, showarrow=False, xshift=15, font=dict(color=color, size=font_size), textangle=-90)
+                # Text label
+                fig.add_annotation(x=x_pos, y=(y0+y1)/2, text=text, showarrow=False, xshift=18 if offset>0 else -18, 
+                                   font=dict(color=color, size=font_size, weight=font_weight), textangle=-90, bgcolor=text_bg)
 
         # ==================================================
-        # --- ADDING ALL DIMENSIONS ---
+        # --- ADDING ALL DIMENSIONS (CLEAR & ORGANIZED) ---
         # ==================================================
         
-        # --- Horizontal Dimensions (Top & Bottom) ---
-        # Top Offset 1 (e1, s_h)
-        off_h1 = 30 
+        # --- 1. BEAM & SUPPORT DIMENSIONS (NEW! - Far Left) ---
+        # Beam Height
+        add_dim_line(fig, 0, beam_bot, 0, beam_top, f"h_beam = {h_beam:.0f}", color="black", offset=-60, type="vert", font_size=13, bold=True)
+        # Support Face Label
+        fig.add_annotation(x=0, y=beam_bot-40, text="SUPPORT FACE (X=0)", showarrow=False, font=dict(color="black", size=11, weight="bold"))
+        fig.add_shape(type="line", x0=0, y0=beam_bot-30, x1=0, y1=beam_top+30, line=dict(color="black", width=2, dash="dashdot")) # เน้นแนวแกน 0
+
+        # --- 2. PLATE HORIZONTAL DIMENSIONS ---
+        # Top Tier 1: e1 (Gap) & sh (Pitch)
+        off_h1 = 40 
         add_dim_line(fig, 0, plate_top, e1_mm, plate_top, f"e1={e1_mm:.0f}", color="#d97706", offset=off_h1, type="horiz")
         if n_cols > 1:
-             # วัดจาก center bolt แรก ถึง center bolt สุดท้าย
              last_bolt_x = bolt_x_start + (n_cols-1)*s_h
              add_dim_line(fig, bolt_x_start, plate_top, last_bolt_x, plate_top, f"({n_cols-1})@sh={s_h:.0f}", color="#c0392b", offset=off_h1, type="horiz")
 
-        # Top Offset 2 (Ls - Side Margin)
-        off_h2 = 55
+        # Top Tier 2: Ls (Side Margin)
+        off_h2 = 70
         last_bolt_x = bolt_x_start + (n_cols-1)*s_h
         add_dim_line(fig, last_bolt_x, plate_top, plate_w, plate_top, f"Ls={l_side:.0f}", color="#16a34a", offset=off_h2, type="horiz")
 
-        # Bottom (Total Width)
-        add_dim_line(fig, 0, plate_bot, plate_w, plate_bot, f"W_plate = {plate_w:.0f}", color="#1e40af", offset=-30, type="horiz")
+        # Bottom: Total Width
+        add_dim_line(fig, 0, plate_bot, plate_w, plate_bot, f"W_plate = {plate_w:.0f}", color="#1e40af", offset=-40, type="horiz", font_size=14, bold=True)
 
-        # --- Vertical Dimensions (Right Side) ---
-        # Right Offset 1 (Lv - Edge Dist)
-        off_v1 = 30
+        # --- 3. PLATE VERTICAL DIMENSIONS (Right Side) ---
+        # Right Tier 1: Lv (Edge Dist)
+        off_v1 = 40
         add_dim_line(fig, plate_w, plate_top, plate_w, bolt_y_start, f"Lv={real_lv:.0f}", color="#16a34a", offset=off_v1, type="vert")
 
-        # Right Offset 2 (sv - Pitch)
+        # Right Tier 2: sv (Pitch)
         if n_rows > 1:
-             off_v2 = 55
+             off_v2 = 70
              last_bolt_y = bolt_y_start - (n_rows-1)*s_v
-             # วัดจาก center bolt บนสุด ถึง ล่างสุด
              add_dim_line(fig, plate_w, bolt_y_start, plate_w, last_bolt_y, f"({n_rows-1})@sv={s_v:.0f}", color="#c0392b", offset=off_v2, type="vert")
 
-        # Right Offset 3 (Total Height)
-        off_v3 = 85
-        add_dim_line(fig, plate_w, plate_top, plate_w, plate_bot, f"H_plate = {plate_h:.0f}", color="#1e40af", offset=off_v3, type="vert")
+        # Right Tier 3: Total Height
+        off_v3 = 110
+        add_dim_line(fig, plate_w, plate_top, plate_w, plate_bot, f"H_plate = {plate_h:.0f}", color="#1e40af", offset=off_v3, type="vert", font_size=14, bold=True)
 
-        # Support Label
-        fig.add_annotation(x=-15, y=0, text="SUPPORT FACE", textangle=-90, showarrow=False, font=dict(color="white", size=10))
-
-        # Update Layout
-        max_h = max(h_beam, plate_h) + 100
-        max_w = plate_w + 120
+        # --- Layout Adjustments ---
+        max_h = max(h_beam, plate_h) + 150
+        max_w = plate_w + 150
         fig.update_layout(
-            height=550,
-            xaxis=dict(visible=False, range=[-40, max_w], fixedrange=True),
+            height=600, # เพิ่มความสูงรูป
+            xaxis=dict(visible=False, range=[-80, max_w], fixedrange=True), # ขยายแกน X ทางซ้ายรับ dimension คาน
             yaxis=dict(visible=False, range=[-max_h/2, max_h/2], scaleanchor="x", scaleratio=1, fixedrange=True),
-            margin=dict(l=0, r=0, t=20, b=20),
+            margin=dict(l=10, r=10, t=30, b=30),
             paper_bgcolor="white", plot_bgcolor="white"
         )
         st.plotly_chart(fig, use_container_width=True)
 
     with c_calc:
-        st.subheader("📝 Summary")
+        st.subheader("📝 Check Results")
         if fit_status == "CLASH":
             st.error(f"❌ Plate Clash! (H={plate_h:.0f} > Clear={clear_web_h:.0f})")
         
