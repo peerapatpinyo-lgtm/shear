@@ -218,29 +218,23 @@ with tab3:
     st.dataframe(df.style.format("{:,.0f}", subset=[f"Max {label_load} (kg/m)"]), use_container_width=True)
 
 with tab4:
-    try:
-        # ใช้ชื่อ Key เป็นตัวเล็กทั้งหมดเพื่อให้ตรงกับใน report_generator.py
-        full_res = {
-            'w_shear': w_shear,
-            'w_moment': w_moment,
-            'w_defl': w_defl,
-            'w_safe': user_safe_load,
-            'cause': user_cause,
-            'v_act': v_act,
-            'm_act': m_act,
-            'd_act': d_act,
-            'v_cap': V_cap,
-            'm_cap': M_cap,
-            'd_all': d_all
-        }
-        
-        bolt_data = {
-            'size': bolt_size,
-            'qty': req_bolt if 'req_bolt' in locals() else 0,
-            'cap': v_bolt if 'v_bolt' in locals() else 0
-        }
+    # 1. รวบรวมข้อมูลให้เป็นระเบียบ
+    full_res = {
+        'w_safe': user_safe_load,
+        'cause': user_cause,
+        'v_cap': V_cap,
+        'v_act': v_act,
+        'm_cap': M_cap,
+        'm_act': m_act,
+        'd_all': d_all,
+        'd_act': d_act
+    }
+    
+    bolt_data = {
+        'size': bolt_size,
+        'qty': req_bolt if 'req_bolt' in locals() else 0,
+        'cap': v_bolt if 'v_bolt' in locals() else 0
+    }
 
-        rep.render_report_tab(method, is_lrfd, sec_name, fy, p, full_res, bolt_data)
-
-    except Exception as e:
-        st.error(f"Error rendering report: {e}")
+    # 2. เรียกใช้ฟังก์ชันจากไฟล์แยก (เรียกเพียวๆ แบบนี้เลย)
+    rep.render_report_tab(method, is_lrfd, sec_name, fy, p, full_res, bolt_data)
