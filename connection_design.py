@@ -124,7 +124,6 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
                               fillcolor="#334155", line_color="black")
             
             # 2. Hidden Web Line (เส้นประแสดงแนวเอวเสาที่อยู่ด้านหลัง)
-            # เพื่อบอกว่าเราเชื่อมเข้าที่ Center ของเสาพอดี
             fig_sec.add_shape(type="rect", 
                               x0=-col_width/2, y0=-col_web_thk/2, 
                               x1=0, y1=col_web_thk/2, 
@@ -132,6 +131,10 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
 
             fig_sec.add_annotation(x=-col_width/4, y=-col_height_viz/2-20, text="COLUMN FLANGE", showarrow=False, font=dict(weight="bold", color="#334155"))
             add_dim_line(fig_sec, -col_width/2, col_height_viz/2+10, 0, col_height_viz/2+10, "Col. Width", type="horiz", offset=0)
+            
+            # NEW: Add EQ Dimensions to prove it's centered
+            add_dim_line(fig_sec, -col_width/2, col_height_viz/2+35, 0, col_height_viz/2+35, "Center", type="horiz", offset=0, color="#b91c1c")
+
 
         # --- Fin Plate ---
         plate_x0, plate_x1 = 0, t_plate_mm
@@ -144,7 +147,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         fig_sec.add_trace(go.Scatter(x=[0, weld_size, 0, 0], y=[-plate_h/2, -plate_h/2, -plate_h/2-weld_size, -plate_h/2], fill="toself", fillcolor="black", mode="lines", line=dict(width=1), showlegend=False))
 
         # --- Secondary Beam ---
-        # วาด Beam ให้อยู่ที่ Y=0 (Center) เสมอ เพื่อให้ตรงกับ Center เสา
+        # วาด Beam ให้อยู่ที่ Y=0 (Center) เสมอ
         beam_web_x0 = plate_x1
         beam_web_x1 = plate_x1 + tw_beam
         beam_center_x = (beam_web_x0 + beam_web_x1) / 2 
@@ -157,8 +160,8 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
 
         # --- Centerline (CL) ---
         # เส้นสำคัญที่บอกว่าทุกอย่าง Aligned กัน
-        fig_sec.add_shape(type="line", x0=-100, y0=0, x1=flange_x1+50, y1=0, line=dict(color="#b91c1c", width=1, dash="dashdot"))
-        fig_sec.add_annotation(x=flange_x1+60, y=0, text="CL", showarrow=False, font=dict(color="#b91c1c", weight="bold"))
+        fig_sec.add_shape(type="line", x0=-100, y0=0, x1=flange_x1+50, y1=0, line=dict(color="#b91c1c", width=1.5, dash="dashdot"))
+        fig_sec.add_annotation(x=flange_x1+60, y=0, text="CL", showarrow=False, font=dict(color="#b91c1c", weight="bold", size=14))
 
         # --- Bolts ---
         bolt_y_start_coord = plate_h/2 - real_lv
