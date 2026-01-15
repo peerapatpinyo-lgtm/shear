@@ -19,20 +19,31 @@ def add_cad_dim(fig, x0, y0, x1, y1, text, type="horiz", offset=0):
     arrow_size = 6
     if type == "horiz":
         y_dim = y0 + offset
+        # Left Extension
         fig.add_shape(type="line", x0=x0, y0=y0, x1=x0, y1=y_dim, line=dict(color=C_DIM, width=0.5))
-        fig.add_shape(type="line", x0=x1, y0=y1, x1=x1, y1=y_dim, line=dict(color=color, width=0.5))
+        # Right Extension (Fix: color -> C_DIM)
+        fig.add_shape(type="line", x0=x1, y0=y1, x1=x1, y1=y_dim, line=dict(color=C_DIM, width=0.5))
+        # Main Line
         fig.add_shape(type="line", x0=x0, y0=y_dim, x1=x1, y1=y_dim, line=dict(color=C_DIM, width=1))
+        # Arrows
         fig.add_annotation(x=x0, y=y_dim, ax=arrow_size, ay=0, arrowhead=2, arrowsize=1.5, arrowcolor=C_DIM, text="")
         fig.add_annotation(x=x1, y=y_dim, ax=-arrow_size, ay=0, arrowhead=2, arrowsize=1.5, arrowcolor=C_DIM, text="")
+        # Text
         fig.add_annotation(x=(x0+x1)/2, y=y_dim, text=f"<b>{text}</b>", showarrow=False, yshift=8 if offset>0 else -8,
                            font=dict(size=11, color=C_DIM, family="Arial"), bgcolor="white")
+
     elif type == "vert":
         x_dim = x0 + offset
+        # Top Extension
         fig.add_shape(type="line", x0=x0, y0=y0, x1=x_dim, y1=y0, line=dict(color=C_DIM, width=0.5))
+        # Bottom Extension
         fig.add_shape(type="line", x0=x1, y0=y1, x1=x_dim, y1=y1, line=dict(color=C_DIM, width=0.5))
+        # Main Line
         fig.add_shape(type="line", x0=x_dim, y0=y0, x1=x_dim, y1=y1, line=dict(color=C_DIM, width=1))
+        # Arrows
         fig.add_annotation(x=x_dim, y=y0, ax=0, ay=-arrow_size, arrowhead=2, arrowsize=1.5, arrowcolor=C_DIM, text="")
         fig.add_annotation(x=x_dim, y=y1, ax=0, ay=arrow_size, arrowhead=2, arrowsize=1.5, arrowcolor=C_DIM, text="")
+        # Text
         fig.add_annotation(x=x_dim, y=(y0+y1)/2, text=f"<b>{text}</b>", showarrow=False, xshift=12 if offset>0 else -12,
                            font=dict(size=11, color=C_DIM, family="Arial"), textangle=-90, bgcolor="white")
 
