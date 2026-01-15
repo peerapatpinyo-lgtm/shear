@@ -9,7 +9,7 @@ try:
     import connection_design as conn
     import report_generator as rep
 except ImportError:
-    st.warning("Warning: connection_design.py or report_generator.py not found. Please ensure files are in the same directory.")
+    st.warning("⚠️ Warning: connection_design.py or report_generator.py not found. Please ensure files are in the same directory.")
 
 # ==========================================
 # 1. SETUP & STYLE (Engineering Professional)
@@ -71,12 +71,11 @@ with st.sidebar:
     st.title("🏗️ Beam Insight V13")
     st.divider()
     
-    # --- 1. GLOBAL SETTINGS & LINKAGE ---
+    # --- 1. GLOBAL SETTINGS (BEAM ONLY) ---
     method = st.radio("Method", ["ASD (Allowable Stress)", "LRFD (Limit State)"])
-    # สร้างตัวแปร Boolean เพื่อส่งไปทุก Tab
     is_lrfd = True if "LRFD" in method else False
     
-    st.subheader("🛠️ Material Grade")
+    st.subheader("🛠️ Material & Section")
     grade_opts = {"SS400 (Fy 2450)": 2450, "SM490 (Fy 3250)": 3250, "A36 (Fy 2500)": 2500, "Custom": 2400}
     grade_choice = st.selectbox("Steel Grade", list(grade_opts.keys()))
     fy = st.number_input("Fy (kg/cm²)", value=grade_opts[grade_choice])
@@ -86,8 +85,7 @@ with st.sidebar:
     defl_ratio = st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1)
     defl_lim_val = int(defl_ratio.split("/")[1])
     
-    st.subheader("🔩 Connection Design")
-    # ปรับชื่อตัวเลือกให้มีคำว่า "Double" และ "Beam to Beam" เพื่อให้ Logic ปลายทางทำงานถูก
+    st.subheader("🔗 Connection Logic")
     conn_type_options = [
         "Fin Plate (Single Shear) - Beam to Col",
         "End Plate (Single Shear) - Beam to Col",
@@ -96,9 +94,8 @@ with st.sidebar:
     ]
     conn_type = st.selectbox("Connection Type", conn_type_options)
     
-    bolt_grade_opts = ["A325 (High Strength)", "Grade 8.8 (Standard)", "A490 (Premium)"]
-    bolt_grade = st.selectbox("Bolt Grade", bolt_grade_opts)
-    bolt_size = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
+    # --- ❌ REMOVED BOLT INPUTS FROM SIDEBAR ---
+    # Bolt Grade & Size are now inside the Connection Tab
     
     design_mode = st.radio("Load for Connection:", ["Actual Load", "Fixed % Capacity"])
     target_pct = st.slider("Target Usage %", 50, 100, 75) if design_mode == "Fixed % Capacity" else None
@@ -220,20 +217,20 @@ with tab1:
     st.plotly_chart(fig, use_container_width=True)
 
 with tab2:
+    conn_result = None # Init variable
     try:
-        # --- ส่งค่าเข้า Tab Connection (พร้อมตัวแปร Linkage ครบถ้วน) ---
-        req_bolt, v_bolt = conn.render_connection_tab(
+        # ✅ เรียกฟังก์ชันโดยไม่ต้องส่ง bolt_size/grade (เพราะไปเลือกในนั้นแล้ว)
+        # รับค่ากลับเป็น Dictionary
+        conn_result = conn.render_connection_tab(
             V_design=V_design, 
-            bolt_size=bolt_size, 
             method=method, 
-            is_lrfd=is_lrfd,        # <--- ส่งสถานะ LRFD
+            is_lrfd=is_lrfd, 
             section_data=p, 
-            conn_type=conn_type,    # <--- ส่งชื่อที่มีคำว่า Double/Single
-            bolt_grade=bolt_grade
+            conn_type=conn_type
         )
     except Exception as e:
         st.error(f"⚠️ Error in Connection Tab: {e}")
-        st.caption("Please check if connection_design.py is up to date.")
+        st.caption("Please check if connection_design.py is up to date with the new return format.")
 
 with tab3:
     st.subheader("Span-Load Reference Table")
@@ -243,11 +240,27 @@ with tab3:
     st.dataframe(df.style.format("{:,.0f}", subset=[f"Max {label_load} (kg/m)"]), use_container_width=True)
 
 with tab4:
-    # รวบรวมข้อมูลทั้งหมดส่งไปยัง report_generator
+    # รวบรวมข้อมูลสำหรับ Report
     full_res = {'w_safe': user_safe_load, 'cause': user_cause, 'v_cap': V_cap, 'v_act': v_act, 'm_cap': M_cap, 'm_act': m_act, 'd_all': d_all, 'd_act': d_act}
-    bolt_data = {'size': bolt_size, 'qty': req_bolt if 'req_bolt' in locals() else 0, 'cap': v_bolt if 'v_bolt' in locals() else 0, 'type': conn_type, 'grade': bolt_grade}
+    
+    # ✅ Logic ใหม่: ดึงข้อมูลน็อตจาก Tab 2 result
+    if conn_result:
+        bolt_qty = conn_result.get('qty', 0)
+        bolt_cap = conn_result.get('capacity', 0)
+        bolt_info = conn_result.get('bolt_data', {})
+        
+        bolt_data_for_report = {
+            'size': f"M{bolt_info.get('d', '?')}", 
+            'qty': bolt_qty, 
+            'cap': bolt_cap, 
+            'type': conn_type, 
+            'grade': bolt_info.get('grade_name', 'N/A')
+        }
+    else:
+        # กรณี User ยังไม่ได้เข้า Tab 2
+        bolt_data_for_report = {'size': 'N/A', 'qty': 0, 'cap': 0, 'type': conn_type, 'grade': 'N/A'}
     
     if 'rep' in locals():
-        rep.render_report_tab(method, is_lrfd, sec_name, grade_choice, p, full_res, bolt_data)
+        rep.render_report_tab(method, is_lrfd, sec_name, grade_choice, p, full_res, bolt_data_for_report)
     else:
         st.info("Report Generator module not loaded.")
