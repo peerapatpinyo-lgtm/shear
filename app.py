@@ -108,9 +108,14 @@ with st.sidebar:
 # =============================================================================
 # 3.1 Constants & Section Properties
 L_cm = user_span * 100
-Ix, Zx = p['Ix'], p['Zx']
-h, tw, tf = p['h'], p['tw'], p['tf']
-Aw = h * tw # Simplified web area
+Ix, Zx = p['Ix'], p['Zx'] # หน่วยใน DB เป็น cm4 และ cm3 อยู่แล้ว (ถูกต้อง)
+
+# ⚠️ แก้ไขตรงนี้: แปลง mm เป็น cm ก่อนคำนวณ
+h = p['h'] / 10   # mm -> cm
+tw = p['tw'] / 10 # mm -> cm
+tf = p['tf'] / 10 # mm -> cm
+
+Aw = h * tw # ตอนนี้หน่วยจะเป็น cm * cm = cm2 (ถูกต้องแล้ว)
 w_self = p['w']
 
 # 3.2 Capacity Setup (ASD vs LRFD)
