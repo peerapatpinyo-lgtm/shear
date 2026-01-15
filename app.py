@@ -1,4 +1,4 @@
-# app.py (V13 - Complete Version)
+# app.py (V13 - Full Code)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -208,7 +208,7 @@ with tab1:
 
 with tab2:
     try:
-        # ส่งค่า conn_type ไปด้วยเพื่อความสมจริง
+        # รับค่า req_bolt, v_bolt จากฟังก์ชันในไฟล์ connection_design.py
         req_bolt, v_bolt = conn.render_connection_tab(V_design, bolt_size, method, is_lrfd, p, conn_type)
     except Exception as e:
         st.error(f"Error in Connection Tab: {e}")
@@ -221,6 +221,7 @@ with tab3:
     st.dataframe(df.style.format("{:,.0f}", subset=[f"Max {label_load} (kg/m)"]), use_container_width=True)
 
 with tab4:
+    # รวบรวมข้อมูลผลลัพธ์คาน
     full_res = {
         'w_safe': user_safe_load,
         'cause': user_cause,
@@ -232,11 +233,13 @@ with tab4:
         'd_act': d_act
     }
     
+    # รวบรวมข้อมูล Bolt และประเภทจุดต่อ
     bolt_data = {
         'size': bolt_size,
         'qty': req_bolt if 'req_bolt' in locals() else 0,
         'cap': v_bolt if 'v_bolt' in locals() else 0,
-        'type': conn_type # เพิ่มประเภทเข้าไปในรายงานด้วย
+        'type': conn_type 
     }
 
+    # เรียกฟังก์ชันสร้างรายงานในไฟล์ report_generator.py
     rep.render_report_tab(method, is_lrfd, sec_name, fy, p, full_res, bolt_data)
