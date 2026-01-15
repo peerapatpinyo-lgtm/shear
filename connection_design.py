@@ -3,7 +3,7 @@ import math
 import plotly.graph_objects as go
 
 # ==========================================
-# HELPER: DRAWING DIMENSIONS
+# HELPER: DRAWING DIMENSIONS & SHAPES
 # ==========================================
 def add_dim_line(fig, x0, y0, x1, y1, text, color="black", offset=0, type="horiz", font_size=12, bold=False):
     """วาดเส้นบอกระยะ Engineering Standard"""
@@ -52,7 +52,6 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     
     # 1. SETUP
     is_beam_to_beam = "Beam to Beam" in conn_type
-    
     d_mm = int(bolt_size[1:]) 
     
     # Secondary Beam Data
@@ -106,6 +105,9 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     with c_opt: 
         use_true_scale = st.checkbox("🔒 Fix Aspect Ratio (1:1)", value=False)
     
+    # [FIX] Define Color Variables here
+    supp_col = "#334155" # Dark Slate for Column/Support
+
     col_sec, col_elev, col_res = st.columns([1.1, 1.1, 0.8])
     
     # --- VIEW 1: SECTION A-A ---
@@ -113,82 +115,56 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         st.markdown("**SECTION A-A** (Support Interface)")
         fig_sec = go.Figure()
         
-        # --- 1. SUPPORT DRAWING LOGIC (UPDATED) ---
-        # X=0 is the interface face (Plate touches Support)
-        
         if is_beam_to_beam:
-            # === กรณี Beam to Beam: เห็นคานแม่ (Main Beam) เป็นรูป I-Shape ===
-            # สมมติขนาดคานแม่ (ใหญ่กว่าคานลูกนิดหน่อย เพื่อความสมจริง)
+            # === Beam to Beam: Show Main Beam I-Shape ===
             h_main, b_main = h_beam * 1.5, b_beam * 1.2
             tw_main, tf_main = tw_beam * 1.2, tf_beam * 1.2
-            
-            # Fin Plate เชื่อมกับ Web ของ Main Beam
-            # ดังนั้นหน้าตัด Main Beam Web ด้านขวาอยู่ที่ X=0
             main_cx = -tw_main / 2
             
-            # วาด Main Beam (Support)
             main_shapes = create_ishape(h_main, b_main, tw_main, tf_main, cx=main_cx, cy=0, fill_col="#475569", line_col="black")
             for s in main_shapes: fig_sec.add_shape(s)
-            
-            # Label
             fig_sec.add_annotation(x=main_cx, y=-h_main/2-30, text="MAIN BEAM", showarrow=False, font=dict(weight="bold", color="#475569"))
-
         else:
-            # === กรณี Beam to Column: เห็นเสา (Column) ด้านข้าง ===
-            # เป็นรูปตัว T ตะแคง (เห็นความหนาปีกเสา + เอวเสายื่นไปข้างหลัง)
-            t_flange_col = 16 # สมมติ
+            # === Beam to Column: Show Column Flange & Web ===
+            t_flange_col = 16 
             t_web_col = 10
-            col_depth_visible = 100 # วาดเอวเสายื่นไปแค่นิดหน่อยพอสังเขป
+            col_depth_visible = 100
             
-            # 1. Column Flange (Vertical Strip)
-            fig_sec.add_shape(type="rect", x0=-t_flange_col, y0=-h_beam, x1=0, y1=h_beam, # สูงเลยคานลูกไปหน่อย
-                              fillcolor="#334155", line_color="black")
-            
-            # 2. Column Web (Horizontal Strip extending Left)
-            fig_sec.add_shape(type="rect", x0=-(t_flange_col + col_depth_visible), y0=-t_web_col/2, x1=-t_flange_col, y1=t_web_col/2,
-                              fillcolor="#475569", line_color="black")
-            
-            # Label
+            # Flange
+            fig_sec.add_shape(type="rect", x0=-t_flange_col, y0=-h_beam, x1=0, y1=h_beam, fillcolor="#334155", line_color="black")
+            # Web
+            fig_sec.add_shape(type="rect", x0=-(t_flange_col + col_depth_visible), y0=-t_web_col/2, x1=-t_flange_col, y1=t_web_col/2, fillcolor="#475569", line_color="black")
             fig_sec.add_annotation(x=-t_flange_col/2, y=-h_beam-30, text="COLUMN", showarrow=False, font=dict(weight="bold", color="#334155"))
 
-        # --- 2. FIN PLATE & WELD ---
+        # --- Fin Plate & Weld ---
         plate_x0, plate_x1 = 0, t_plate_mm
         p_color = "#ef4444" if fit_status == "CLASH" else "#3b82f6"
-        fig_sec.add_shape(type="rect", x0=plate_x0, y0=-plate_h/2, x1=plate_x1, y1=plate_h/2, 
-                          fillcolor=p_color, line_color="black", opacity=0.9)
-
-        # Weld Symbol
+        fig_sec.add_shape(type="rect", x0=plate_x0, y0=-plate_h/2, x1=plate_x1, y1=plate_h/2, fillcolor=p_color, line_color="black", opacity=0.9)
+        
+        # Weld
         weld_size = 6
-        fig_sec.add_trace(go.Scatter(x=[0, weld_size, 0, 0], y=[plate_h/2, plate_h/2, plate_h/2+weld_size, plate_h/2], 
-                                     fill="toself", fillcolor="black", mode="lines", line=dict(width=1), showlegend=False))
-        fig_sec.add_trace(go.Scatter(x=[0, weld_size, 0, 0], y=[-plate_h/2, -plate_h/2, -plate_h/2-weld_size, -plate_h/2], 
-                                     fill="toself", fillcolor="black", mode="lines", line=dict(width=1), showlegend=False))
+        fig_sec.add_trace(go.Scatter(x=[0, weld_size, 0, 0], y=[plate_h/2, plate_h/2, plate_h/2+weld_size, plate_h/2], fill="toself", fillcolor="black", mode="lines", line=dict(width=1), showlegend=False))
+        fig_sec.add_trace(go.Scatter(x=[0, weld_size, 0, 0], y=[-plate_h/2, -plate_h/2, -plate_h/2-weld_size, -plate_h/2], fill="toself", fillcolor="black", mode="lines", line=dict(width=1), showlegend=False))
 
-        # --- 3. SECONDARY BEAM (The one being designed) ---
+        # --- Secondary Beam ---
         beam_web_x0 = plate_x1
         beam_web_x1 = plate_x1 + tw_beam
         beam_center_x = (beam_web_x0 + beam_web_x1) / 2 
-        
-        # Web
         fig_sec.add_shape(type="rect", x0=beam_web_x0, y0=-h_beam/2 + tf_beam, x1=beam_web_x1, y1=h_beam/2 - tf_beam, fillcolor="#d4d4d8", line_color="black")
-        # Flanges
+        
         flange_x0 = beam_center_x - b_beam/2
         flange_x1 = beam_center_x + b_beam/2
         fig_sec.add_shape(type="rect", x0=flange_x0, y0=h_beam/2 - tf_beam, x1=flange_x1, y1=h_beam/2, fillcolor="#a1a1aa", line_color="black")
         fig_sec.add_shape(type="rect", x0=flange_x0, y0=-h_beam/2, x1=flange_x1, y1=-h_beam/2 + tf_beam, fillcolor="#a1a1aa", line_color="black")
 
-        # --- 4. BOLTS ---
+        # --- Bolts ---
         bolt_y_start_coord = plate_h/2 - real_lv
         bolt_head_h, nut_h = d_mm * 0.6, d_mm * 0.8
-        
         for r in range(n_rows):
             by = bolt_y_start_coord - r*s_v
-            # Shank
             fig_sec.add_shape(type="rect", x0=plate_x0-5, y0=by-d_mm/2, x1=beam_web_x1+5, y1=by+d_mm/2, fillcolor="#b91c1c", line_width=0)
-            # Head (Left) & Nut (Right)
             fig_sec.add_shape(type="rect", x0=plate_x0 - bolt_head_h, y0=by-d_mm*0.8, x1=plate_x0, y1=by+d_mm*0.8, fillcolor="#7f1d1d", line_color="black")
             fig_sec.add_shape(type="rect", x0=beam_web_x1, y0=by-d_mm*0.8, x1=beam_web_x1 + nut_h, y1=by+d_mm*0.8, fillcolor="#7f1d1d", line_color="black")
-            # Centerline
             fig_sec.add_shape(type="line", x0=-20, y0=by, x1=flange_x1+20, y1=by, line=dict(color="black", width=0.5, dash="dashdot"))
 
         # Dimensions
@@ -197,15 +173,13 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         add_dim_line(fig_sec, beam_web_x0, stack_y, beam_web_x1, stack_y, f"tw", offset=0, type="horiz")
         add_dim_line(fig_sec, flange_x1, -h_beam/2, flange_x1, h_beam/2, f"h={h_beam:.0f}", offset=20, type="vert", bold=True)
 
-        # Layout Logic (Flexible)
         layout_sec = dict(height=550, plot_bgcolor="white", margin=dict(l=10, r=10, t=30, b=30), title=dict(text="SECTION A-A", x=0.5, y=0.02), dragmode="pan")
         if use_true_scale:
-            layout_sec['xaxis'] = dict(visible=False, fixedrange=False, range=[-80, flange_x1+50]) # เผื่อที่ซ้ายขวา
+            layout_sec['xaxis'] = dict(visible=False, fixedrange=False, range=[-80, flange_x1+50])
             layout_sec['yaxis'] = dict(visible=False, scaleanchor="x", scaleratio=1, fixedrange=False)
         else:
             layout_sec['xaxis'] = dict(visible=False, fixedrange=False)
             layout_sec['yaxis'] = dict(visible=False, fixedrange=False)
-
         fig_sec.update_layout(**layout_sec)
         st.plotly_chart(fig_sec, use_container_width=True)
 
@@ -218,14 +192,12 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         plate_top, plate_bot = plate_h/2, -plate_h/2
         bolt_x_start, bolt_y_start = e1_mm, plate_top - real_lv
         
-        # Support Block (Generic representation on Elevation is usually just a line or block)
+        # [FIX] Use supp_col here (defined above)
         fig_elev.add_shape(type="rect", x0=-40, y0=beam_bot-20, x1=0, y1=beam_top+20, fillcolor=supp_col, line_color="black") 
         
-        # Beam Ghost
         fig_elev.add_shape(type="rect", x0=-20, y0=beam_top-tf_beam, x1=plate_w+50, y1=beam_top, fillcolor="#e4e4e7", opacity=0.5, line_width=0) 
         fig_elev.add_shape(type="rect", x0=-20, y0=beam_bot, x1=plate_w+50, y1=beam_bot+tf_beam, fillcolor="#e4e4e7", opacity=0.5, line_width=0) 
         
-        # Plate & Bolts
         fig_elev.add_shape(type="rect", x0=0, y0=plate_bot, x1=plate_w, y1=plate_top, fillcolor="rgba(59, 130, 246, 0.2)", line=dict(color="#2563eb", width=2))
         for r in range(n_rows):
             for c in range(n_cols):
@@ -234,7 +206,6 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
                 fig_elev.add_shape(type="line", x0=bx-6, y0=by, x1=bx+6, y1=by, line=dict(color="black", width=0.5))
                 fig_elev.add_shape(type="line", x0=bx, y0=by-6, x1=bx, y1=by+6, line=dict(color="black", width=0.5))
 
-        # Dims
         add_dim_line(fig_elev, 0, plate_bot, plate_w, plate_bot, f"W={plate_w:.0f}", color="#1e40af", offset=-40, type="horiz", bold=True)
         add_dim_line(fig_elev, plate_w, plate_top, plate_w, plate_bot, f"H={plate_h:.0f}", color="#1e40af", offset=90, type="vert", bold=True)
         add_dim_line(fig_elev, 0, plate_top, e1_mm, plate_top, f"e1={e1_mm:.0f}", color="#d97706", offset=40, type="horiz")
@@ -242,7 +213,6 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         add_dim_line(fig_elev, plate_w, plate_top, plate_w, bolt_y_start, f"Lv", color="#16a34a", offset=40, type="vert")
         if n_rows > 1: add_dim_line(fig_elev, plate_w, bolt_y_start, plate_w, bolt_y_start - (n_rows-1)*s_v, f"{n_rows-1}@sv", color="#c0392b", offset=60, type="vert")
 
-        # Layout
         layout_elev = dict(height=550, margin=dict(l=10, r=10, t=30, b=30), plot_bgcolor="white", title=dict(text="ELEVATION VIEW", x=0.5, y=0.02), dragmode="pan")
         if use_true_scale:
             layout_elev['xaxis'] = dict(visible=False, range=[-50, plate_w+120], fixedrange=False)
@@ -250,7 +220,6 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         else:
             layout_elev['xaxis'] = dict(visible=False, fixedrange=False)
             layout_elev['yaxis'] = dict(visible=False, fixedrange=False)
-
         fig_elev.update_layout(**layout_elev)
         st.plotly_chart(fig_elev, use_container_width=True)
 
