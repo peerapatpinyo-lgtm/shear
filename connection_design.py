@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 # HELPER: DRAWING DIMENSIONS
 # ==========================================
 def add_dim_line(fig, x0, y0, x1, y1, text, color="black", offset=0, type="horiz", font_size=12, bold=False):
-    """วาดเส้นบอกระยะ Engineering Standard"""
+    """วาดเส้นบอกระยะ Engineering Standard (Style เดียวกันทั้ง 2 View)"""
     arrow_len = 8
     arrow_wid = 1.0
     text_bg = "rgba(255, 255, 255, 0.95)"
@@ -42,7 +42,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     d_mm = int(bolt_size[1:]) 
     d_cm = d_mm / 10
     
-    # Beam Data (Secondary Beam)
+    # Secondary Beam Data
     h_beam = float(section_data.get('h', 300))
     b_beam = float(section_data.get('b', 150))
     tf_beam = float(section_data.get('tf', 10))
@@ -104,43 +104,48 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         beam_center_x = (beam_web_x0 + beam_web_x1) / 2
         flange_x0, flange_x1 = beam_center_x - b_beam/2, beam_center_x + b_beam/2
         
-        # 1. DRAW SUPPORT (The fix is here!)
+        # === 1. DRAW SUPPORT LOGIC ===
         if is_beam_to_beam:
-            # === BEAM TO BEAM CASE ===
-            # Support is a "Main Girder" seen in CROSS SECTION (I-Shape)
-            # Assuming Main Beam is larger than Secondary Beam
+            # >>> กรณี Beam to Beam: Support คือคานหลัก (Main Girder)
+            # เราต้องเห็นหน้าตัดเป็นรูปตัว I (I-Shape) เต็มๆ
+            
+            # Assumed Main Beam Size (ใหญ่กว่าคานลูกนิดหน่อยเพื่อความสวยงาม)
             h_main, b_main, tf_main, tw_main = h_beam*1.2, b_beam*1.2, tf_beam*1.2, tw_beam*1.2
             
-            # Main Web (Support Web) - Plate connects here
-            # Web starts at x=0 (Where plate touches) and goes Left
+            # Main Web (เอวคานหลัก): แผ่นเพลทเชื่อมติดที่ผิวเอวคานหลัก (x=0)
+            # ดังนั้นเอวคานหลักจะอยู่ทางซ้ายของ x=0 (x range: -tw_main to 0)
             main_web_x0 = -tw_main
             main_web_x1 = 0 
             fig_sec.add_shape(type="rect", x0=main_web_x0, y0=-h_main/2+tf_main, x1=main_web_x1, y1=h_main/2-tf_main, fillcolor="#64748b", line_color="black")
             
-            # Main Flanges
+            # Main Flanges (ปีกคานหลัก): บนและล่าง
             m_flg_x0, m_flg_x1 = -tw_main/2 - b_main/2, -tw_main/2 + b_main/2
-            fig_sec.add_shape(type="rect", x0=m_flg_x0, y0=h_main/2-tf_main, x1=m_flg_x1, y1=h_main/2, fillcolor="#475569", line_color="black") # Top
-            fig_sec.add_shape(type="rect", x0=m_flg_x0, y0=-h_main/2, x1=m_flg_x1, y1=-h_main/2+tf_main, fillcolor="#475569", line_color="black") # Bot
+            # Top Flange
+            fig_sec.add_shape(type="rect", x0=m_flg_x0, y0=h_main/2-tf_main, x1=m_flg_x1, y1=h_main/2, fillcolor="#475569", line_color="black") 
+            # Bottom Flange
+            fig_sec.add_shape(type="rect", x0=m_flg_x0, y0=-h_main/2, x1=m_flg_x1, y1=-h_main/2+tf_main, fillcolor="#475569", line_color="black") 
             
-            supp_label_text = "MAIN GIRDER"
+            supp_label_text = "MAIN GIRDER (Web)"
             
         else:
-            # === BEAM TO COLUMN CASE ===
-            # Support is a "Column Flange" seen from SIDE (Profile)
-            # It looks like a thick vertical strip (Flange) + Web extending back
-            col_tf_render = 16.0 # Assumed
-            col_tw_render = 10.0
+            # >>> กรณี Beam to Column: Support คือเสา (Column Flange)
+            # เรามองด้านข้าง ต้องเห็นความหนาปีกเสา (Flange) + เอวเสา (Web) ยื่นไปข้างหลัง
+            # รูปทรง: ตัว T ตะแคง
             
-            # Column Flange (Vertical Strip)
+            col_tf_render = 16.0 # สมมติความหนาปีกเสา
+            col_tw_render = 10.0 # สมมติความหนาเอวเสา
+            
+            # 1. Column Flange (Vertical Strip): นี่คือส่วนที่เพลทเชื่อมติด
+            # อยู่ที่ x ช่วง -tf ถึง 0
             fig_sec.add_shape(type="rect", x0=-col_tf_render, y0=-h_beam, x1=0, y1=h_beam, fillcolor="#64748b", line_color="black")
             
-            # Column Web (Extending Left)
-            fig_sec.add_shape(type="rect", x0=-col_tf_render-40, y0=-h_beam, x1=-col_tf_render, y1=h_beam, fillcolor="#94a3b8", line_color="black", opacity=0.5) 
-            # Note: Web height in this view is infinite/cut, so we draw it full height
+            # 2. Column Web (Horizontal Strip): ยื่นไปด้านหลัง (ทางซ้าย)
+            # อยู่ที่ x < -tf
+            fig_sec.add_shape(type="rect", x0=-col_tf_render-50, y0=-col_tw_render/2, x1=-col_tf_render, y1=col_tw_render/2, fillcolor="#94a3b8", line_color="black") 
             
-            supp_label_text = "COLUMN FLANGE"
+            supp_label_text = "COLUMN (Flange)"
 
-        # 2. FIN PLATE & BEAM (Same as before)
+        # 2. FIN PLATE & BEAM (เหมือนเดิม)
         fig_sec.add_shape(type="rect", x0=plate_x0, y0=-plate_h/2, x1=plate_x1, y1=plate_h/2, fillcolor="#3b82f6", line_color="black", opacity=0.9)
         fig_sec.add_shape(type="rect", x0=beam_web_x0, y0=-h_beam/2 + tf_beam, x1=beam_web_x1, y1=h_beam/2 - tf_beam, fillcolor="#d4d4d8", line_color="black")
         fig_sec.add_shape(type="rect", x0=flange_x0, y0=h_beam/2 - tf_beam, x1=flange_x1, y1=h_beam/2, fillcolor="#a1a1aa", line_color="black")
@@ -155,7 +160,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
             fig_sec.add_shape(type="rect", x0=beam_web_x1, y0=by-d_mm*0.8, x1=beam_web_x1 + d_mm*0.8, y1=by+d_mm*0.8, fillcolor="#7f1d1d", line_color="black")
             fig_sec.add_shape(type="line", x0=-20, y0=by, x1=flange_x1+20, y1=by, line=dict(color="black", width=0.5, dash="dashdot"))
 
-        # 4. DIMENSIONS (Corrected Style)
+        # 4. DIMENSIONS (Style V58 - Unified)
         dim_y_top = h_beam/2 + 20
         add_dim_line(fig_sec, plate_x0, dim_y_top, plate_x1, dim_y_top, f"t_pl", color="black", offset=20, type="horiz")
         add_dim_line(fig_sec, beam_web_x0, dim_y_top, beam_web_x1, dim_y_top, f"tw", color="black", offset=45, type="horiz")
@@ -172,7 +177,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
 
         fig_sec.update_layout(
             height=550, 
-            xaxis=dict(visible=False, fixedrange=True, range=[-80, flange_x1+150]), 
+            xaxis=dict(visible=False, fixedrange=True, range=[-80, flange_x1+150]), # ขยายซ้ายเผื่อปีกคานหลัก/เสา
             yaxis=dict(visible=False, scaleanchor="x", scaleratio=1, fixedrange=True),
             margin=dict(l=10, r=10, t=30, b=30), 
             plot_bgcolor="white", 
@@ -180,7 +185,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         )
         st.plotly_chart(fig_sec, use_container_width=True)
 
-    # --- VIEW 2: ELEVATION (Side View) ---
+    # --- VIEW 2: ELEVATION (เหมือนเดิม) ---
     with col_elev:
         st.markdown("**ELEVATION** (Side View)")
         fig_elev = go.Figure()
@@ -189,7 +194,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         plate_top, plate_bot = plate_h/2, -plate_h/2
         bolt_x_start, bolt_y_start = e1_mm, plate_top - real_lv
         
-        # Support Block (Elevation looks flat)
+        # Support Block (Elevation มองเห็นเป็นระนาบเดียว)
         fig_elev.add_shape(type="rect", x0=-40, y0=beam_bot-20, x1=0, y1=beam_top+20, fillcolor=supp_col, line_color="black")
         
         # Beam (Ghosted)
