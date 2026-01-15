@@ -106,7 +106,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         fig3 = du.create_side_view(beam_data, plate_data, bolt_data)
         st.plotly_chart(fig3, use_container_width=True, config=plotly_config)
 
-# ... (ส่วนบนเหมือนเดิม) ...
+# ... (โค้ดส่วนบนเหมือนเดิม) ...
 
     # =========================================================================
     # 4. CALCULATION REPORT
@@ -119,12 +119,13 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         beam=beam_data,
         plate=plate_data,
         bolts=bolt_data,
-        is_lrfd=is_lrfd,  # <---- ⚠️ เพิ่มบรรทัดนี้ครับ เพื่อส่งสถานะ ASD/LRFD ไปให้ฟังก์ชัน
+        is_lrfd=is_lrfd,
         material_grade="A36", 
         bolt_grade=bolt_grade
     )
     
     with st.expander("📄 Click to view full calculation details", expanded=True):
-        st.markdown(report_markdown)
+        # ✅ แก้ไขบรรทัดนี้: เติม unsafe_allow_html=True
+        st.markdown(report_markdown, unsafe_allow_html=True) 
 
-    return n_rows*n_cols, 10000    
+    return n_rows*n_cols, 10000
