@@ -1,13 +1,9 @@
 import math
 
 def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A36", bolt_grade="A325"):
-    """
-    สร้างรายการคำนวณฉบับวิศวกรอาวุโส (Bolt, Plate, Block Shear, Weld)
-    """
     
     # --- 1. Setup Parameters ---
     d = bolts['d']
-    # รูเจาะมาตรฐาน (Standard Hole) = d + 1.5mm (หรือ 2mm แล้วแต่มาตรฐาน) AISC ใช้ d+1/16"
     h_hole = d + 2 
     n_rows = bolts['rows']
     n_cols = bolts['cols']
@@ -15,15 +11,17 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
     
     t_pl = plate['t']
     h_pl = plate['h']
-    lv = plate['lv'] # ระยะขอบบน/ล่าง
-    l_side = plate['l_side'] # ระยะขอบข้าง
+    lv = plate['lv'] 
+    l_side = plate['l_side'] 
     weld_size = plate['weld_size']
     
-    # Material Props (A36)
-    Fy_pl = 250 # MPa
-    Fu_pl = 400 # MPa
-    Fnv = 372   # A325N Shear Strength
-    Fexx = 480  # Weld Electrode E70xx (70ksi ~ 480MPa)
+    # 🆕 DYNAMIC MATERIAL PROPERTIES (ดึงค่าจาก Dict ที่ส่งมา)
+    Fy_pl = plate['Fy']  # ไม่ใช่ 250 แล้ว
+    Fu_pl = plate['Fu']  # ไม่ใช่ 400 แล้ว
+    Fnv = bolts['Fnv']   # ไม่ใช่ 372 แล้ว
+    Fexx = 480  # Weld Electrode ยังคงไว้ก่อน หรือจะส่งมาก็ได้
+
+    # ... (ส่วนที่เหลือเหมือนเดิมเป๊ะๆ ตั้งแต่ Setup Factors ลงไป) ...
 
     # --- 2. Setup Factors (ASD vs LRFD) ---
     if is_lrfd:
