@@ -1,15 +1,16 @@
-# app.py (V13.1 - Fully Integrated Version)
+# app.py (V13.1 - Fully Integrated & Linked Version)
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
 # --- IMPORT MODULES ---
+# ใช้ try-except เพื่อกัน App พังถ้าหาไฟล์ไม่เจอ
 try:
     import connection_design as conn
     import report_generator as rep
 except ImportError:
-    st.warning("Warning: connection_design.py or report_generator.py not found. Please ensure files are in the same directory.")
+    st.warning("⚠️ Warning: connection_design.py or report_generator.py not found. Please ensure files are in the same directory.")
 
 # ==========================================
 # 1. SETUP & STYLE (Engineering Professional)
@@ -70,8 +71,11 @@ steel_db = {
 with st.sidebar:
     st.title("🏗️ Beam Insight V13")
     st.divider()
+    
+    # --- GLOBAL LINKAGE CONTROLLER ---
     method = st.radio("Method", ["ASD (Allowable Stress)", "LRFD (Limit State)"])
-    is_lrfd = method == "LRFD"
+    # ตัวแปร Boolean สำคัญที่ส่งไปทุก Module
+    is_lrfd = True if "LRFD" in method else False
     
     st.subheader("🛠️ Material Grade")
     grade_opts = {"SS400 (Fy 2450)": 2450, "SM490 (Fy 3250)": 3250, "A36 (Fy 2500)": 2500, "Custom": 2400}
@@ -95,19 +99,20 @@ with st.sidebar:
     E_mod = 2.04e6 
 
 # ==========================================
-# 3. CORE CALCULATIONS
+# 3. CORE CALCULATIONS (BEAM)
 # ==========================================
 p = steel_db[sec_name]
 Aw = (p['h']/10) * (p['tw']/10) 
 Ix, Zx = p['Ix'], p['Zx']
 
+# --- TAB 1 LINKAGE: เปลี่ยนตัวคูณตาม is_lrfd ---
 if is_lrfd:
-    M_cap = 0.9 * fy * Zx
-    V_cap = 1.0 * 0.6 * fy * Aw
+    M_cap = 0.90 * fy * Zx  # LRFD Factor
+    V_cap = 1.00 * 0.6 * fy * Aw
     label_load = "Factored Load (Wu)"
 else:
-    M_cap = 0.6 * fy * Zx
-    V_cap = 0.4 * fy * Aw
+    M_cap = 0.60 * fy * Zx  # ASD Factor
+    V_cap = 0.40 * fy * Aw
     label_load = "Safe Load (w)"
 
 def get_capacity(L_m):
@@ -133,7 +138,7 @@ V_design = v_act if design_mode == "Actual Load" else V_cap * (target_pct / 100)
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Report"])
 
 with tab1:
-    st.subheader(f"Engineering Analysis: {sec_name}")
+    st.subheader(f"Engineering Analysis: {sec_name} ({'LRFD' if is_lrfd else 'ASD'})")
     cause_color = "#dc2626" if user_cause == "Shear" else ("#d97706" if user_cause == "Moment" else "#059669")
 
     st.markdown(f"""
@@ -210,10 +215,19 @@ with tab1:
 
 with tab2:
     try:
-        # รับค่า req_bolt และ v_bolt จากโมดูลคำนวณ โดยส่ง bolt_grade เข้าไปด้วย
-        req_bolt, v_bolt = conn.render_connection_tab(V_design, bolt_size, method, is_lrfd, p, conn_type, bolt_grade)
+        # --- TAB 2 LINKAGE: ส่ง is_lrfd เข้าไปให้ Module ใช้งาน ---
+        req_bolt, v_bolt = conn.render_connection_tab(
+            V_design=V_design, 
+            bolt_size=bolt_size, 
+            method=method, 
+            is_lrfd=is_lrfd,  # <--- จุดสำคัญ: ส่งสถานะ ASD/LRFD
+            section_data=p, 
+            conn_type=conn_type, 
+            bolt_grade=bolt_grade
+        )
     except Exception as e:
-        st.error(f"Error in Connection Tab: {e}")
+        st.error(f"⚠️ Error in Connection Tab: {e}")
+        st.caption("Hint: Ensure connection_design.py is updated to receive 'is_lrfd'.")
 
 with tab3:
     st.subheader("Span-Load Reference Table")
@@ -227,4 +241,7 @@ with tab4:
     full_res = {'w_safe': user_safe_load, 'cause': user_cause, 'v_cap': V_cap, 'v_act': v_act, 'm_cap': M_cap, 'm_act': m_act, 'd_all': d_all, 'd_act': d_act}
     bolt_data = {'size': bolt_size, 'qty': req_bolt if 'req_bolt' in locals() else 0, 'cap': v_bolt if 'v_bolt' in locals() else 0, 'type': conn_type, 'grade': bolt_grade}
     
-    rep.render_report_tab(method, is_lrfd, sec_name, grade_choice, p, full_res, bolt_data)
+    if 'rep' in locals():
+        rep.render_report_tab(method, is_lrfd, sec_name, grade_choice, p, full_res, bolt_data)
+    else:
+        st.info("Report Generator module not loaded.")
