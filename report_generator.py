@@ -3,23 +3,23 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 def render_report_tab(method, is_lrfd, sec_name, steel_grade, p, res, bolt):
-    """
-    ฟังก์ชันสร้างรายงาน โดยแก้ปัญหา ValueError จากการสลับประเภทข้อมูล
-    steel_grade: รับค่าเป็น String (ชื่อเกรด)
-    """
-    # ดึงค่า Fy จากการคำนวณมาแสดงผล (ถ้ามี) หรือใช้ค่าจากที่คำนวณใน res
-    # เราจะใช้ค่าที่ส่งผ่านมาแสดงใน Report
-    
-    w_safe = res.get('w_safe', 0)
-    cause = res.get('cause', 'N/A')
-    v_act = res.get('v_act', 0)
-    v_cap = res.get('v_cap', 1)
-    m_act = res.get('m_act', 0)
-    m_cap = res.get('m_cap', 1)
-    d_act = res.get('d_act', 0)
-    d_all = res.get('d_all', 1)
+    """
+    ฟังก์ชันสร้างรายงาน โดยแก้ปัญหา ValueError จากการสลับประเภทข้อมูล
+    steel_grade: รับค่าเป็น String (ชื่อเกรด)
+    """
+    # ดึงค่า Fy จากการคำนวณมาแสดงผล (ถ้ามี) หรือใช้ค่าจากที่คำนวณใน res
+    # เราจะใช้ค่าที่ส่งผ่านมาแสดงใน Report
+    
+    w_safe = res.get('w_safe', 0)
+    cause = res.get('cause', 'N/A')
+    v_act = res.get('v_act', 0)
+    v_cap = res.get('v_cap', 1)
+    m_act = res.get('m_act', 0)
+    m_cap = res.get('m_cap', 1)
+    d_act = res.get('d_act', 0)
+    d_all = res.get('d_all', 1)
 
-    html_content = f"""<div style="background-color:#ffffff;padding:30px;border-radius:10px;border:1px solid #d1d5db;font-family:sans-serif;color:#111827;">
+    html_content = f"""<div style="background-color:#ffffff;padding:30px;border-radius:10px;border:1px solid #d1d5db;font-family:sans-serif;color:#111827;">
 <div style="border-bottom:2px solid #1e40af;margin-bottom:20px;padding-bottom:10px;">
 <h2 style="margin:0;color:#1e40af;">DESIGN CALCULATION REPORT</h2>
 <p style="margin:0;font-size:14px;color:#6b7280;">Steel Beam Verification | Method: {method}</p>
@@ -51,4 +51,4 @@ def render_report_tab(method, is_lrfd, sec_name, steel_grade, p, res, bolt):
 </table>
 </div>"""
 
-    components.html(html_content, height=800, scrolling=True)
+    components.html(html_content, height=800, scrolling=True)
