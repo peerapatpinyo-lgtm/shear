@@ -1,5 +1,5 @@
-# calculation_report.py
 import streamlit as st
+import base64  # ✅ ต้อง Import ตรงนี้
 import datetime
 
 def render_report_tab(project_info, beam_res, conn_res):
@@ -103,7 +103,7 @@ def render_report_tab(project_info, beam_res, conn_res):
 
     <h2>2. CONNECTION DESIGN ({conn_res['conn_type']})</h2>
     
-    <p><b>Configuration:</b> {logs['bolt_info']} | <b>Plate:</b> {logs['plate_info']}</p>
+    <p><b>Configuration:</b> {logs.get('bolt_info','-')} | <b>Plate:</b> {logs.get('plate_info','-')}</p>
     
     <table>
         <tr>
@@ -116,30 +116,30 @@ def render_report_tab(project_info, beam_res, conn_res):
         <tr>
             <td>Bolt Shear Strength</td>
             <td>{conn_res['demand']:,.0f} kg</td>
-            <td>{logs['cap_shear']:,.0f} kg</td>
-            <td>{conn_res['demand']/logs['cap_shear']:.2f}</td>
-            <td class="{ 'status-pass' if conn_res['demand'] <= logs['cap_shear'] else 'status-fail' }">
-                { 'OK' if conn_res['demand'] <= logs['cap_shear'] else 'NG' }
+            <td>{logs.get('cap_shear',0):,.0f} kg</td>
+            <td>{conn_res['demand']/logs.get('cap_shear',1):.2f}</td>
+            <td class="{ 'status-pass' if conn_res['demand'] <= logs.get('cap_shear',0) else 'status-fail' }">
+                { 'OK' if conn_res['demand'] <= logs.get('cap_shear',0) else 'NG' }
             </td>
         </tr>
         <tr>
             <td>Bolt Bearing Strength</td>
             <td>{conn_res['demand']:,.0f} kg</td>
-            <td>{logs['cap_bear']:,.0f} kg</td>
-            <td>{conn_res['demand']/logs['cap_bear']:.2f}</td>
-            <td class="{ 'status-pass' if conn_res['demand'] <= logs['cap_bear'] else 'status-fail' }">
-                { 'OK' if conn_res['demand'] <= logs['cap_bear'] else 'NG' }
+            <td>{logs.get('cap_bear',0):,.0f} kg</td>
+            <td>{conn_res['demand']/logs.get('cap_bear',1):.2f}</td>
+            <td class="{ 'status-pass' if conn_res['demand'] <= logs.get('cap_bear',0) else 'status-fail' }">
+                { 'OK' if conn_res['demand'] <= logs.get('cap_bear',0) else 'NG' }
             </td>
         </tr>
     </table>
 
     <div class="formula-box">
-        <b>Reference Calculation ({logs['method']}):</b><br>
+        <b>Reference Calculation ({logs.get('method','-')}):</b><br>
         1. Bolt Shear Strength ($R_n = F_{{nv}} A_b N_s$):<br>
-        $$ {logs['Rn_shear']:,.0f} \\text{{ kg/bolt}} \\times {logs['qty']} \\text{{ bolts}} = \\mathbf{{ {logs['cap_shear']:,.0f} }} \\text{{ kg}} $$
+        $$ {logs.get('Rn_shear',0):,.0f} \\text{{ kg/bolt}} \\times {logs.get('qty',0)} \\text{{ bolts}} = \\mathbf{{ {logs.get('cap_shear',0):,.0f} }} \\text{{ kg}} $$
         <br>
         2. Bearing Strength ($R_n = 1.2 L_c t F_u$):<br>
-        $$ {logs['Rn_bear']:,.0f} \\text{{ kg/bolt}} \\times {logs['qty']} \\text{{ bolts}} = \\mathbf{{ {logs['cap_bear']:,.0f} }} \\text{{ kg}} $$
+        $$ {logs.get('Rn_bear',0):,.0f} \\text{{ kg/bolt}} \\times {logs.get('qty',0)} \\text{{ bolts}} = \\mathbf{{ {logs.get('cap_bear',0):,.0f} }} \\text{{ kg}} $$
     </div>
 
     <div style="text-align:right; margin-top:5px; font-weight:bold; font-size:16px;">
@@ -158,7 +158,7 @@ def render_report_tab(project_info, beam_res, conn_res):
     st.markdown("### 📄 Calculation Report Preview")
     st.components.v1.html(html_content, height=600, scrolling=True)
     
-    # Download Button
-    b64 = st.base64.b64encode(html_content.encode()).decode()
+    # ✅ FIX IS HERE: ใช้ base64.b64encode (ไม่ใช่ st.base64)
+    b64 = base64.b64encode(html_content.encode()).decode()
     href = f'<a href="data:text/html;base64,{b64}" download="calculation_report.html" style="background:#2563eb; color:white; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;">📥 Download HTML Report</a>'
     st.markdown(href, unsafe_allow_html=True)
