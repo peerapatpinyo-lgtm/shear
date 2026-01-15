@@ -1,16 +1,15 @@
-# app.py (V13.1 - Fully Integrated & Linked Version)
+# app.py (V13.2 - Fully Integrated & Corrected Version)
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
 # --- IMPORT MODULES ---
-# ใช้ try-except เพื่อกัน App พังถ้าหาไฟล์ไม่เจอ
 try:
     import connection_design as conn
     import report_generator as rep
 except ImportError:
-    st.warning("⚠️ Warning: connection_design.py or report_generator.py not found. Please ensure files are in the same directory.")
+    st.warning("Warning: connection_design.py or report_generator.py not found. Please ensure files are in the same directory.")
 
 # ==========================================
 # 1. SETUP & STYLE (Engineering Professional)
@@ -72,9 +71,9 @@ with st.sidebar:
     st.title("🏗️ Beam Insight V13")
     st.divider()
     
-    # --- GLOBAL LINKAGE CONTROLLER ---
+    # --- 1. GLOBAL SETTINGS & LINKAGE ---
     method = st.radio("Method", ["ASD (Allowable Stress)", "LRFD (Limit State)"])
-    # ตัวแปร Boolean สำคัญที่ส่งไปทุก Module
+    # สร้างตัวแปร Boolean เพื่อส่งไปทุก Tab
     is_lrfd = True if "LRFD" in method else False
     
     st.subheader("🛠️ Material Grade")
@@ -88,7 +87,14 @@ with st.sidebar:
     defl_lim_val = int(defl_ratio.split("/")[1])
     
     st.subheader("🔩 Connection Design")
-    conn_type = st.selectbox("Connection Type", ["Beam-to-Column (Flange)", "Beam-to-Column (Web)", "Beam-to-Beam"])
+    # ปรับชื่อตัวเลือกให้มีคำว่า "Double" และ "Beam to Beam" เพื่อให้ Logic ปลายทางทำงานถูก
+    conn_type_options = [
+        "Fin Plate (Single Shear) - Beam to Col",
+        "End Plate (Single Shear) - Beam to Col",
+        "Double Angle (Double Shear) - Beam to Col",
+        "Fin Plate (Single Shear) - Beam to Beam"
+    ]
+    conn_type = st.selectbox("Connection Type", conn_type_options)
     
     bolt_grade_opts = ["A325 (High Strength)", "Grade 8.8 (Standard)", "A490 (Premium)"]
     bolt_grade = st.selectbox("Bolt Grade", bolt_grade_opts)
@@ -99,13 +105,13 @@ with st.sidebar:
     E_mod = 2.04e6 
 
 # ==========================================
-# 3. CORE CALCULATIONS (BEAM)
+# 3. CORE CALCULATIONS
 # ==========================================
 p = steel_db[sec_name]
 Aw = (p['h']/10) * (p['tw']/10) 
 Ix, Zx = p['Ix'], p['Zx']
 
-# --- TAB 1 LINKAGE: เปลี่ยนตัวคูณตาม is_lrfd ---
+# --- CALCULATE CAPACITY BASED ON METHOD (ASD/LRFD) ---
 if is_lrfd:
     M_cap = 0.90 * fy * Zx  # LRFD Factor
     V_cap = 1.00 * 0.6 * fy * Aw
@@ -215,19 +221,19 @@ with tab1:
 
 with tab2:
     try:
-        # --- TAB 2 LINKAGE: ส่ง is_lrfd เข้าไปให้ Module ใช้งาน ---
+        # --- ส่งค่าเข้า Tab Connection (พร้อมตัวแปร Linkage ครบถ้วน) ---
         req_bolt, v_bolt = conn.render_connection_tab(
             V_design=V_design, 
             bolt_size=bolt_size, 
             method=method, 
-            is_lrfd=is_lrfd,  # <--- จุดสำคัญ: ส่งสถานะ ASD/LRFD
+            is_lrfd=is_lrfd,        # <--- ส่งสถานะ LRFD
             section_data=p, 
-            conn_type=conn_type, 
+            conn_type=conn_type,    # <--- ส่งชื่อที่มีคำว่า Double/Single
             bolt_grade=bolt_grade
         )
     except Exception as e:
         st.error(f"⚠️ Error in Connection Tab: {e}")
-        st.caption("Hint: Ensure connection_design.py is updated to receive 'is_lrfd'.")
+        st.caption("Please check if connection_design.py is up to date.")
 
 with tab3:
     st.subheader("Span-Load Reference Table")
