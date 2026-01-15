@@ -1,168 +1,204 @@
-import streamlit as st
+#calculation_report.py
 import math
-import drawing_utils as dwg
 
-# =============================================================================
-# ⚙️ CONSTANTS
-# =============================================================================
-BOLT_GRADES = {
-    "A325 (High Strength)": {"Fnv": 3720, "Ft": 6200, "Fu_bolt": 8400}, 
-    "Grade 8.8 (Standard)": {"Fnv": 3200, "Ft": 5600, "Fu_bolt": 8000},
-    "A490 (Premium)":       {"Fnv": 4960, "Ft": 7800, "Fu_bolt": 10500}
-}
+def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A36", bolt_grade="A325"):
+    
+    # --- 1. Setup Parameters ---
+    d = bolts['d']
+    h_hole = d + 2 
+    n_rows = bolts['rows']
+    n_cols = bolts['cols']
+    n_total = n_rows * n_cols
+    
+    t_pl = plate['t']
+    h_pl = plate['h']
+    lv = plate['lv'] 
+    l_side = plate['l_side'] 
+    weld_size = plate['weld_size']
+    
+    # 🆕 DYNAMIC MATERIAL PROPERTIES (ดึงค่าจาก Dict ที่ส่งมา)
+    Fy_pl = plate['Fy']  # ไม่ใช่ 250 แล้ว
+    Fu_pl = plate['Fu']  # ไม่ใช่ 400 แล้ว
+    Fnv = bolts['Fnv']   # ไม่ใช่ 372 แล้ว
+    Fexx = 480  # Weld Electrode ยังคงไว้ก่อน หรือจะส่งมาก็ได้
 
-def render_connection_tab(V_design, method, is_lrfd, section_data, conn_type, T_design=0):
-    st.markdown(f"### 📐 Design Detail: **{conn_type}**")
-    
-    # Beam Properties
-    h, tw, tf = section_data['h'], section_data['tw'], section_data['tf']
-    Fu_beam = 4100 # Assumed Ultimate Strength for SS400/A36
-    
-    # =========================================================================
-    # 1. INPUTS
-    # =========================================================================
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.caption("🔩 Bolt Config")
-        sel_grade = st.selectbox("Bolt Grade", list(BOLT_GRADES.keys()))
-        sel_size = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
-        
-        # Variable Standardization
-        d_mm = int(sel_size[1:]) # Diameter in mm
-        Ab = (math.pi * (d_mm/10)**2) / 4 # Area in cm^2
-        props = BOLT_GRADES[sel_grade]
-    
-    with c2:
-        st.caption("📏 Layout")
-        n_rows = st.number_input("Rows", 2, 20, 3)
-        n_cols = st.number_input("Cols", 1, 4, 2)
-        n_total = n_rows * n_cols # ✅ Define n_total here clearly
-        
-    with c3:
-        st.caption("🏗️ Plate Data")
-        tp = st.selectbox("Plate Thick (mm)", [6, 9, 10, 12, 16, 20, 25], index=2)
-        Fy_plate = st.number_input("Plate Fy (ksc)", value=2500)
-        Fu_plate = 4100 # Assumed Ultimate
+    # ... (ส่วนที่เหลือเหมือนเดิมเป๊ะๆ ตั้งแต่ Setup Factors ลงไป) ...
 
-    st.divider()
+    # --- 2. Setup Factors (ASD vs LRFD) ---
+    if is_lrfd:
+        method_name = "LRFD"
+        load_symbol = "V_u"
+        
+        # Factors
+        phi_shear = 0.75
+        phi_yield = 1.00
+        phi_rupture = 0.75
+        phi_weld = 0.75
+        
+        # Function to apply factor
+        def apply_factor(Rn, phi, type="shear"):
+            return phi * Rn, fr"\phi R_n", fr"{phi} \cdot {Rn:.2f}"
+            
+    else: # ASD
+        method_name = "ASD"
+        load_symbol = "V_a"
+        
+        # Factors
+        om_shear = 2.00
+        om_yield = 1.50
+        om_rupture = 2.00
+        om_weld = 2.00
+        
+        # Function to apply factor
+        def apply_factor(Rn, omega, type="shear"):
+            return Rn / omega, fr"\frac{{R_n}}{{\Omega}}", fr"\frac{{{Rn:.2f}}}{{{omega}}}"
 
-    # =========================================================================
-    # 2. CALCULATION ENGINE
-    # =========================================================================
-    
-    # Factors
-    phi_shear = 0.75; phi_bear = 0.75; phi_yield = 0.90
-    om_shear = 2.00;  om_bear = 2.00;  om_yield = 1.67
-    
-    def get_cap(Rn, phi, omega):
-        return (phi * Rn) if is_lrfd else (Rn / omega)
+    # =========================================================================
+    # 3. CALCULATIONS
+    # =========================================================================
+    
+    # --- 3.1 Bolt Shear ---
+    Ab = (math.pi * d**2) / 4
+    Rn_shear_total = (Fnv * Ab * n_total) / 1000
+    if is_lrfd: cap_bolt_shear, str_f_bs, str_c_bs = apply_factor(Rn_shear_total, phi_shear)
+    else:       cap_bolt_shear, str_f_bs, str_c_bs = apply_factor(Rn_shear_total, om_shear)
 
-    # 2.1 Bolt Shear Strength
-    shear_plane = 2 if "Double" in conn_type else 1
-    Rn_shear_bolt = props["Fnv"] * Ab * shear_plane # per bolt
-    Cap_shear_total = get_cap(Rn_shear_bolt, phi_shear, om_shear) * n_total
+    # --- 3.2 Bolt Bearing ---
+    # Simplified check (check min edge distance implied)
+    Rn_bearing_total = (2.4 * d * t_pl * Fu_pl * n_total) / 1000
+    if is_lrfd: cap_bearing, str_f_br, str_c_br = apply_factor(Rn_bearing_total, phi_shear)
+    else:       cap_bearing, str_f_br, str_c_br = apply_factor(Rn_bearing_total, om_shear)
 
-    # 2.2 Bolt Bearing Strength (on Plate)
-    # Dimensions
-    min_pitch = 3 * d_mm
-    s_v = max(min_pitch, 70)
-    s_h = max(min_pitch, 60)
-    edge = max(1.5 * d_mm, 40)
-    
-    # Lc Calculation (Clear distance)
-    # Lc_edge = Distance from hole edge to plate edge
-    Lc_edge = edge - (d_mm + 2)/2  # mm
-    # Lc_inner = Distance between holes
-    Lc_inner = s_v - (d_mm + 2)    # mm
-    
-    # Convert to cm for calculation (Formula usually in kg, cm)
-    # AISC: Rn = 1.2 Lc t Fu <= 2.4 d t Fu
-    
-    # Bearing per bolt (Edge)
-    Rn_bear_edge = 1.2 * (Lc_edge/10) * (tp/10) * Fu_plate
-    Rn_bear_max = 2.4 * (d_mm/10) * (tp/10) * Fu_plate
-    Rn_bear_edge = min(Rn_bear_edge, Rn_bear_max)
-    
-    # Bearing per bolt (Inner)
-    Rn_bear_inner = 1.2 * (Lc_inner/10) * (tp/10) * Fu_plate
-    Rn_bear_inner = min(Rn_bear_inner, Rn_bear_max)
-    
-    # Total Bearing Capacity (Simplified conservatively using edge for top row, inner for others if any)
-    # For strict calculation: 2 edge bolts + (n_total-2) inner bolts
-    # Simplified: Use average or min. Let's use min for safety.
-    Rn_bear_avg = Rn_bear_edge 
-    Cap_bear_total = get_cap(Rn_bear_avg, phi_bear, om_bear) * n_total
+    # --- 3.3 Plate Shear Yielding (Gross Section) ---
+    # Agv = Gross area subject to shear = h_plate * t_plate
+    Ag_shear = h_pl * t_pl
+    Rn_y = 0.60 * Fy_pl * Ag_shear / 1000
+    if is_lrfd: cap_yield, str_f_y, str_c_y = apply_factor(Rn_y, phi_yield)
+    else:       cap_yield, str_f_y, str_c_y = apply_factor(Rn_y, om_yield)
 
-    # 2.3 Plate Shear Yielding (Gross Section)
-    h_plate = (n_rows - 1) * s_v + 2 * edge
-    Ag_shear = (h_plate/10) * (tp/10) # cm2
-    Rn_yield = 0.60 * Fy_plate * Ag_shear
-    Cap_yield = get_cap(Rn_yield, phi_yield, om_yield)
+    # --- 3.4 Plate Shear Rupture (Net Section) ---
+    # Anv = Net area subject to shear = (h_plate - n_rows * h_hole) * t_plate
+    An_shear = (h_pl - (n_rows * h_hole)) * t_pl
+    Rn_r = 0.60 * Fu_pl * An_shear / 1000
+    if is_lrfd: cap_rupture, str_f_r, str_c_r = apply_factor(Rn_r, phi_rupture)
+    else:       cap_rupture, str_f_r, str_c_r = apply_factor(Rn_r, om_rupture)
 
-    # --- FIND GOVERNING CASE ---
-    results = {
-        "Bolt Shear": Cap_shear_total,
-        "Bolt Bearing": Cap_bear_total,
-        "Plate Shear Yield": Cap_yield
-    }
-    min_cap = min(results.values())
-    gov_mode = min(results, key=results.get)
-    
-    ratio = V_design / min_cap
-    is_pass = ratio <= 1.0
+    # --- 3.5 Block Shear Rupture (AISC J4.3) ---
+    # Assumed failure path: Shear along vertical bolt line, Tension along horizontal edge
+    # Agv = Gross area in shear (Top of plate to bottom bolt)
+    # L_gv = Length of shear plane (gross)
+    L_gv = (n_rows - 1) * bolts['s_v'] + lv 
+    Agv = L_gv * t_pl
+    
+    # Anv = Net area in shear
+    Anv = (L_gv - (n_rows - 0.5) * h_hole) * t_pl
+    
+    # Ant = Net area in tension (from bolt CL to edge)
+    Ant = (l_side - 0.5 * h_hole) * t_pl
+    
+    Ubs = 1.0 # Uniform tension assumed for simple connection
+    
+    # Formula: Rn = min(0.6FuAnv + UbsFuAnt, 0.6FyAgv + UbsFuAnt)
+    term1 = 0.6 * Fu_pl * Anv + Ubs * Fu_pl * Ant
+    term2 = 0.6 * Fy_pl * Agv + Ubs * Fu_pl * Ant
+    Rn_block = min(term1, term2) / 1000
+    
+    if is_lrfd: cap_block, str_f_bl, str_c_bl = apply_factor(Rn_block, phi_rupture)
+    else:       cap_block, str_f_bl, str_c_bl = apply_factor(Rn_block, om_rupture)
 
-    # =========================================================================
-    # 3. DISPLAY RESULTS & DRAWINGS
-    # =========================================================================
-    c_res1, c_res2, c_res3 = st.columns(3)
-    c_res1.metric("Load Demand (Vu)", f"{V_design:,.0f} kg")
-    c_res2.metric("Design Capacity", f"{min_cap:,.0f} kg", f"Ratio: {ratio:.2f}", 
-                  delta_color="normal" if is_pass else "inverse")
-    c_res3.metric("Governing Mode", gov_mode, "Controls Design")
+    # --- 3.6 Weld Strength ---
+    # Fillet weld both sides (2 lines)
+    L_weld = h_pl * 2 
+    # Unit strength per mm (0.6 * Fexx * 0.707 * size)
+    # Note: 0.75 factor is phi for weld? No, 0.707 is cos(45) for throat
+    Rn_weld = (0.6 * Fexx * 0.707 * weld_size * L_weld) / 1000
+    
+    if is_lrfd: cap_weld, str_f_wd, str_c_wd = apply_factor(Rn_weld, phi_weld)
+    else:       cap_weld, str_f_wd, str_c_wd = apply_factor(Rn_weld, om_weld)
 
-    # EXPANDER: Detailed Calc
-    with st.expander("📄 View Detailed Engineering Calculations", expanded=False):
-        st.markdown("#### 1. Connection Capacity Checks")
-        
-        # Table
-        st.markdown(f"""
-        | Failure Mode | Capacity ($R_n/\Omega$ or $\phi R_n$) | Demand ($V_u$) | Ratio | Status |
-        |---|---|---|---|---|
-        | **Bolt Shear** | **{Cap_shear_total:,.0f}** | {V_design:,.0f} | {V_design/Cap_shear_total:.2f} | {'✅' if V_design<=Cap_shear_total else '❌'} |
-        | **Bolt Bearing** | **{Cap_bear_total:,.0f}** | {V_design:,.0f} | {V_design/Cap_bear_total:.2f} | {'✅' if V_design<=Cap_bear_total else '❌'} |
-        | **Plate Yield** | **{Cap_yield:,.0f}** | {V_design:,.0f} | {V_design/Cap_yield:.2f} | {'✅' if V_design<=Cap_yield else '❌'} |
-        """)
+    # --- 4. SUMMARY & RESULT ---
+    capacities = {
+        "Bolt Shear": cap_bolt_shear,
+        "Bolt Bearing": cap_bearing,
+        "Plate Yielding": cap_yield,
+        "Plate Rupture": cap_rupture,
+        "Block Shear": cap_block,
+        "Weld Strength": cap_weld
+    }
+    
+    min_cap_val = min(capacities.values())
+    governing_mode = min(capacities, key=capacities.get)
+    ratio = V_load / min_cap_val if min_cap_val > 0 else 999
+    
+    if ratio <= 1.0:
+        status = "✅ PASS"
+        color = "green"
+    else:
+        status = "❌ FAIL"
+        color = "red"
 
-        st.markdown("---")
-        st.markdown("#### 2. Calculation Reference")
-        st.latex(fr"R_{{n,shear}} = F_{{nv}} A_b N_s = {props['Fnv']} \times {Ab:.2f} \times {shear_plane} = {Rn_shear_bolt:,.0f} \text{{ kg/bolt}}")
+    # --- 5. REPORT GENERATION ---
+    report = f"""
+### 📝 Detailed Calculation Report ({method_name})
 
-    # Drawings
-    w_plate = (n_cols - 1) * s_h + 2 * edge + 10
-    beam_d = {'h': h, 'b': 100, 'tw': tw, 'tf': tf}
-    plate_d = {'w': w_plate, 'h': h_plate, 't': tp, 'l_side': w_plate, 'e1': edge, 'lv': edge}
-    bolt_d = {'d': d_mm, 'rows': n_rows, 'cols': n_cols, 's_v': s_v, 's_h': s_h}
-    
-    t1, t2 = st.tabs(["Elevation", "Section"])
-    with t1: st.plotly_chart(dwg.create_front_view(beam_d, plate_d, bolt_d), use_container_width=True)
-    with t2: st.plotly_chart(dwg.create_side_view(beam_d, plate_d, bolt_d), use_container_width=True)
+**Design Parameters:**
+- Load (${load_symbol}$): **{V_load:.2f} kN**
+- Plate: {h_pl:.0f}x{plate['w']:.0f}x{t_pl:.0f} mm (A36)
+- Bolts: {n_total} x M{d} (A325)
+- Weld: Fillet {weld_size} mm (E70xx)
 
-    # =========================================================================
-    # 4. RETURN DATA (Fixed Variable Names)
-    # =========================================================================
-    return {
-        'pass': is_pass,
-        'demand': V_design,
-        'qty': n_total,        # ✅ ใช้ n_total ตรงนี้ (แก้จาก nt ที่ error)
-        'conn_type': conn_type,
-        'report_data': {
-            'method': "LRFD" if is_lrfd else "ASD",
-            'bolt_info': f"{n_total} x M{d_mm} ({sel_grade})",
-            'plate_info': f"t={tp}mm (Fy={Fy_plate} ksc)",
-            'cap_shear': Cap_shear_total,
-            'Rn_shear': Rn_shear_bolt,
-            'cap_bear': Cap_bear_total,
-            'Rn_bear': Rn_bear_avg,
-            'qty': n_total
-        }
-    }
+---
+
+#### 1. Bolt Checks
+**1.1 Bolt Shear ({str_f_bs})**
+$$ R_n = {Rn_shear_total:.2f} \\text{{ kN}} $$
+$$ {str_f_bs} = {str_c_bs} = \\mathbf{{{cap_bolt_shear:.2f} \\text{{ kN}}}} $$
+
+**1.2 Bolt Bearing ({str_f_br})**
+$$ {str_f_br} = {str_c_br} = \\mathbf{{{cap_bearing:.2f} \\text{{ kN}}}} $$
+
+---
+
+#### 2. Plate Checks
+**2.1 Shear Yielding (Gross) ({str_f_y})**
+$$ A_g = {Ag_shear:.0f} \\text{{ mm}}^2 $$
+$$ {str_f_y} = {str_c_y} = \\mathbf{{{cap_yield:.2f} \\text{{ kN}}}} $$
+
+**2.2 Shear Rupture (Net) ({str_f_r})**
+$$ A_n = {An_shear:.0f} \\text{{ mm}}^2 $$
+$$ {str_f_r} = {str_c_r} = \\mathbf{{{cap_rupture:.2f} \\text{{ kN}}}} $$
+
+**2.3 Block Shear Rupture ({str_f_bl})** ⚠️ *Critical*
+- Shear Area: $A_{{gv}}={Agv:.0f}, A_{{nv}}={Anv:.0f}$ mm²
+- Tension Area: $A_{{nt}}={Ant:.0f}$ mm²
+$$ R_n = \\min(0.6 F_u A_{{nv}} + U_{{bs}} F_u A_{{nt}}, 0.6 F_y A_{{gv}} + U_{{bs}} F_u A_{{nt}}) = {Rn_block:.2f} \\text{{ kN}} $$
+$$ {str_f_bl} = {str_c_bl} = \\mathbf{{{cap_block:.2f} \\text{{ kN}}}} $$
+
+---
+
+#### 3. Weld Checks
+**3.1 Fillet Weld Strength ({str_f_wd})**
+- Weld Size ($D$): {weld_size} mm
+- Total Length ($L_w$): {h_pl:.0f} x 2 = {L_weld:.0f} mm
+$$ R_n = 0.6 F_{{exx}} (0.707 D) L_w = {Rn_weld:.2f} \\text{{ kN}} $$
+$$ {str_f_wd} = {str_c_wd} = \\mathbf{{{cap_weld:.2f} \\text{{ kN}}}} $$
+
+---
+
+#### 🏁 Final Summary
+**Status: <span style='color:{color}'>{status}</span>**
+
+| Limit State | Capacity (kN) | Ratio |
+| :--- | :---: | :---: |
+| Bolt Shear | {cap_bolt_shear:.2f} | {V_load/cap_bolt_shear:.2f} |
+| Bolt Bearing | {cap_bearing:.2f} | {V_load/cap_bearing:.2f} |
+| Plate Yielding | {cap_yield:.2f} | {V_load/cap_yield:.2f} |
+| Plate Rupture | {cap_rupture:.2f} | {V_load/cap_rupture:.2f} |
+| Block Shear | {cap_block:.2f} | {V_load/cap_block:.2f} |
+| Weld Strength | {cap_weld:.2f} | {V_load/cap_weld:.2f} |
+
+👉 **Governing Case:** {governing_mode} (Capacity = **{min_cap_val:.2f} kN**)
+**Utilization Ratio:** **{ratio:.2f}**
+    """
+    
+    return report
