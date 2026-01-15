@@ -98,39 +98,40 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     
     # --- VIEW 1: SECTION A-A ---
     with col_sec:
-        st.markdown("**SECTION A-A** (Support Interface)")
+        st.markdown("**SECTION A-A** (Top/Cut View)")
         fig_sec = go.Figure()
         
-        # --- SUPPORT LOGIC (CORRECTED) ---
+        # --- SUPPORT LOGIC ---
         if is_beam_to_beam:
             # === Beam to Beam ===
-            # เห็น Cross Section ของ Main Beam เป็นรูปตัว I (ถูกต้อง)
             h_main, b_main = h_beam * 1.5, b_beam * 1.2
             tw_main, tf_main = tw_beam * 1.2, tf_beam * 1.2
             main_cx = -tw_main / 2  
-            
             main_shapes = create_ishape(h_main, b_main, tw_main, tf_main, cx=main_cx, cy=0, fill_col="#475569", line_col="black")
             for s in main_shapes: fig_sec.add_shape(s)
-            fig_sec.add_annotation(x=main_cx, y=-h_main/2-20, text="MAIN BEAM (WEB)", showarrow=False, font=dict(weight="bold", color="#475569"))
+            fig_sec.add_annotation(x=main_cx, y=-h_main/2-20, text="MAIN BEAM", showarrow=False, font=dict(weight="bold", color="#475569"))
             
         else:
             # === Beam to Column ===
-            # เสาตั้งฉากกับมุมมอง -> เราเห็น "หน้ากว้างปีกเสา (Flange Face)" เป็นแผ่นสี่เหลี่ยม
-            # ไม่เห็น Web เสา เพราะมันอยู่ข้างหลังปีกเสา
-            col_width = b_beam * 1.5 # สมมติความกว้างปีกเสา
-            col_height_viz = h_beam * 1.5 # ความสูงที่จะวาดให้ดู
+            col_width = b_beam * 1.5
+            col_height_viz = h_beam * 1.6 
+            col_web_thk = 10 
 
-            # วาด Flange Face (แผ่นหลัง)
+            # 1. Column Flange (Solid Block)
             fig_sec.add_shape(type="rect", 
                               x0=-col_width/2, y0=-col_height_viz/2, 
-                              x1=0, y1=col_height_viz/2, # x1=0 คือผิวหน้าสัมผัส Plate
+                              x1=0, y1=col_height_viz/2, 
                               fillcolor="#334155", line_color="black")
             
-            # Label
-            fig_sec.add_annotation(x=-col_width/4, y=-col_height_viz/2-20, text="COLUMN FLANGE (FACE)", showarrow=False, font=dict(weight="bold", color="#334155"))
-            
-            # Dimension บอกความกว้างเสา (เพื่อให้ดูรู้ว่าเป็นเสา)
-            add_dim_line(fig_sec, -col_width/2, col_height_viz/2+10, 0, col_height_viz/2+10, "Col. Flange Width", type="horiz", offset=0)
+            # 2. Hidden Web Line (เส้นประแสดงแนวเอวเสาที่อยู่ด้านหลัง)
+            # เพื่อบอกว่าเราเชื่อมเข้าที่ Center ของเสาพอดี
+            fig_sec.add_shape(type="rect", 
+                              x0=-col_width/2, y0=-col_web_thk/2, 
+                              x1=0, y1=col_web_thk/2, 
+                              line=dict(color="white", width=1, dash="dot"), fillcolor="rgba(0,0,0,0)")
+
+            fig_sec.add_annotation(x=-col_width/4, y=-col_height_viz/2-20, text="COLUMN FLANGE", showarrow=False, font=dict(weight="bold", color="#334155"))
+            add_dim_line(fig_sec, -col_width/2, col_height_viz/2+10, 0, col_height_viz/2+10, "Col. Width", type="horiz", offset=0)
 
         # --- Fin Plate ---
         plate_x0, plate_x1 = 0, t_plate_mm
@@ -143,6 +144,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         fig_sec.add_trace(go.Scatter(x=[0, weld_size, 0, 0], y=[-plate_h/2, -plate_h/2, -plate_h/2-weld_size, -plate_h/2], fill="toself", fillcolor="black", mode="lines", line=dict(width=1), showlegend=False))
 
         # --- Secondary Beam ---
+        # วาด Beam ให้อยู่ที่ Y=0 (Center) เสมอ เพื่อให้ตรงกับ Center เสา
         beam_web_x0 = plate_x1
         beam_web_x1 = plate_x1 + tw_beam
         beam_center_x = (beam_web_x0 + beam_web_x1) / 2 
@@ -152,6 +154,11 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         flange_x1 = beam_center_x + b_beam/2
         fig_sec.add_shape(type="rect", x0=flange_x0, y0=h_beam/2 - tf_beam, x1=flange_x1, y1=h_beam/2, fillcolor="#a1a1aa", line_color="black")
         fig_sec.add_shape(type="rect", x0=flange_x0, y0=-h_beam/2, x1=flange_x1, y1=-h_beam/2 + tf_beam, fillcolor="#a1a1aa", line_color="black")
+
+        # --- Centerline (CL) ---
+        # เส้นสำคัญที่บอกว่าทุกอย่าง Aligned กัน
+        fig_sec.add_shape(type="line", x0=-100, y0=0, x1=flange_x1+50, y1=0, line=dict(color="#b91c1c", width=1, dash="dashdot"))
+        fig_sec.add_annotation(x=flange_x1+60, y=0, text="CL", showarrow=False, font=dict(color="#b91c1c", weight="bold"))
 
         # --- Bolts ---
         bolt_y_start_coord = plate_h/2 - real_lv
@@ -171,9 +178,8 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
 
         layout_sec = dict(height=550, plot_bgcolor="white", margin=dict(l=10, r=10, t=30, b=30), title=dict(text="SECTION A-A", x=0.5, y=0.02), dragmode="pan")
         if use_true_scale:
-            # Shift view to see column width
             left_lim = -150 if not is_beam_to_beam else -100
-            layout_sec['xaxis'] = dict(visible=False, fixedrange=False, range=[left_lim, flange_x1+50])
+            layout_sec['xaxis'] = dict(visible=False, fixedrange=False, range=[left_lim, flange_x1+80])
             layout_sec['yaxis'] = dict(visible=False, scaleanchor="x", scaleratio=1, fixedrange=False)
         else:
             layout_sec['xaxis'] = dict(visible=False, fixedrange=False)
