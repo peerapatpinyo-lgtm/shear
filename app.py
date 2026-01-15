@@ -1,4 +1,4 @@
-# app.py (Full Updated Version)
+# app.py (Fixed Version - No External Import)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -56,8 +56,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. SIDEBAR INPUTS
+# 2. FULL DATA (ตารางเหล็ก)
 # ==========================================
+steel_db = {
+    "H 100x100x6x8":    {"h": 100, "b": 100, "tw": 6,   "tf": 8,   "Ix": 383,    "Zx": 76.5,  "w": 17.2},
+    "H 125x125x6.5x9":  {"h": 125, "b": 125, "tw": 6.5, "tf": 9,   "Ix": 847,    "Zx": 136,   "w": 23.8},
+    "H 150x75x5x7":     {"h": 150, "b": 75,  "tw": 5,   "tf": 7,   "Ix": 666,    "Zx": 88.8,  "w": 14.0},
+    "H 150x150x7x10":   {"h": 150, "b": 150, "tw": 7,   "tf": 10,  "Ix": 1640,   "Zx": 219,   "w": 31.5},
+    "H 200x100x5.5x8":  {"h": 200, "b": 100, "tw": 5.5, "tf": 8,   "Ix": 1840,   "Zx": 184,   "w": 21.3},
+    "H 200x200x8x12":   {"h": 200, "b": 200, "tw": 8,   "tf": 12,  "Ix": 4720,   "Zx": 472,   "w": 49.9},
+    "H 250x125x6x9":    {"h": 250, "b": 125, "tw": 6,   "tf": 9,   "Ix": 3690,   "Zx": 295,   "w": 29.6},
+    "H 250x250x9x14":   {"h": 250, "b": 250, "tw": 9,   "tf": 14,  "Ix": 10800,  "Zx": 867,   "w": 72.4},
+    "H 300x150x6.5x9":  {"h": 300, "b": 150, "tw": 6.5, "tf": 9,   "Ix": 7210,   "Zx": 481,   "w": 36.7},
+    "H 300x300x10x15":  {"h": 300, "b": 300, "tw": 10,  "tf": 15,  "Ix": 20400,  "Zx": 1360,  "w": 94.0},
+    "H 350x175x7x11":   {"h": 350, "b": 175, "tw": 7,   "tf": 11,  "Ix": 13600,  "Zx": 775,   "w": 49.6},
+    "H 400x200x8x13":   {"h": 400, "b": 200, "tw": 8,   "tf": 13,  "Ix": 23700,  "Zx": 1190,  "w": 66.0},
+    "H 450x200x9x14":   {"h": 450, "b": 200, "tw": 9,   "tf": 14,  "Ix": 33500,  "Zx": 1490,  "w": 76.0},
+    "H 500x200x10x16":  {"h": 500, "b": 200, "tw": 10,  "tf": 16,  "Ix": 47800,  "Zx": 1910,  "w": 89.6},
+    "H 600x200x11x17":  {"h": 600, "b": 200, "tw": 11,  "tf": 17,  "Ix": 77600,  "Zx": 2590,  "w": 106},
+}
+
 with st.sidebar:
     st.title("🏗️ Beam Insight V12")
     st.divider()
@@ -68,18 +86,7 @@ with st.sidebar:
     
     st.divider()
     st.header("2. Geometry & Material")
-    from steel_data import steel_db # แนะนำให้แยกไฟล์ แต่ถ้ายังไม่แยกใช้ steel_db ด้านล่าง
-    # (ใช้ steel_db เดิมที่คุณให้มา)
-    steel_db = {
-        "H 100x100x6x8":    {"h": 100, "b": 100, "tw": 6,   "tf": 8,   "Ix": 383,    "Zx": 76.5,  "w": 17.2},
-        "H 150x150x7x10":   {"h": 150, "b": 150, "tw": 7,   "tf": 10,  "Ix": 1640,   "Zx": 219,   "w": 31.5},
-        "H 200x200x8x12":   {"h": 200, "b": 200, "tw": 8,   "tf": 12,  "Ix": 4720,   "Zx": 472,   "w": 49.9},
-        "H 300x150x6.5x9":  {"h": 300, "b": 150, "tw": 6.5, "tf": 9,   "Ix": 7210,   "Zx": 481,   "w": 36.7},
-        "H 400x200x8x13":   {"h": 400, "b": 200, "tw": 8,   "tf": 13,  "Ix": 23700,  "Zx": 1190,  "w": 66.0},
-        "H 500x200x10x16":  {"h": 500, "b": 200, "tw": 10,  "tf": 16,  "Ix": 47800,  "Zx": 1910,  "w": 89.6},
-        "H 600x200x11x17":  {"h": 600, "b": 200, "tw": 11,  "tf": 17,  "Ix": 77600,  "Zx": 2590,  "w": 106},
-    }
-    sec_name = st.selectbox("Steel Section", list(steel_db.keys()), index=4)
+    sec_name = st.selectbox("Steel Section", list(steel_db.keys()), index=11)
     user_span = st.number_input("Span Length (m)", min_value=1.0, value=6.0, step=0.5)
     fy = st.number_input("Fy (kg/cm²)", 2400)
     defl_ratio = st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1)
@@ -159,25 +166,24 @@ with tab1:
     
     def render_check_ratio(title, act, lim, unit, equation_act, equation_ratio):
         ratio = act / lim
-        is_pass = ratio <= 1.01 # เผื่อ tolerance เล็กน้อย
+        is_pass = ratio <= 1.01 
         status_class = "pass" if is_pass else "fail"
         status_text = "PASS" if is_pass else "FAIL"
         border_color = "#10b981" if is_pass else "#ef4444"
 
-        with st.container():
-            st.markdown(f"""
-            <div class="detail-card" style="border-top-color: {border_color}">
-                <span class="status-badge {status_class}">{status_text}</span>
-                <h4 style="margin:0; color:#374151;">{title}</h4>
-                <div style="margin-top:10px;">
-                    <small style="color:#6b7280;">Ratio: {act:,.2f} / {lim:,.2f}</small>
-                    <div style="font-size:24px; font-weight:700; color:{border_color};">{ratio:.3f}</div>
-                </div>
+        st.markdown(f"""
+        <div class="detail-card" style="border-top-color: {border_color}">
+            <span class="status-badge {status_class}">{status_text}</span>
+            <h4 style="margin:0; color:#374151;">{title}</h4>
+            <div style="margin-top:10px;">
+                <small style="color:#6b7280;">Ratio: {act:,.2f} / {lim:,.2f}</small>
+                <div style="font-size:24px; font-weight:700; color:{border_color};">{ratio:.3f}</div>
             </div>
-            """, unsafe_allow_html=True)
-            with st.expander(f"View {title} Calculation"):
-                st.latex(equation_act)
-                st.latex(equation_ratio)
+        </div>
+        """, unsafe_allow_html=True)
+        with st.expander(f"View {title} Calculation"):
+            st.latex(equation_act)
+            st.latex(equation_ratio)
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -214,10 +220,9 @@ with tab1:
 
 with tab2:
     try:
-        # รับค่า req_bolt และ v_bolt กลับมาเพื่อส่งต่อให้ Report
         req_bolt, v_bolt = conn.render_connection_tab(V_design, bolt_size, method, is_lrfd, p)
     except Exception as e:
-        st.info(f"Connection module is being updated... {e}")
+        st.info("Connection module is being updated...")
         req_bolt, v_bolt = 0, 0
 
 with tab3:
@@ -234,8 +239,7 @@ with tab3:
 with tab4:
     try:
         caps = {'M_cap': M_cap, 'V_cap': V_cap}
-        # ส่งค่า bolt_info ที่คำนวณได้จริงไปที่ Report
         bolt_info = {'size': bolt_size, 'capacity': v_bolt, 'qty': req_bolt}
         rep.render_report_tab(method, is_lrfd, sec_name, fy, p, caps, bolt_info)
     except Exception as e:
-        st.info(f"Report generator is being updated... {e}")
+        st.info("Report generator is being updated...")
