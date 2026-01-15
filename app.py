@@ -1,4 +1,4 @@
-# app.py (V12 - Full Professional Version)
+# app.py (V12.1 - Corrected Dictionary Keys)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -22,7 +22,7 @@ st.markdown("""
     
     html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
 
-    /* --- Metric Card (Detail Version) --- */
+    /* --- Metric Card --- */
     .detail-card {
         background: white; border-radius: 12px; padding: 20px;
         border: 1px solid #e5e7eb; border-top: 6px solid #2563eb;
@@ -44,20 +44,16 @@ st.markdown("""
     .big-num { color: #1e40af; font-size: 42px; font-weight: 800; font-family: 'Roboto Mono', monospace; }
     .sub-text { color: #6b7280; font-size: 14px; font-weight: 600; text-transform: uppercase; }
 
-    /* --- Report Paper Style (Backup for local render) --- */
     .report-paper {
         background: white; padding: 40px; border: 1px solid #ddd;
         box-shadow: 0 0 15px rgba(0,0,0,0.1); color: #333; line-height: 1.6;
         max-width: 900px; margin: auto; font-family: 'Sarabun', sans-serif;
     }
-    .report-header { border-bottom: 3px solid #1e40af; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
-    .report-section { background: #f8fafc; padding: 10px; font-weight: 700; margin: 15px 0; border-left: 4px solid #1e40af; color: #1e40af; }
-    .report-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #eee; padding: 8px 0; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. FULL DATA (ตารางเหล็ก)
+# 2. FULL DATA (Steel Sections)
 # ==========================================
 steel_db = {
     "H 100x100x6x8":    {"h": 100, "b": 100, "tw": 6,   "tf": 8,   "Ix": 383,    "Zx": 76.5,  "w": 17.2},
@@ -119,11 +115,11 @@ def get_capacity(L_m):
 
 w_shear, w_moment, w_defl, user_safe_load, user_cause = get_capacity(user_span)
 
-V_actual = user_safe_load * user_span / 2
-M_actual = user_safe_load * user_span**2 / 8
-delta_actual = (5 * (user_safe_load/100) * ((user_span*100)**4)) / (384 * E_mod * Ix)
-delta_allow = (user_span*100) / defl_lim_val
-V_design = V_actual if design_mode == "Actual Load" else V_cap * (target_pct / 100)
+v_act = user_safe_load * user_span / 2
+m_act = user_safe_load * user_span**2 / 8
+d_act = (5 * (user_safe_load/100) * ((user_span*100)**4)) / (384 * E_mod * Ix)
+d_all = (user_span*100) / defl_lim_val
+V_design = v_act if design_mode == "Actual Load" else V_cap * (target_pct / 100)
 
 # ==========================================
 # 4. UI RENDERING
@@ -134,7 +130,6 @@ with tab1:
     st.subheader(f"Engineering Analysis: {sec_name}")
     cause_color = "#dc2626" if user_cause == "Shear" else ("#d97706" if user_cause == "Moment" else "#059669")
 
-    # --- 1. Main Highlight Card ---
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -146,9 +141,6 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 2. Detailed Verification (Ratio + W Calculation) ---
-    st.markdown("### 🔍 Detailed Verification (Ratio & Capacity)")
-    
     def render_check_ratio_with_w(title, act, lim, ratio_label, eq_w, eq_act, eq_ratio):
         ratio = act / lim
         is_pass = ratio <= 1.01 
@@ -178,27 +170,27 @@ with tab1:
     
     with c1:
         render_check_ratio_with_w(
-            "Shear Check", V_actual, V_cap, "V/V_cap",
+            "Shear Check", v_act, V_cap, "V/V_cap",
             fr"w_{{limit}} = \frac{{2 \cdot V_{{cap}}}}{{L}} = \frac{{2 \cdot {V_cap:,.0f}}}{{{L_cm_disp:,.0f}}} \cdot 100 = {w_shear:,.0f} \text{{ kg/m}}",
-            fr"V_{{act}} = \frac{{w \cdot L}}{{2}} = \frac{{{user_safe_load:,.0f} \cdot {user_span}}}{{2}} = {V_actual:,.0f} \text{{ kg}}",
-            fr"Ratio = \frac{{{V_actual:,.0f}}}{{{V_cap:,.0f}}} = {V_actual/V_cap:.3f}"
+            fr"V_{{act}} = \frac{{w \cdot L}}{{2}} = \frac{{{user_safe_load:,.0f} \cdot {user_span}}}{{2}} = {v_act:,.0f} \text{{ kg}}",
+            fr"Ratio = \frac{{{v_act:,.0f}}}{{{V_cap:,.0f}}} = {v_act/V_cap:.3f}"
         )
     with c2:
         render_check_ratio_with_w(
-            "Moment Check", M_actual, (M_cap/100), "M/M_cap",
+            "Moment Check", m_act, (M_cap/100), "M/M_cap",
             fr"w_{{limit}} = \frac{{8 \cdot M_{{cap}}}}{{L^2}} = \frac{{8 \cdot {M_cap:,.0f}}}{{{L_cm_disp:,.0f}^2}} \cdot 100 = {w_moment:,.0f} \text{{ kg/m}}",
-            fr"M_{{act}} = \frac{{w \cdot L^2}}{{8}} = \frac{{{user_safe_load:,.0f} \cdot {user_span}^2}}{{8}} = {M_actual:,.0f} \text{{ kg.m}}",
-            fr"Ratio = \frac{{{M_actual:,.0f}}}{{{M_cap/100:,.0f}}} = {M_actual/(M_cap/100):.3f}"
+            fr"M_{{act}} = \frac{{w \cdot L^2}}{{8}} = \frac{{{user_safe_load:,.0f} \cdot {user_span}^2}}{{8}} = {m_act:,.0f} \text{{ kg.m}}",
+            fr"Ratio = \frac{{{m_act:,.0f}}}{{{M_cap/100:,.0f}}} = {m_act/(M_cap/100):.3f}"
         )
     with c3:
         render_check_ratio_with_w(
-            "Deflection Check", delta_actual, delta_allow, "Δ/Δ_allow",
-            fr"w_{{limit}} = \frac{{384 E I \Delta_{{all}}}}{{5 L^4}} = \frac{{384 \cdot 2.04 \cdot 10^6 \cdot {Ix} \cdot {delta_allow:.2f}}}{{5 \cdot {L_cm_disp:,.0f}^4}} \cdot 100 = {w_defl:,.0f} \text{{ kg/m}}",
-            fr"\Delta_{{act}} = \frac{{5 w L^4}}{{384 E I}} = {delta_actual:.3f} \text{{ cm}}",
-            fr"Ratio = \frac{{{delta_actual:.3f}}}{{{delta_allow:.3f}}} = {delta_actual/delta_allow:.3f}"
+            "Deflection Check", d_act, d_all, "Δ/Δ_allow",
+            fr"w_{{limit}} = \frac{{384 E I \Delta_{{all}}}}{{5 L^4}} = \frac{{384 \cdot 2.04 \cdot 10^6 \cdot {Ix} \cdot {d_all:.2f}}}{{5 \cdot {L_cm_disp:,.0f}^4}} \cdot 100 = {w_defl:,.0f} \text{{ kg/m}}",
+            fr"\Delta_{{act}} = \frac{{5 w L^4}}{{384 E I}} = {d_act:.3f} \text{{ cm}}",
+            fr"Ratio = \frac{{{d_act:.3f}}}{{{d_all:.3f}}} = {d_act/d_all:.3f}"
         )
 
-    # --- 3. Capacity Graphic Graph (With Position Marker) ---
+    # --- Capacity Graphic Graph ---
     st.markdown("### Capacity Envelope Curve")
     spans = np.linspace(2, 12, 100)
     data_env = [get_capacity(s) for s in spans]
@@ -207,14 +199,7 @@ with tab1:
     fig.add_trace(go.Scatter(x=spans, y=[d[1] for d in data_env], name='Moment Limit', line=dict(color='#f59e0b', dash='dash')))
     fig.add_trace(go.Scatter(x=spans, y=[d[2] for d in data_env], name='Deflection Limit', line=dict(color='#3b82f6', dash='dash')))
     fig.add_trace(go.Scatter(x=spans, y=[d[3] for d in data_env], name='Safe Envelope', fill='tozeroy', fillcolor='rgba(37, 99, 235, 0.1)', line=dict(color='#1e40af', width=4)))
-    
-    # ADD MARKER AT DESIGN POINT
-    fig.add_trace(go.Scatter(
-        x=[user_span], y=[user_safe_load], mode='markers+text', name='Design Point',
-        text=[f"  ({user_span}m, {user_safe_load:,.0f}kg/m)"], textposition="top right",
-        marker=dict(color='red', size=12, symbol='diamond', line=dict(width=2, color='white'))
-    ))
-
+    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers+text', name='Design Point', text=[f"  ({user_span}m, {user_safe_load:,.0f}kg/m)"], textposition="top right", marker=dict(color='red', size=12, symbol='diamond', line=dict(width=2, color='white'))))
     fig.update_layout(hovermode="x unified", height=450, margin=dict(t=20, b=20, l=20, r=20), plot_bgcolor='white')
     st.plotly_chart(fig, use_container_width=True)
 
@@ -222,7 +207,7 @@ with tab2:
     try:
         req_bolt, v_bolt = conn.render_connection_tab(V_design, bolt_size, method, is_lrfd, p)
     except Exception as e:
-        st.info("Connection module is being updated...")
+        st.info("Connection module updating...")
         req_bolt, v_bolt = 0, 0
 
 with tab3:
@@ -233,21 +218,20 @@ with tab3:
     st.dataframe(df.style.format("{:,.0f}", subset=[f"Max {label_load} (kg/m)"]), use_container_width=True)
 
 with tab4:
-    # --- Integration with report_generator.py ---
     try:
-        # สรุปข้อมูลทั้งหมดส่งไปยัง Module Report
+        # ใช้ชื่อ Key เป็นตัวเล็กทั้งหมดเพื่อให้ตรงกับใน report_generator.py
         full_res = {
             'w_shear': w_shear,
             'w_moment': w_moment,
             'w_defl': w_defl,
             'w_safe': user_safe_load,
             'cause': user_cause,
-            'V_act': V_actual,
-            'M_act': M_actual,
-            'd_act': delta_actual,
-            'V_cap': V_cap,
-            'M_cap': M_cap,
-            'd_all': delta_allow
+            'v_act': v_act,
+            'm_act': m_act,
+            'd_act': d_act,
+            'v_cap': V_cap,
+            'm_cap': M_cap,
+            'd_all': d_all
         }
         
         bolt_data = {
@@ -256,18 +240,7 @@ with tab4:
             'cap': v_bolt if 'v_bolt' in locals() else 0
         }
 
-        # เรียกใช้ไฟล์ report_generator.py
         rep.render_report_tab(method, is_lrfd, sec_name, fy, p, full_res, bolt_data)
 
     except Exception as e:
-        st.error(f"Error rendering report from module: {e}")
-        # Fallback Report (กรณีหาไฟล์ไม่เจอ)
-        st.markdown(f"""
-        <div class="report-paper">
-            <h3>DESIGN SUMMARY REPORT</h3>
-            <hr>
-            <p>Section: {sec_name} | Span: {user_span}m</p>
-            <p>Governing Load: <b>{user_safe_load:,.0f} kg/m</b></p>
-            <p>Controlled by: {user_cause}</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.error(f"Error rendering report: {e}")
