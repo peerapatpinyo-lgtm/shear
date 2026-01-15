@@ -1,111 +1,160 @@
+# connection_design.py (V28 - The Final Masterpiece)
 import streamlit as st
 import math
 import plotly.graph_objects as go
 
 def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade, thread_type="N", T_design=0):
-    # --- 1. SETUP & MATERIAL ---
+    """
+    V_design: Force (kg)
+    T_design: Tension Force (kg)
+    thread_type: "N" (Threads included) หรือ "X" (Threads excluded)
+    """
     p = section_data
-    h_mm, tw_mm = p['h'], p['tw']
+    h_mm, tw_mm, tf_mm = p['h'], p['tw'], p['tf']
     tw_cm = tw_mm / 10
-    Fy, Fu = 2450, 4000 # SS400 Standard (kg/cm2)
+    Fy, Fu = 2450, 4000 # SS400 (kg/cm2)
 
-    # --- 2. BOLT CONSTANTS (AISC Table J3.2) ---
+    # 1. BOLT & HOLE GEOMETRY (AISC Table J3.3)
     b_areas = {"M16": 2.01, "M20": 3.14, "M22": 3.80, "M24": 4.52}
     Ab = b_areas.get(bolt_size, 3.14)
     d_mm = int(bolt_size[1:])
-    d_cm, dh_cm = d_mm / 10, (d_mm + 2) / 10 
+    d_cm = d_mm / 10
+    dh_cm = (d_mm + 2) / 10 # Standard Hole (d+2mm)
 
-    bolt_db = {
-        "A325 (High Strength)": {"Fnt": 6325, "Fnv_N": 3795, "Fnv_X": 4780},
-        "Grade 8.8 (Standard)": {"Fnt": 5300, "Fnv_N": 3200, "Fnv_X": 4000},
-        "A490 (Premium)":       {"Fnt": 7940, "Fnv_N": 4780, "Fnv_X": 5975}
+    # 2. NOMINAL STRENGTHS (AISC Table J3.2) - ปรับปรุงตามเกรดและเกลียว
+    # แยกเคส Fnv ตามที่คุณแนะนำ (N vs X)
+    bolt_map = {
+        "A325 (High Strength)": {"Fnv_N": 3795, "Fnv_X": 4780, "Fnt": 6325},
+        "Grade 8.8 (Standard)": {"Fnv_N": 3200, "Fnv_X": 4000, "Fnt": 5300},
+        "A490 (Premium)":       {"Fnv_N": 4780, "Fnv_X": 5975, "Fnt": 7940}
     }
-    spec = bolt_db.get(bolt_grade, bolt_db["Grade 8.8 (Standard)"])
-    Fnt, Fnv = spec["Fnt"], (spec["Fnv_N"] if thread_type == "N" else spec["Fnv_X"])
+    spec = bolt_map.get(bolt_grade, bolt_map["Grade 8.8 (Standard)"])
+    Fnv = spec["Fnv_N"] if thread_type == "N" else spec["Fnv_X"]
+    Fnt = spec["Fnt"]
 
-    # --- 3. SAFETY FACTORS (AISC 360-16) ---
+    # 3. DESIGN PHILOSOPHY (LRFD vs ASD) - แยกหน้าตา LaTeX ให้ต่างกันชัดเจน
     if is_lrfd:
         phi, omega = 0.75, 1.00
-        method_label, prefix = "LRFD", r"\phi R_n"
+        phi_y, omega_y = 1.00, 1.00
+        method_name = "LRFD (Load and Resistance Factor Design)"
+        calc_label = r"\phi R_n = 0.75 \times"
     else:
         phi, omega = 1.00, 2.00
-        method_label, prefix = "ASD", r"R_n / \Omega"
+        phi_y, omega_y = 1.00, 1.50
+        method_name = "ASD (Allowable Strength Design)"
+        calc_label = r"R_n / \Omega = R_n / 2.00 ="
 
-    # --- 4. PRELIMINARY LAYOUT ---
+    # 4. INITIAL BOLT CALCULATION
     rn_shear_1b = Fnv * Ab
     rn_bearing_1b = 2.4 * d_cm * tw_cm * Fu
-    cap_1b = (phi * min(rn_shear_1b, rn_bearing_1b)) / omega
+    # กำลังต่อตัว (Governing Shear/Bearing)
+    cap_1b_shear = (phi * min(rn_shear_1b, rn_bearing_1b)) / omega
     
-    n_bolts = max(2, math.ceil(V_design / cap_1b))
+    n_bolts = max(2, math.ceil(V_design / cap_1b_shear))
     if n_bolts % 2 != 0: n_bolts += 1
     n_rows = n_bolts // 2
 
-    s_pitch, l_edge = 3.0 * d_mm, 1.5 * d_mm
-    lc_cm = (l_edge/10) - (dh_cm / 2)
+    # 5. SPACING & LAYOUT (AISC J3.3)
+    s_pitch = 3.0 * d_mm
+    l_edge = 1.5 * d_mm
+    lc_cm = (l_edge/10) - (dh_cm / 2) # Clear distance
 
-    # --- 5. LIMIT STATES CALCULATION ---
-    # Case A: Bolt Shear
-    Rn_shear_total = n_bolts * Fnv * Ab
-    cap_shear = (phi * Rn_shear_total) / omega
-
-    # Case B: Bearing/Tear-out
-    Rn_bearing_total = n_bolts * (2.4 * d_cm * tw_cm * Fu)
-    Rn_tearout_total = n_bolts * (1.2 * lc_cm * tw_cm * Fu)
-    cap_bearing = (phi * min(Rn_bearing_total, Rn_tearout_total)) / omega
-
-    # Case C: Combined Tension (J3.7)
-    frv = V_design / (n_bolts * Ab)
+    # 6. LIMIT STATES ANALYSIS
+    # --- Case 1: Bolt Shear (J3.6) ---
+    Rn_bolt_shear = n_bolts * Fnv * Ab
+    # --- Case 2: Combined Shear & Tension (J3.7) ---
+    frv = V_design / (n_bolts * Ab) 
     if is_lrfd:
         Fnt_prime = min(1.3 * Fnt - (Fnt / (0.75 * Fnv)) * frv, Fnt)
     else:
         Fnt_prime = min(1.3 * Fnt - (2.0 * Fnt / Fnv) * frv, Fnt)
-    cap_combined = (phi * n_bolts * Fnt_prime * Ab) / omega
+    Rn_combined = n_bolts * Fnt_prime * Ab
+    
+    # --- Case 3: Bearing & Tear-out (J3.10) ---
+    Rn_bear = n_bolts * (2.4 * d_cm * tw_cm * Fu)
+    Rn_tear = n_bolts * (1.2 * lc_cm * tw_cm * Fu)
+    Rn_bearing_gov = min(Rn_bear, Rn_tear)
 
-    # Case D: Block Shear (J4.3)
+    # --- Case 4: Block Shear (J4.3) ---
     Anv = ((n_rows-1)*(s_pitch/10) + l_edge/10 - (n_rows-0.5)*dh_cm) * tw_cm * 2
     Ant = (2 * l_edge/10 - 1.0 * dh_cm) * tw_cm
     Rn_block = min(0.6*Fu*Anv + 1.0*Fu*Ant, 0.6*Fy*Anv + 1.0*Fu*Ant)
-    cap_block = (phi * Rn_block) / omega
 
-    # --- 6. UI PRESENTATION ---
-    st.header(f"⚖️ Final Engineering Report ({method_label})")
-    
-    # Dashboard
-    res = [("Bolt Shear", cap_shear, V_design), ("Bearing/Tear", cap_bearing, V_design), 
-           ("Combined T-V", cap_combined, T_design), ("Block Shear", cap_block, V_design)]
-    
-    m_cols = st.columns(4)
-    for i, (name, cap, force) in enumerate(res):
-        ratio = force / cap if cap > 0 else 0
-        m_cols[i].metric(name, f"{cap:,.0f} kg", f"Ratio {ratio:.2f}", delta_color="normal" if ratio <= 1 else "inverse")
+    # 7. CAPACITY SUMMARY
+    caps = {
+        "Bolt Shear": (phi * Rn_bolt_shear) / omega,
+        "Bearing/Tear-out": (phi * Rn_bearing_gov) / omega,
+        "Block Shear": (phi * Rn_block) / omega,
+        "Combined T-V": (phi * Rn_combined) / omega,
+        "Web Yielding": (phi_y * 0.6 * Fy * (h_mm * tw_mm / 100)) / omega_y
+    }
 
+    # --- UI RENDERING ---
+    st.title(f"🔍 {method_name}")
+    st.info(f"AISC 360-16 | Bolt: {bolt_grade} ({thread_type}) | $F_{{nv}}$: {Fnv} kg/cm²")
+
+    # Dashboard Metrics
+    cols = st.columns(len(caps))
+    for i, (name, val) in enumerate(caps.items()):
+        force = V_design if name != "Combined T-V" else T_design
+        ratio = force / val if val > 0 else 0
+        color = "normal" if ratio <= 1.0 else "inverse"
+        cols[i].metric(name, f"{val:,.0f} kg", f"Ratio {ratio:.2f}", delta_color=color)
+
+    # Sketch Section (คงไว้ตามที่คุณชอบ)
     st.divider()
-    
-    # Graphic and Check
-    c1, c2 = st.columns([1, 1])
-    with c1:
+    c_draw, c_info = st.columns([1.5, 1])
+    with c_draw:
         fig = go.Figure()
-        fig.add_shape(type="rect", x0=0, y0=0, x1=10, y1=h_mm, fillcolor="rgba(0,0,255,0.05)", line_color="blue")
+        fig.add_shape(type="rect", x0=0, y0=0, x1=10, y1=h_mm, fillcolor="rgba(37, 99, 235, 0.1)", line_color="#2563eb")
         start_y = (h_mm/2) - ((n_rows-1)*s_pitch)/2
         for r in range(n_rows):
             y = start_y + r*s_pitch
-            for x in [3, 7]: fig.add_trace(go.Scatter(x=[x], y=[y], mode='markers', marker=dict(size=14, color='red')))
-        fig.update_layout(xaxis_visible=False, yaxis_visible=False, height=300, margin=dict(l=0,r=0,t=0,b=0))
+            for x in [3, 7]:
+                fig.add_trace(go.Scatter(x=[x], y=[y], mode='markers', marker=dict(size=14, color='#ef4444', line=dict(width=2, color='white'))))
+        fig.update_layout(xaxis_visible=False, yaxis_visible=False, height=350, margin=dict(l=0,r=0,t=0,b=0), plot_bgcolor='white', title="Connection Sketch")
         st.plotly_chart(fig, use_container_width=True)
-    
-    with c2:
-        st.subheader("📍 Geometry & Safety")
-        st.write(f"- Bolt: {bolt_grade} ({thread_type})")
-        st.write(f"- Pitch/Edge: {s_pitch}/{l_edge} mm")
-        if any(f/c > 1.0 for _, c, f in res if c > 0):
-            st.error("❌ DESIGN FAILED: Increase Bolt Size or Number of Bolts")
+    with c_info:
+        st.markdown("### 📏 Layout Verification")
+        st.write(f"- **Pitch (s):** {s_pitch} mm")
+        st.write(f"- **Edge (le):** {l_edge} mm")
+        st.write(f"- **Thread Condition:** Type {thread_type}")
+
+    # 8. STEP-BY-STEP CALCULATION (แยกหน้าตาตามที่คุณสั่ง)
+    st.markdown("---")
+    st.subheader("📝 รายการคำนวณแยกสูตรตามระบบที่เลือก (Calculation Detail)")
+
+    with st.expander("STEP 1: Bolt Shear (AISC J3.6)", expanded=True):
+        st.latex(fr"F_{{nv}} = {Fnv} \text{{ kg/cm}}^2, \quad A_b = {Ab} \text{{ cm}}^2")
+        st.latex(fr"R_n = F_{{nv}} A_b N_b = {Fnv} \cdot {Ab} \cdot {n_bolts} = {Rn_bolt_shear:,.0f} \text{{ kg}}")
+        st.latex(fr"{calc_label} {Rn_bolt_shear:,.0f} = {caps['Bolt Shear']:,.0f} \text{{ kg}}")
+        
+
+    with st.expander("STEP 2: Combined Shear & Tension (AISC J3.7)"):
+        st.latex(fr"f_{{rv}} = V / (N A_b) = {frv:.1f} \text{{ kg/cm}}^2")
+        if is_lrfd:
+            st.latex(fr"F'_{{nt}} = 1.3F_{{nt}} - \frac{{F_{{nt}}}}{{0.75 \cdot F_{{nv}}}} f_{{rv}} = {Fnt_prime:.1f} \text{{ kg/cm}}^2")
+            st.latex(fr"\phi R_n = 0.75 (F'_{{nt}} A_b N_b) = {caps['Combined T-V']:,.0f} \text{{ kg}}")
         else:
-            st.success("✅ DESIGN PASS: Meets AISC 360-16 Requirements")
+            st.latex(fr"F'_{{nt}} = 1.3F_{{nt}} - \frac{{2.0 \cdot F_{{nt}}}}{{F_{{nv}}}} f_{{rv}} = {Fnt_prime:.1f} \text{{ kg/cm}}^2")
+            st.latex(fr"R_n / \Omega = \frac{{F'_{{nt}} A_b N_b}}{{2.00}} = {caps['Combined T-V']:,.0f} \text{{ kg}}")
+        
 
-    with st.expander("📝 Detailed Calculation (AISC 360-16 Formulae)"):
-        st.latex(fr"\text{{Bolt Shear: }} {prefix} = {(phi*Rn_shear_total)/omega:,.0f} \text{{ kg}}")
-        st.latex(fr"\text{{Block Shear: }} {prefix} = {cap_block:,.0f} \text{{ kg}}")
-        if T_design > 0:
-            st.latex(fr"F'_{{nt}} = {Fnt_prime:.1f} \text{{ kg/cm}}^2 \quad \to \text{{Interaction Pass}}")
+    with st.expander("STEP 3: Block Shear Rupture (AISC J4.3)"):
+        st.write(f"Net Shear Area (Anv): {Anv:.2f} cm² | Net Tension Area (Ant): {Ant:.2f} cm²")
+        st.latex(fr"R_n = \min(0.6 F_u A_{{nv}} + U_{{bs}} F_u A_{{nt}}, 0.6 F_y A_{{nv}} + U_{{bs}} F_u A_{{nt}}) = {Rn_block:,.0f} \text{{ kg}}")
+        st.latex(fr"{calc_label} {Rn_block:,.0f} = {caps['Block Shear']:,.0f} \text{{ kg}}")
+        
 
-    return n_bolts, cap_1b
+    # 9. ENGINEERING RECOMMENDATIONS
+    max_ratio = max([V_design/v if name != "Combined T-V" else T_design/v for name, v in caps.items()])
+    if max_ratio > 1.0:
+        st.error(f"### ⚠️ Ratio เกินมาตรฐาน ({max_ratio:.2f})")
+        st.markdown(f"""
+        **ข้อแนะนำทางวิศวกรรมเพื่อแก้ไขจุดต่อ:**
+        - **หาก Bolt Shear เกิน:** เปลี่ยนจาก Thread Included (N) เป็น **Thread Excluded (X)** เพื่อใช้ค่า $F_{{nv}}$ ที่สูงขึ้น (3,200 -> 4,000)
+        - **หาก Bearing/Tear-out เกิน:** เพิ่มความหนาแผ่นเหล็ก หรือเพิ่มระยะขอบ ($L_e$)
+        - **หาก Combined เกิน:** ใช้น็อตเกรดสูงขึ้น เช่น **A490**
+        """)
+
+    return n_bolts, cap_1b_shear
