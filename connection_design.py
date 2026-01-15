@@ -1,14 +1,12 @@
 import streamlit as st
 import drawing_utils as du 
-import calculation_report as calc # <--- อย่าลืมสร้างไฟล์ calculation_report.py ก่อนนะครับ
+import calculation_report as calc 
 
 def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade, T_design=0):
     
     st.markdown(f"### 📐 Design Detail: **{conn_type}**")
     
-    # =========================================================================
-    # 1. INPUTS
-    # =========================================================================
+    # --- 1. INPUTS ---
     c1, c2, c3 = st.columns(3)
     d_mm = int(bolt_size[1:])
     
@@ -24,9 +22,11 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         s_h = st.number_input("Pitch H", float(min_pitch), 150.0, float(max(60, min_pitch)))
         
     with c3:
-        st.caption("🧱 Plate Config (mm)")
+        st.caption("🧱 Plate & Weld (mm)")
         e1_mm = st.number_input("Gap to Bolt (e1)", 10.0, 100.0, 50.0)
         t_plate = st.number_input("Thickness", 6.0, 40.0, 10.0)
+        # 🆕 เพิ่ม Input รอยเชื่อม (Fillet Weld)
+        weld_size = st.selectbox("Weld Size (mm)", [4, 6, 8, 10, 12], index=1)
 
     st.divider()
     
@@ -34,7 +34,6 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     st.markdown("##### 📏 Plate Dimensions (Customizable)")
     c4, c5 = st.columns(2)
     
-    # Calculate Minimum Required Dimensions
     req_h = (n_rows - 1) * s_v + 80 
     req_w = e1_mm + (n_cols - 1) * s_h + 40
     
@@ -43,14 +42,10 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     with c5:
         plate_w = st.number_input(f"Plate Width (Min {req_w:.0f})", min_value=float(req_w), value=float(req_w), step=5.0)
 
-    # =========================================================================
-    # 2. DATA PACKAGING (สร้างตัวแปรตรงนี้ เพื่อให้พร้อมใช้ทั้ง Drawing และ Calc)
-    # =========================================================================
-    # คำนวณระยะขอบจริง
+    # --- 2. DATA PACKAGING ---
     real_lv = (plate_h - (n_rows - 1) * s_v) / 2
     l_side = plate_w - (e1_mm + (n_cols - 1) * s_h)
 
-    # สร้าง Dictionary ข้อมูล
     beam_data = {
         'h': float(section_data.get('h', 350)), 
         'b': float(section_data.get('b', 175)), 
@@ -64,55 +59,33 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         't': t_plate, 
         'e1': e1_mm, 
         'lv': real_lv, 
-        'l_side': l_side
+        'l_side': l_side,
+        'weld_size': weld_size # 🆕 ส่งค่า weld size ไปด้วย
     }
     
-    bolt_data = {
-        'd': d_mm, 
-        'rows': n_rows, 
-        'cols': n_cols, 
-        's_v': s_v, 
-        's_h': s_h
-    }
+    bolt_data = {'d': d_mm, 'rows': n_rows, 'cols': n_cols, 's_v': s_v, 's_h': s_h}
 
-    # =========================================================================
-    # 3. DRAWINGS
-    # =========================================================================
-    # Config for Plotly Download
+    # --- 3. DRAWINGS ---
     plotly_config = {
-        'displayModeBar': True,
-        'displaylogo': False,
+        'displayModeBar': True, 'displaylogo': False,
         'modeBarButtonsToRemove': ['zoom', 'pan', 'select', 'lasso2d', 'autoScale', 'resetScale'],
-        'toImageButtonOptions': {
-            'format': 'png',
-            'filename': f'connection_{conn_type}_{n_rows}x{n_cols}',
-            'height': 800,
-            'width': 800,
-            'scale': 2
-        }
+        'toImageButtonOptions': {'format': 'png', 'filename': f'connection_{conn_type}', 'height': 800, 'width': 800, 'scale': 2}
     }
 
     col1, col2, col3 = st.columns(3)
-    
     with col1:
         fig1 = du.create_plan_view(beam_data, plate_data, bolt_data)
         st.plotly_chart(fig1, use_container_width=True, config=plotly_config)
-        
     with col2:
         fig2 = du.create_front_view(beam_data, plate_data, bolt_data)
         st.plotly_chart(fig2, use_container_width=True, config=plotly_config)
-        
     with col3:
         fig3 = du.create_side_view(beam_data, plate_data, bolt_data)
         st.plotly_chart(fig3, use_container_width=True, config=plotly_config)
 
-# ... (โค้ดส่วนบนเหมือนเดิม) ...
-
-    # =========================================================================
-    # 4. CALCULATION REPORT
-    # =========================================================================
+    # --- 4. CALCULATION REPORT ---
     st.divider()
-    st.markdown("### 🧮 Calculation Results")
+    st.markdown("### 🧮 Calculation Results (AISC 360-16)")
     
     report_markdown = calc.generate_report(
         V_load=V_design,
@@ -125,7 +98,6 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     )
     
     with st.expander("📄 Click to view full calculation details", expanded=True):
-        # ✅ แก้ไขบรรทัดนี้: เติม unsafe_allow_html=True
-        st.markdown(report_markdown, unsafe_allow_html=True) 
+        st.markdown(report_markdown, unsafe_allow_html=True)
 
     return n_rows*n_cols, 10000
