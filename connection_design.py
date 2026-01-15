@@ -126,17 +126,25 @@ def render_connection_tab(V_design, method, is_lrfd, section_data, conn_type, T_
     with t2: st.plotly_chart(dwg.create_front_view(beam_draw, plate_draw, bolts_draw), use_container_width=True)
     with t3: st.plotly_chart(dwg.create_side_view(beam_draw, plate_draw, bolts_draw), use_container_width=True)
 
+# connection_design.py (Updated Return Section Only)
+# ... (Calculations same as before) ...
+
     # =========================================================================
-    # 4. RETURN DATA
+    # 4. RETURN DATA FOR REPORT
     # =========================================================================
     return {
-        'qty': n_total,
-        'capacity': total_bolt_capacity,
-        'bolt_data': {
-            'd': d_mm,
-            'grade_name': selected_grade_name,
-            'Fnv': Fnv,
-            'rows': n_rows, 'cols': n_cols,
-            's_v': s_v, 's_h': s_h
+        'pass': ratio <= 1.0,
+        'demand': V_design,
+        'qty': nt,
+        'conn_type': conn_type,
+        'report_data': {
+            'method': "LRFD" if is_lrfd else "ASD",
+            'bolt_info': f"{nt} x M{d} ({sel_grade})",
+            'plate_info': f"t={tp}mm (Fy={Fy_plate} ksc)",
+            'cap_shear': Cap_shear_total,
+            'Rn_shear': Rn_shear_bolt,
+            'cap_bear': Cap_bear_total,
+            'Rn_bear': Rn_bear,
+            'qty': nt
         }
     }
