@@ -19,31 +19,21 @@ def add_cad_dim(fig, x0, y0, x1, y1, text, type="horiz", offset=0):
     arrow_size = 6
     if type == "horiz":
         y_dim = y0 + offset
-        # Left Extension
         fig.add_shape(type="line", x0=x0, y0=y0, x1=x0, y1=y_dim, line=dict(color=C_DIM, width=0.5))
-        # Right Extension (Fix: color -> C_DIM)
         fig.add_shape(type="line", x0=x1, y0=y1, x1=x1, y1=y_dim, line=dict(color=C_DIM, width=0.5))
-        # Main Line
         fig.add_shape(type="line", x0=x0, y0=y_dim, x1=x1, y1=y_dim, line=dict(color=C_DIM, width=1))
-        # Arrows
         fig.add_annotation(x=x0, y=y_dim, ax=arrow_size, ay=0, arrowhead=2, arrowsize=1.5, arrowcolor=C_DIM, text="")
         fig.add_annotation(x=x1, y=y_dim, ax=-arrow_size, ay=0, arrowhead=2, arrowsize=1.5, arrowcolor=C_DIM, text="")
-        # Text
         fig.add_annotation(x=(x0+x1)/2, y=y_dim, text=f"<b>{text}</b>", showarrow=False, yshift=8 if offset>0 else -8,
                            font=dict(size=11, color=C_DIM, family="Arial"), bgcolor="white")
 
     elif type == "vert":
         x_dim = x0 + offset
-        # Top Extension
         fig.add_shape(type="line", x0=x0, y0=y0, x1=x_dim, y1=y0, line=dict(color=C_DIM, width=0.5))
-        # Bottom Extension
         fig.add_shape(type="line", x0=x1, y0=y1, x1=x_dim, y1=y1, line=dict(color=C_DIM, width=0.5))
-        # Main Line
         fig.add_shape(type="line", x0=x_dim, y0=y0, x1=x_dim, y1=y1, line=dict(color=C_DIM, width=1))
-        # Arrows
         fig.add_annotation(x=x_dim, y=y0, ax=0, ay=-arrow_size, arrowhead=2, arrowsize=1.5, arrowcolor=C_DIM, text="")
         fig.add_annotation(x=x_dim, y=y1, ax=0, ay=arrow_size, arrowhead=2, arrowsize=1.5, arrowcolor=C_DIM, text="")
-        # Text
         fig.add_annotation(x=x_dim, y=(y0+y1)/2, text=f"<b>{text}</b>", showarrow=False, xshift=12 if offset>0 else -12,
                            font=dict(size=11, color=C_DIM, family="Arial"), textangle=-90, bgcolor="white")
 
@@ -58,7 +48,7 @@ def add_centerline(fig, x0, y0, x1, y1):
     fig.add_shape(type="line", x0=x0, y0=y0, x1=x1, y1=y1, line=dict(color=C_CL, width=1, dash="dashdot"), opacity=0.7)
 
 # =============================================================================
-# 1. PLAN VIEW (TOP) - Colored Section
+# 1. PLAN VIEW (TOP)
 # =============================================================================
 def create_plan_view(beam, plate, bolts):
     fig = go.Figure()
@@ -79,14 +69,13 @@ def create_plan_view(beam, plate, bolts):
     # Fin Plate (Bright Blue Section)
     py_max = tw/2 + t_pl
     fig.add_shape(type="rect", x0=0, y0=tw/2, x1=w_pl, y1=py_max, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_PLATE_FILL)
-    # Weld Triangle (Black Solid)
+    # Weld Triangle
     fig.add_trace(go.Scatter(x=[0, 6, 0, 0], y=[py_max, py_max, py_max+6, py_max], fill="toself", line_color="black", fillcolor="black", mode='lines', hoverinfo='skip'))
 
     # Bolts (Red)
     bx_start = e1
     for i in range(n_cols):
         bx = bx_start + i*s_h
-        # Shank & Head
         fig.add_shape(type="rect", x0=bx-d_bolt/2, y0=-tw/2, x1=bx+d_bolt/2, y1=py_max, line_width=1, fillcolor=C_BOLT_FILL)
         fig.add_shape(type="rect", x0=bx-d_bolt, y0=py_max, x1=bx+d_bolt, y1=py_max+(d_bolt*0.6), line_width=1, fillcolor=C_BOLT_FILL)
         add_centerline(fig, bx, -zoom_y+20, bx, zoom_y-20)
@@ -102,7 +91,6 @@ def create_plan_view(beam, plate, bolts):
             curr_x += s_h
     add_cad_dim(fig, curr_x, dim_y, w_pl, dim_y, f"{l_side:.0f}")
 
-    # Label
     add_leader(fig, w_pl/2, py_max, f"<b>PL-{t_pl}mm</b>", ax=20, ay=-40, color=C_PLATE_FILL)
 
     fig.update_layout(title="<b>PLAN VIEW</b> (Top Section)", plot_bgcolor="white", margin=dict(l=10,r=10,t=30,b=10), height=280,
@@ -111,7 +99,7 @@ def create_plan_view(beam, plate, bolts):
     return fig
 
 # =============================================================================
-# 2. FRONT VIEW (ELEVATION) - Colored Elements
+# 2. FRONT VIEW (ELEVATION)
 # =============================================================================
 def create_front_view(beam, plate, bolts):
     fig = go.Figure()
@@ -120,7 +108,7 @@ def create_front_view(beam, plate, bolts):
     s_v, s_h = bolts['s_v'], bolts['s_h']
     d_bolt, n_rows, n_cols = bolts['d'], bolts['rows'], bolts['cols']
 
-    # Beam Outline (Phantom Gray)
+    # Beam Outline
     fig.add_shape(type="rect", x0=0, y0=-h_beam/2, x1=w_pl+60, y1=h_beam/2, line=dict(color="#94a3b8", width=1, dash="dash"))
     fig.add_shape(type="line", x0=0, y0=h_beam/2-tf, x1=w_pl+60, y1=h_beam/2-tf, line=dict(color="#94a3b8", width=0.5, dash="dash"))
     fig.add_shape(type="line", x0=0, y0=-h_beam/2+tf, x1=w_pl+60, y1=-h_beam/2+tf, line=dict(color="#94a3b8", width=0.5, dash="dash"))
@@ -128,10 +116,10 @@ def create_front_view(beam, plate, bolts):
     # Column (Blue Side)
     fig.add_shape(type="rect", x0=-20, y0=-h_beam/2-20, x1=0, y1=h_beam/2+20, line=dict(color=C_BEAM_OUT, width=2), fillcolor=C_COL_FILL)
 
-    # Plate (Blue Outline, Light Blue Fill)
+    # Plate
     fig.add_shape(type="rect", x0=0, y0=-h_pl/2, x1=w_pl, y1=h_pl/2, line=dict(color=C_PLATE_FILL, width=2), fillcolor="rgba(14, 165, 233, 0.1)")
 
-    # Bolts (Red Outline & Cross)
+    # Bolts
     by_start = h_pl/2 - lv
     for r in range(n_rows):
         for c in range(n_cols):
@@ -159,7 +147,7 @@ def create_front_view(beam, plate, bolts):
     return fig
 
 # =============================================================================
-# 3. SIDE VIEW (SECTION) - Colored Section
+# 3. SIDE VIEW (SECTION) - Fixed Column Representation
 # =============================================================================
 def create_side_view(beam, plate, bolts):
     fig = go.Figure()
@@ -167,15 +155,34 @@ def create_side_view(beam, plate, bolts):
     t_pl, h_pl, lv = plate['t'], plate['h'], plate['lv']
     d_bolt, n_rows, s_v = bolts['d'], bolts['rows'], bolts['s_v']
 
-    # Column Face (Blue Line)
-    fig.add_shape(type="line", x0=-b/2, y0=-h/2-20, x1=-b/2, y1=h/2+20, line=dict(color=C_COL_FILL, width=3))
+    # --- 1. COLUMN BACKGROUND (The Fix) ---
+    # สมมติเสากว้างกว่าคานเล็กน้อย และอยู่ด้านหลัง (Background)
+    col_w_visual = b + 80  # ให้เสากว้างกว่าคาน 80mm
+    col_h_visual = h + 60
     
+    # วาดเส้นขอบเสา (Column Face Lines) ซ้ายและขวา
+    # ซ้าย
+    fig.add_shape(type="line", x0=-col_w_visual/2, y0=-col_h_visual/2, x1=-col_w_visual/2, y1=col_h_visual/2, 
+                  line=dict(color=C_COL_FILL, width=3))
+    # ขวา
+    fig.add_shape(type="line", x0=col_w_visual/2, y0=-col_h_visual/2, x1=col_w_visual/2, y1=col_h_visual/2, 
+                  line=dict(color=C_COL_FILL, width=3))
+    
+    # ถมสีพื้นหลังจางๆ ระหว่างเสา เพื่อให้รู้ว่าเป็น Support
+    fig.add_trace(go.Scatter(
+        x=[-col_w_visual/2, col_w_visual/2, col_w_visual/2, -col_w_visual/2],
+        y=[-col_h_visual/2, -col_h_visual/2, col_h_visual/2, col_h_visual/2],
+        fill="toself", mode='none', fillcolor='rgba(71, 85, 105, 0.1)', hoverinfo='skip'
+    ))
+
+    # --- 2. BEAM SECTION (Foreground) ---
     # I-Beam Section (Light Grey Fill)
-    fig.add_shape(type="rect", x0=-b/2, y0=h/2-tf, x1=b/2, y1=h/2, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL) # Top
-    fig.add_shape(type="rect", x0=-b/2, y0=-h/2, x1=b/2, y1=-h/2+tf, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL) # Bot
+    fig.add_shape(type="rect", x0=-b/2, y0=h/2-tf, x1=b/2, y1=h/2, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL) # Top Flange
+    fig.add_shape(type="rect", x0=-b/2, y0=-h/2, x1=b/2, y1=-h/2+tf, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL) # Bot Flange
     fig.add_shape(type="rect", x0=-tw/2, y0=-h/2+tf, x1=tw/2, y1=h/2-tf, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_BEAM_FILL) # Web
 
-    # Plate (Bright Blue Fill)
+    # --- 3. PLATE & BOLTS ---
+    # Plate (Bright Blue Fill) attached to web
     fig.add_shape(type="rect", x0=tw/2, y0=-h_pl/2, x1=tw/2+t_pl, y1=h_pl/2, line=dict(color=C_BEAM_OUT, width=1.5), fillcolor=C_PLATE_FILL)
 
     # Bolts (Red Fill)
@@ -188,10 +195,12 @@ def create_side_view(beam, plate, bolts):
 
     add_centerline(fig, 0, -h/2-30, 0, h/2+30)
 
-    # Label
+    # Labels
     add_leader(fig, b/2, h/2-tf/2, f"<b>Beam {h:.0f}</b>", ax=30, ay=-20, color=C_BEAM_OUT)
+    # Label Column Background
+    fig.add_annotation(x=-col_w_visual/2, y=0, text="<b>Column</b>", ax=-40, ay=0, showarrow=True, arrowcolor=C_COL_FILL, font=dict(color=C_COL_FILL, size=10))
 
     fig.update_layout(title="<b>SIDE VIEW</b> (Section)", plot_bgcolor="white", margin=dict(l=10,r=10,t=30,b=10), height=280,
-                      xaxis=dict(visible=False, range=[-b/2-30, b/2+50], fixedrange=True),
+                      xaxis=dict(visible=False, range=[-col_w_visual/2-50, col_w_visual/2+50], fixedrange=True),
                       yaxis=dict(visible=False, range=[-h/2-40, h/2+40], scaleanchor="x", scaleratio=1, fixedrange=True), showlegend=False)
     return fig
