@@ -39,7 +39,7 @@ def create_ishape(h, b, tw, tf, cx=0, cy=0, fill_col="#cbd5e1", line_col="black"
     return shapes
 
 # ==========================================
-# MAIN FUNCTION (UPDATED LOGIC: CENTER ALIGNMENT & CORRECT BOLTING)
+# MAIN FUNCTION (UPDATED: PLATE SIDE SELECTOR & CLEARER BEAM VISUAL)
 # ==========================================
 def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade, T_design=0):
     
@@ -79,23 +79,20 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
             e1_mm = st.number_input("Gap from Support (e1)", 10.0, 200.0, 50.0) # ระยะห่างจากผิวเสาถึง Bolt แถวแรก
             
             auto_h = (n_rows - 1) * s_v + (2 * l_edge_v_input)
-            
             if size_mode == "Custom":
                 plate_h = st.number_input("Plate Height (H)", min_value=float(min_req_h), max_value=float(h_beam), value=float(auto_h))
-                l_side = st.number_input("Side Margin (Ls)", 20.0, 100.0, 40.0) # ระยะจาก Bolt ตัวสุดท้ายถึงปลาย Plate
+                l_side = st.number_input("Side Margin (Ls)", 20.0, 100.0, 40.0)
             else:
                 plate_h, l_side = auto_h, st.number_input("Side Margin (Ls)", 20.0, 100.0, 40.0)
         with c3:
             st.success("**🧱 Material**")
             t_plate_mm = st.number_input("Plate Thickness (t_pl)", 6.0, 50.0, 10.0)
             
-            # Calculations
             real_lv = (plate_h - (n_rows-1)*s_v) / 2
-            # Plate Width (แนวนอน) = Gap(e1) + ระยะระหว่าง Bolt + ปลาย(Side Margin)
             plate_w = e1_mm + (n_cols - 1) * s_h + l_side
             
             st.write(f"**Actual Lv:** {real_lv:.1f} mm")
-            st.write(f"**Total Plate Width (W):** {plate_w:.0f} mm")
+            st.write(f"**Total W:** {plate_w:.0f} mm")
 
         fit_status = "CLASH" if plate_h > clear_web_h else "OK"
         n_total = n_rows * n_cols
@@ -110,140 +107,140 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
             st.metric("Bolt Shear Ratio", f"{(V_res*n_total)/Design_Shear:.2f}")
 
     # ==========================================
-    # TAB 2: SHOP DRAWING (CORRECTED LOGIC)
+    # TAB 2: SHOP DRAWING (IMPROVED VISUAL)
     # ==========================================
     with tab2:
-        st.markdown("#### 📍 Installation Alignment")
-        # Slider for Eccentricity (Offset Y) - เลื่อนคานออกจากกึ่งกลางเสา (ถ้าจำเป็น)
-        eccentricity = st.slider("Eccentricity (เยื้องศูนย์)", -50, 50, 0, 5, help="ขยับแนวคานออกจากกึ่งกลางเสา (ปกติเป็น 0)")
-        st.divider()
+        st.markdown("#### 📍 Installation Layout")
         
-        col_sec, col_elev = st.columns([1.2, 1])
+        # Controls
+        col_ctrl1, col_ctrl2 = st.columns(2)
+        with col_ctrl1:
+            plate_side = st.radio("ตำแหน่งเพลท (Plate Side)", ["Right of Web", "Left of Web"], horizontal=True, index=0)
+        with col_ctrl2:
+            eccentricity = st.slider("ขยับแนวคาน (Eccentricity)", -50, 50, 0, 5)
+
+        st.divider()
+        col_sec, col_elev = st.columns([1.3, 1])
         supp_col = "#334155" 
         
         # --- VIEW 1: SECTION A-A (TOP VIEW) ---
-        # มุมมองจากด้านบน ตัดผ่านคานและเสา
         with col_sec:
             st.markdown("**SECTION A-A (Top/Plan View)**")
             fig_sec = go.Figure()
             
-            view_w_limit = b_beam * 2 # ขอบเขตการมองเห็นในแกน Y
+            view_limit_y = b_beam * 1.5
 
             if is_beam_to_beam:
-                # (Logic Beam-to-Beam ยังคงไว้ตามเดิม หรือปรับปรุงได้ตามต้องการ)
-                st.warning("Beam-to-Beam Drawing not fully updated in this snippet.")
-                start_x = 0
+                st.warning("Preview available for Beam-to-Column only.")
             else:
-                # =========================================
-                # LOGIC: BEAM TO COLUMN (CENTER ALIGNED)
-                # =========================================
+                # ---------------------------------------------------------
+                # COORDINATE SYSTEM:
+                # Origin (0,0) = Intersection of Column Face and Column Centerline
+                # X-axis = Along the Beam
+                # Y-axis = Across the Column Width
+                # ---------------------------------------------------------
                 
-                # 1. COLUMN (FIXED AT 0,0)
-                # วาดเสาทางด้านซ้าย (X < 0)
-                # ให้ Center ของเสาอยู่ที่ Y = 0
+                col_face_x = 0
                 
-                col_face_x = 0 # ผิวเสาอยู่ที่ X=0
-                
-                # Column Flange (สี่เหลี่ยมยาวๆ แทนปีกเสา)
+                # 1. COLUMN (Fixed)
+                # วาดปีกเสา (Flange) เป็นแผ่นยาวแนวตั้ง
                 fig_sec.add_shape(type="rect", 
-                                  x0=col_face_x - 20, y0=-view_w_limit/2, 
-                                  x1=col_face_x, y1=view_w_limit/2, 
+                                  x0=col_face_x - 20, y0=-view_limit_y, 
+                                  x1=col_face_x, y1=view_limit_y, 
                                   fillcolor=supp_col, line_color="black")
                 
-                # Column Centerline (เส้นแกนเสา)
-                fig_sec.add_shape(type="line", x0=col_face_x-50, y0=0, x1=col_face_x+plate_w+100, y1=0, 
-                                  line=dict(color="gray", width=1, dash="dashdot"))
-                fig_sec.add_annotation(x=col_face_x-10, y=-view_w_limit/2+20, text="COLUMN", showarrow=False, font=dict(weight="bold", color="white"), textangle=-90)
+                fig_sec.add_annotation(x=col_face_x-10, y=0, text="COLUMN", textangle=-90, 
+                                       font=dict(color="white", weight="bold"), showarrow=False)
 
-                # 2. BEAM & PLATE GROUP (Center at Y = 0 + Eccentricity)
-                # ถ้า eccentricity = 0 คือ Web ของคานอยู่ตรง Center เสาเป๊ะ
+                # 2. BEAM (Moves with Eccentricity)
+                beam_center_y = eccentricity
                 
-                group_cy = eccentricity
+                # Beam Web Y Coordinates
+                web_y_min = beam_center_y - (tw_beam / 2)
+                web_y_max = beam_center_y + (tw_beam / 2)
                 
-                # [A] BEAM (Secondary Beam)
-                # Web ของคานจะวางอยู่ที่ Center Line (group_cy)
-                beam_start_x = col_face_x + 10 # เว้น Gap จากเสานิดหน่อย (Clearance ~10mm)
-                beam_len = plate_w + 120 
+                # Beam Flange Y Coordinates
+                flange_y_min = beam_center_y - (b_beam / 2)
+                flange_y_max = beam_center_y + (b_beam / 2)
                 
-                # พิกัด Y ของ Beam Web
-                web_y0 = group_cy - (tw_beam / 2)
-                web_y1 = group_cy + (tw_beam / 2)
+                # Beam X Coordinates
+                beam_start_x = col_face_x + 15 # Gap clearance (Standard ~10-15mm)
+                beam_end_x = col_face_x + plate_w + 150 # Draw beam longer than plate
                 
-                # วาด Beam Web
-                fig_sec.add_shape(type="rect", x0=beam_start_x, y0=web_y0, x1=beam_start_x + beam_len, y1=web_y1, 
+                # [DRAW] Beam Flanges (Transparent / Outline) - เพื่อให้รู้ว่าเป็น I-Beam
+                # Top Flange
+                fig_sec.add_shape(type="rect", x0=beam_start_x, y0=flange_y_min, x1=beam_end_x, y1=flange_y_max,
+                                  line=dict(color="gray", dash="dot"), fillcolor="rgba(200,200,200,0.1)")
+                
+                # [DRAW] Beam Web (Solid)
+                fig_sec.add_shape(type="rect", x0=beam_start_x, y0=web_y_min, x1=beam_end_x, y1=web_y_max,
                                   fillcolor="#d4d4d8", line_color="black")
                 
-                # วาด Beam Flanges (Top View เห็นเป็นเส้นขอบกว้างๆ)
-                flange_y0 = group_cy - (b_beam / 2)
-                flange_y1 = group_cy + (b_beam / 2)
-                
-                # Flange บน/ล่าง (โปร่งแสง หรือเส้นประ)
-                fig_sec.add_shape(type="line", x0=beam_start_x, y0=flange_y1, x1=beam_start_x+beam_len, y1=flange_y1, line=dict(color="gray"))
-                fig_sec.add_shape(type="line", x0=beam_start_x, y0=flange_y0, x1=beam_start_x+beam_len, y1=flange_y0, line=dict(color="gray"))
-                
-                fig_sec.add_annotation(x=beam_start_x+plate_w+20, y=group_cy, text="BEAM CL", font=dict(color="#b91c1c", size=10), yshift=10)
+                # Beam Centerline Label
+                fig_sec.add_shape(type="line", x0=col_face_x-50, y0=beam_center_y, x1=beam_end_x, y1=beam_center_y,
+                                  line=dict(color="#b91c1c", width=1, dash="dashdot"))
+                fig_sec.add_annotation(x=beam_end_x, y=beam_center_y, text="CL", font=dict(color="#b91c1c", size=10), xshift=10)
 
-                # [B] FIN PLATE
-                # Plate จะถูกเชื่อมติดกับผิวเสา (X=0)
-                # และวางแนบข้าง Beam Web
-                # ปกติวางด้านใดด้านหนึ่ง (สมมติวางด้านบนของ Web ใน Top View)
+                # 3. PLATE (Attached to Column, Laps with Web)
+                # Determine Side
+                if plate_side == "Right of Web": # Positive Y relative to Web
+                    p_y_min = web_y_max
+                    p_y_max = web_y_max + t_plate_mm
+                    weld_y = p_y_max # Text anchor
+                else: # Left of Web (Negative Y)
+                    p_y_max = web_y_min
+                    p_y_min = web_y_min - t_plate_mm
+                    weld_y = p_y_min
                 
                 p_x0 = col_face_x
                 p_x1 = col_face_x + plate_w
                 
-                # Plate Y Start = ผิวของ Web (web_y1)
-                p_y0 = web_y1 
-                p_y1 = web_y1 + t_plate_mm
-                
-                # วาด Plate
-                fig_sec.add_shape(type="rect", x0=p_x0, y0=p_y0, x1=p_x1, y1=p_y1, 
+                # [DRAW] Plate
+                fig_sec.add_shape(type="rect", x0=p_x0, y0=p_y_min, x1=p_x1, y1=p_y_max,
                                   fillcolor="#3b82f6", line_color="black", opacity=0.9)
                 
-                # Weld (เชื่อม Plate ติดเสา)
-                weld_s = 6
-                fig_sec.add_shape(type="path", path=f"M {p_x0},{p_y0} L {p_x0+weld_s},{p_y0} L {p_x0},{p_y1} Z", fillcolor="black") 
-                fig_sec.add_annotation(x=p_x0, y=p_y1+5, text="Weld", showarrow=True, arrowhead=2, ax=15, ay=-15, font=dict(size=9))
+                # [DRAW] Weld Symbol (Triangle at connection)
+                fig_sec.add_shape(type="path", path=f"M {p_x0},{p_y_min} L {p_x0+8},{p_y_min} L {p_x0},{(p_y_min+p_y_max)/2} Z", fillcolor="black")
+                fig_sec.add_shape(type="path", path=f"M {p_x0},{p_y_max} L {p_x0+8},{p_y_max} L {p_x0},{(p_y_min+p_y_max)/2} Z", fillcolor="black")
+                fig_sec.add_annotation(x=p_x0+5, y=weld_y, text="Weld", showarrow=True, arrowhead=2, ax=0, ay=20 if plate_side=="Left of Web" else -20, font=dict(size=10))
 
-                # [C] BOLTS
-                # Bolt ยึดระหว่าง Plate และ Web เท่านั้น (ไม่ทะลุเสา)
-                # แกน Bolt (Shank) ทะลุผ่าน Web (web_y0) ถึง Plate (p_y1)
-                
+                # 4. BOLTS (Pass through Plate & Web only)
                 bolt_start_x = col_face_x + e1_mm
                 
                 for c in range(n_cols):
                     bx = bolt_start_x + c*s_h
                     
-                    # 1. Bolt Shank (ตัวสกรู) 
-                    fig_sec.add_shape(type="rect", x0=bx-d_mm/2, y0=web_y0, x1=bx+d_mm/2, y1=p_y1, 
+                    # Bolt Shank (Red) - From outer face of Plate to outer face of Web
+                    shank_y0 = min(p_y_min, web_y_min)
+                    shank_y1 = max(p_y_max, web_y_max)
+                    
+                    fig_sec.add_shape(type="rect", x0=bx-d_mm/2, y0=shank_y0, x1=bx+d_mm/2, y1=shank_y1,
                                       fillcolor="#b91c1c", line_width=0)
                     
-                    # 2. Heads & Nuts (หัวน็อต)
+                    # Bolt Heads/Nuts (Dark Red)
                     head_h = d_mm * 0.6
-                    # หัวบน (ฝั่ง Plate)
-                    fig_sec.add_shape(type="rect", x0=bx-d_mm, y0=p_y1, x1=bx+d_mm, y1=p_y1+head_h, fillcolor="#7f1d1d", line_color="black")
-                    # หัวล่าง (ฝั่ง Web)
-                    fig_sec.add_shape(type="rect", x0=bx-d_mm, y0=web_y0-head_h, x1=bx+d_mm, y1=web_y0, fillcolor="#7f1d1d", line_color="black")
+                    # Side 1 (Plate Side)
+                    h1_y_start = p_y_max if plate_side == "Right of Web" else p_y_min - head_h
+                    h1_y_end = p_y_max + head_h if plate_side == "Right of Web" else p_y_min
+                    fig_sec.add_shape(type="rect", x0=bx-d_mm, y0=h1_y_start, x1=bx+d_mm, y1=h1_y_end, fillcolor="#7f1d1d", line_color="black")
                     
-                    # Centerline ผ่าน Bolt
-                    fig_sec.add_shape(type="line", x0=bx, y0=flange_y0, x1=bx, y1=flange_y1, line=dict(color="black", width=0.5, dash="dot"))
+                    # Side 2 (Web Side)
+                    h2_y_start = web_y_min - head_h if plate_side == "Right of Web" else web_y_max
+                    h2_y_end = web_y_min if plate_side == "Right of Web" else web_y_max + head_h
+                    fig_sec.add_shape(type="rect", x0=bx-d_mm, y0=h2_y_start, x1=bx+d_mm, y1=h2_y_end, fillcolor="#7f1d1d", line_color="black")
+
+                    # Centerline for Bolt
+                    fig_sec.add_shape(type="line", x0=bx, y0=flange_y_min, x1=bx, y1=flange_y_max, line=dict(color="black", width=0.5, dash="dot"))
 
                 # DIMENSIONS
-                dim_y_top = view_w_limit/2 + 10
+                dim_y = view_limit_y - 20
+                add_dim_line(fig_sec, p_x0, dim_y, p_x1, dim_y, f"Plate W={plate_w:.0f}", offset=0)
+                add_dim_line(fig_sec, p_x0, dim_y-25, p_x0+e1_mm, dim_y-25, f"e1", color="#d97706", offset=0)
                 
-                # Plate Width (W)
-                add_dim_line(fig_sec, col_face_x, dim_y_top, col_face_x+plate_w, dim_y_top, f"W={plate_w:.0f}", offset=0)
-                
-                # Gap (e1)
-                add_dim_line(fig_sec, col_face_x, dim_y_top-25, col_face_x+e1_mm, dim_y_top-25, f"e1", color="orange", offset=0)
-                
-                # Thickness (Web & Plate)
-                thk_x_pos = beam_start_x + beam_len + 10
-                add_dim_line(fig_sec, thk_x_pos, web_y0, thk_x_pos, web_y1, f"tw", type="vert", offset=0)
-                add_dim_line(fig_sec, thk_x_pos, p_y0, thk_x_pos, p_y1, f"tpl", type="vert", offset=0)
-                
-                # Center Check visual
-                if eccentricity == 0:
-                     fig_sec.add_annotation(x=col_face_x-30, y=0, text="CENTERED", font=dict(color="green", size=10, weight="bold"), showarrow=False, bgcolor="rgba(255,255,255,0.8)")
+                # Thickness dims
+                thk_x = beam_end_x + 20
+                add_dim_line(fig_sec, thk_x, web_y_min, thk_x, web_y_max, "tw", type="vert")
+                add_dim_line(fig_sec, thk_x, p_y_min, thk_x, p_y_max, "tpl", type="vert")
 
             layout_sec = dict(height=450, plot_bgcolor="white", 
                               margin=dict(l=20, r=20, t=40, b=20), 
@@ -259,39 +256,41 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
             st.markdown("**ELEVATION (Side View)**")
             fig_elev = go.Figure()
             
-            # Beam Profile (Side)
-            fig_elev.add_shape(type="rect", x0=0, y0=-h_beam/2, x1=plate_w+100, y1=h_beam/2, line_color="gray", fillcolor="white")
-            # Flanges
-            fig_elev.add_shape(type="line", x0=0, y0=-h_beam/2+tf_beam, x1=plate_w+100, y1=-h_beam/2+tf_beam, line_color="gray")
-            fig_elev.add_shape(type="line", x0=0, y0=h_beam/2-tf_beam, x1=plate_w+100, y1=h_beam/2-tf_beam, line_color="gray")
+            # Draw Beam (Side Profile)
+            fig_elev.add_shape(type="rect", x0=0, y0=-h_beam/2, x1=plate_w+150, y1=h_beam/2, line_color="gray", fillcolor="white")
+            # Flanges lines
+            fig_elev.add_shape(type="line", x0=0, y0=-h_beam/2+tf_beam, x1=plate_w+150, y1=-h_beam/2+tf_beam, line_color="gray")
+            fig_elev.add_shape(type="line", x0=0, y0=h_beam/2-tf_beam, x1=plate_w+150, y1=h_beam/2-tf_beam, line_color="gray")
             
-            # Plate Profile
-            fig_elev.add_shape(type="rect", x0=0, y0=-plate_h/2, x1=plate_w, y1=plate_h/2, line_color="#3b82f6", fillcolor="rgba(59, 130, 246, 0.2)", line_width=2)
+            # Draw Plate (Side Profile)
+            fig_elev.add_shape(type="rect", x0=0, y0=-plate_h/2, x1=plate_w, y1=plate_h/2, 
+                               line_color="#3b82f6", fillcolor="rgba(59, 130, 246, 0.2)", line_width=2)
             
-            # Support Column (Side edge)
-            fig_elev.add_shape(type="rect", x0=-20, y0=-h_beam/2-20, x1=0, y1=h_beam/2+20, fillcolor=supp_col, line_color="black")
-
-            # Bolts (Calculated positions)
+            # Draw Column Edge (Left)
+            fig_elev.add_shape(type="rect", x0=-20, y0=-h_beam/2-50, x1=0, y1=h_beam/2+50, fillcolor=supp_col, line_color="black")
+            
+            # Bolts
             b_start_x = e1_mm
-            b_start_y = (plate_h/2) - real_lv # Top bolt position
+            b_start_y = (plate_h/2) - real_lv 
             
             for r in range(n_rows):
                 for c in range(n_cols):
                     bx = b_start_x + c*s_h
                     by = b_start_y - r*s_v
-                    fig_elev.add_trace(go.Scatter(x=[bx], y=[by], mode='markers', marker=dict(size=8, color='#b91c1c'), showlegend=False))
-                    # Cross hair
-                    fig_elev.add_shape(type="line", x0=bx-5, y0=by, x1=bx+5, y1=by, line_width=1)
-                    fig_elev.add_shape(type="line", x0=bx, y0=by-5, x1=bx, y1=by+5, line_width=1)
+                    fig_elev.add_trace(go.Scatter(x=[bx], y=[by], mode='markers', marker=dict(size=10, color='#b91c1c'), showlegend=False))
+                    # Crosshair
+                    fig_elev.add_shape(type="line", x0=bx-6, y0=by, x1=bx+6, y1=by, line_color="white", line_width=1)
+                    fig_elev.add_shape(type="line", x0=bx, y0=by-6, x1=bx, y1=by+6, line_color="white", line_width=1)
 
-            # Dimensions
-            add_dim_line(fig_elev, plate_w+20, -plate_h/2, plate_w+20, plate_h/2, f"H={plate_h:.0f}", type="vert", color="#1e40af")
-            add_dim_line(fig_elev, 0, -h_beam/2-20, plate_w, -h_beam/2-20, f"W={plate_w:.0f}", type="horiz", color="#1e40af")
-            add_dim_line(fig_elev, plate_w+50, -h_beam/2, plate_w+50, h_beam/2, f"Beam H={h_beam:.0f}", type="vert", color="gray")
+            # Dims
+            add_dim_line(fig_elev, plate_w+30, -plate_h/2, plate_w+30, plate_h/2, f"H={plate_h:.0f}", type="vert", color="#1e40af")
+            add_dim_line(fig_elev, 0, -h_beam/2-30, plate_w, -h_beam/2-30, f"W={plate_w:.0f}", type="horiz", color="#1e40af")
 
             fig_elev.update_layout(height=450, plot_bgcolor="white", 
                                    xaxis=dict(visible=False), yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
                                    title=dict(text="ELEVATION VIEW", x=0.5))
             st.plotly_chart(fig_elev, use_container_width=True)
+
+    return n_total, Design_Shear
 
     return n_total, Design_Shear
