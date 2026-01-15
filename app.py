@@ -184,29 +184,29 @@ beam_res = {
 # =============================================================================
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Report"])
 
-# --- TAB 1: BEAM ANALYSIS (Restored V13.2 Glory) ---
+# --- TAB 1: BEAM ANALYSIS (Enhanced Step-by-Step Display) ---
 with tab1:
     st.subheader(f"Engineering Analysis: {sec_name}")
     
-    # 1. Highlight Card (Governing Check)
+    # 1. Highlight Card
     cause_color = "#dc2626" if user_cause == "Shear" else ("#d97706" if user_cause == "Moment" else "#059669")
+    total_load_disp = user_safe_load + w_self_kgm
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div><span class="sub-text">Applied Load ({label_load})</span><br>
-                <span class="big-num">{user_safe_load:,.0f}</span> <span style="font-size:20px; color:#4b5563;">kg/m</span></div>
+            <div><span class="sub-text">Total Applied Load (Ext + Self)</span><br>
+                <span class="big-num">{total_load_disp:,.0f}</span> <span style="font-size:20px; color:#4b5563;">kg/m</span></div>
             <div style="text-align: right;"><span class="sub-text">Governing Limit</span><br>
                 <span style="font-size: 22px; font-weight:bold; color:{cause_color}; background-color:{cause_color}15; padding: 8px 20px; border-radius:15px; border: 1px solid {cause_color}30;">{user_cause.upper()}</span></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # 2. Detailed Cards with Steps (Function Helper)
-    def render_check_ratio_with_w(title, act, lim, unit, ratio, eq_w, eq_act):
+    # ฟังก์ชันช่วยแสดงผล Card (เหมือนเดิม)
+    def render_check_ratio_with_w(title, act, lim, unit, ratio, eq_cap, eq_act):
         is_pass = ratio <= 1.0
         status_class = "pass" if is_pass else "fail"
         border_color = "#10b981" if is_pass else "#ef4444"
-        
         st.markdown(f"""
         <div class="detail-card" style="border-top-color: {border_color}">
             <span class="status-badge {status_class}">{'PASS' if is_pass else 'FAIL'}</span>
@@ -218,48 +218,109 @@ with tab1:
             </div>
         </div>
         """, unsafe_allow_html=True)
-        
         with st.expander(f"View {title} Step-by-Step"):
-            st.info(f"**Step 1: Limit Calculation**")
-            st.latex(eq_w)
+            st.markdown("**1. Capacity Calculation:**")
+            st.latex(eq_cap)
             st.divider()
-            st.info(f"**Step 2: Actual Force & Ratio**")
+            st.markdown("**2. Actual Force & Ratio:**")
             st.latex(eq_act)
 
     c1, c2, c3 = st.columns(3)
-    L_disp = user_span * 100
     
-    with c1:
-        render_check_ratio_with_w(
-            "Shear Check", v_act, V_cap, "kg", v_ratio,
-            fr"V_{{cap}} = \dots = {V_cap:,.0f} \text{{ kg}} \rightarrow w_{{lim}} = {w_max_shear:,.0f} \text{{ kg/m}}",
-            fr"V_{{act}} = \frac{{wL}}{{2}} = {v_act:,.0f} \text{{ kg}} \rightarrow \text{{Ratio}} = {v_ratio:.3f}"
-        )
-    with c2:
-        render_check_ratio_with_w(
-            "Moment Check", m_act/100, M_cap/100, "kg-m", m_ratio,
-            fr"M_{{cap}} = \dots = {M_cap/100:,.0f} \text{{ kg-m}} \rightarrow w_{{lim}} = {w_max_moment:,.0f} \text{{ kg/m}}",
-            fr"M_{{act}} = \frac{{wL^2}}{{8}} = {m_act/100:,.0f} \text{{ kg-m}} \rightarrow \text{{Ratio}} = {m_ratio:.3f}"
-        )
-    with c3:
-        render_check_ratio_with_w(
-            "Deflection Check", d_act, d_all, "cm", d_ratio,
-            fr"\Delta_{{all}} = L/{defl_lim_val} = {d_all:.2f} \text{{ cm}} \rightarrow w_{{lim}} = {w_max_defl:,.0f} \text{{ kg/m}}",
-            fr"\Delta_{{act}} = \frac{{5wL^4}}{{384EI}} = {d_act:.3f} \text{{ cm}} \rightarrow \text{{Ratio}} = {d_ratio:.3f}"
-        )
+    # --- PREPARE LATEX STRINGS (ละเอียด ยิบ) ---
+    
+    # 1. SHEAR FORMULA
+    # Nominal Strength
+    Vn_raw = 0.6 * Fy * Aw
+    if is_lrfd:
+        # LRFD Format
+        shear_cap_tex = fr"""
+        \begin{{aligned}}
+        A_w &= d \times t_w = {h:.2f} \times {tw:.2f} = {Aw:.2f} \text{{ cm}}^2 \\
+        V_n &= 0.6 F_y A_w = 0.6 \times {Fy} \times {Aw:.2f} = {Vn_raw:,.0f} \text{{ kg}} \\
+        \phi V_n &= 1.00 \times {Vn_raw:,.0f} = \mathbf{{{V_cap:,.0f} \text{{ kg}}}}
+        \end{{aligned}}
+        """
+    else:
+        # ASD Format
+        shear_cap_tex = fr"""
+        \begin{{aligned}}
+        A_w &= d \times t_w = {h:.2f} \times {tw:.2f} = {Aw:.2f} \text{{ cm}}^2 \\
+        V_n &= 0.6 F_y A_w = 0.6 \times {Fy} \times {Aw:.2f} = {Vn_raw:,.0f} \text{{ kg}} \\
+        V_{{cap}} &= \frac{{V_n}}{{\Omega}} = \frac{{{Vn_raw:,.0f}}}{{1.50}} = \mathbf{{{V_cap:,.0f} \text{{ kg}}}}
+        \end{{aligned}}
+        """
+    
+    shear_act_tex = fr"""
+    \begin{{aligned}}
+    w_{{total}} &= {total_load_disp:,.0f} \text{{ kg/m}} \\
+    V_{{act}} &= \frac{{w_{{total}} L}}{{2}} = \frac{{{total_load_disp:,.0f} \times {user_span}}}{{2}} = \mathbf{{{v_act:,.0f} \text{{ kg}}}} \\
+    \text{{Ratio}} &= \frac{{{v_act:,.0f}}}{{{V_cap:,.0f}}} = \mathbf{{{v_ratio:.3f}}}
+    \end{{aligned}}
+    """
 
-    # 3. Envelope Curve (Restored)
+    # 2. MOMENT FORMULA
+    Mn_raw = Fy * Zx
+    if is_lrfd:
+        moment_cap_tex = fr"""
+        \begin{{aligned}}
+        M_n &= F_y Z_x = {Fy} \times {Zx} = {Mn_raw:,.0f} \text{{ kg-cm}} \\
+        \phi M_n &= 0.90 \times {Mn_raw:,.0f} = {M_cap:,.0f} \text{{ kg-cm}} \\
+        &= \mathbf{{{M_cap/100:,.0f} \text{{ kg-m}}}}
+        \end{{aligned}}
+        """
+    else:
+        moment_cap_tex = fr"""
+        \begin{{aligned}}
+        M_n &= F_y Z_x = {Fy} \times {Zx} = {Mn_raw:,.0f} \text{{ kg-cm}} \\
+        M_{{cap}} &= \frac{{M_n}}{{\Omega}} = \frac{{{Mn_raw:,.0f}}}{{1.67}} = {M_cap:,.0f} \text{{ kg-cm}} \\
+        &= \mathbf{{{M_cap/100:,.0f} \text{{ kg-m}}}}
+        \end{{aligned}}
+        """
+
+    moment_act_tex = fr"""
+    \begin{{aligned}}
+    M_{{act}} &= \frac{{w_{{total}} L^2}}{{8}} = \frac{{{total_load_disp:,.0f} \times {user_span}^2}}{{8}} \\
+    &= \mathbf{{{m_act/100:,.0f} \text{{ kg-m}}}} \\
+    \text{{Ratio}} &= \frac{{{m_act/100:,.0f}}}{{{M_cap/100:,.0f}}} = \mathbf{{{m_ratio:.3f}}}
+    \end{{aligned}}
+    """
+
+    # 3. DEFLECTION FORMULA
+    # ใช้ Live Load หรือ Total Load ตาม Code แต่เพื่อความชัดเจนจะโชว์ค่าที่ใช้คำนวณจริง
+    defl_cap_tex = fr"""
+    \Delta_{{allow}} = \frac{{L}}{{{defl_lim_val}}} = \frac{{{L_cm}}}{{{defl_lim_val}}} = \mathbf{{{d_all:.2f} \text{{ cm}}}}
+    """
+    
+    defl_act_tex = fr"""
+    \begin{{aligned}}
+    I_x &= {Ix:,.0f} \text{{ cm}}^4, \quad E = {E_mod:,.2e} \text{{ ksc}} \\
+    \Delta_{{act}} &= \frac{{5 (w_{{ext}}) L^4}}{{384 E I_x}} \\
+    &= \frac{{5 ({w_external_kg_cm:.2f}) ({L_cm})^{{4}}}}{{384 ({E_mod:.2e}) ({Ix})}} \\
+    &= \mathbf{{{d_act:.3f} \text{{ cm}}}} \\
+    \text{{Ratio}} &= \frac{{{d_act:.3f}}}{{{d_all:.2f}}} = \mathbf{{{d_ratio:.3f}}}
+    \end{{aligned}}
+    """
+
+    # --- RENDER COLUMNS ---
+    with c1:
+        render_check_ratio_with_w("Shear Check", v_act, V_cap, "kg", v_ratio, shear_cap_tex, shear_act_tex)
+    with c2:
+        render_check_ratio_with_w("Moment Check", m_act/100, M_cap/100, "kg-m", m_ratio, moment_cap_tex, moment_act_tex)
+    with c3:
+        render_check_ratio_with_w("Deflection Check", d_act, d_all, "cm", d_ratio, defl_cap_tex, defl_act_tex)
+
+    # 4. Envelope Curve (ส่วนนี้เหมือนเดิม)
     st.markdown("### 📈 Capacity Envelope Curve")
     spans_plot = np.linspace(2, 12, 100)
     data_env = [get_capacity(s) for s in spans_plot]
-    
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=spans_plot, y=[d[0] for d in data_env], name='Shear Limit', line=dict(color='#ef4444', dash='dash')))
     fig.add_trace(go.Scatter(x=spans_plot, y=[d[1] for d in data_env], name='Moment Limit', line=dict(color='#f59e0b', dash='dash')))
     fig.add_trace(go.Scatter(x=spans_plot, y=[d[2] for d in data_env], name='Deflection Limit', line=dict(color='#3b82f6', dash='dash')))
     fig.add_trace(go.Scatter(x=spans_plot, y=[d[3] for d in data_env], name='Safe Envelope', fill='tozeroy', fillcolor='rgba(37, 99, 235, 0.1)', line=dict(color='#1e40af', width=4)))
-    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers+text', name='Design Point', text=[f" ({user_span}m, {user_safe_load:,.0f})"], textposition="top right", marker=dict(color='red', size=12, symbol='diamond', line=dict(width=2, color='white'))))
-    fig.update_layout(hovermode="x unified", height=450, margin=dict(t=20, b=20, l=20, r=20), plot_bgcolor='white', xaxis_title="Span Length (m)", yaxis_title="Load (kg/m)")
+    fig.add_trace(go.Scatter(x=[user_span], y=[total_load_disp], mode='markers+text', name='Design Point', text=[f" ({user_span}m, {total_load_disp:,.0f})"], textposition="top right", marker=dict(color='red', size=12, symbol='diamond')))
+    fig.update_layout(height=450, margin=dict(t=20, b=20, l=20, r=20), xaxis_title="Span Length (m)", yaxis_title="Load (kg/m)")
     st.plotly_chart(fig, use_container_width=True)
 
 # --- TAB 2: CONNECTION DETAIL (V14 Integration + Clean UI) ---
