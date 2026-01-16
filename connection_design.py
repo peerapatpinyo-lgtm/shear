@@ -1,6 +1,6 @@
 import streamlit as st
 import math
-import drawing_utils  # <--- เรียกใช้ไฟล์ drawing_utils.py ที่คุณให้มา (Plotly)
+import drawing_utils  # เรียกใช้ไฟล์ drawing_utils.py (Plotly)
 
 def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
     
@@ -153,12 +153,11 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         st.markdown("---")
         
         # ==========================
-        # 4. PLOTLY DRAWING SECTION
+        # 4. PLOTLY DRAWING SECTION (UPDATED FOR FIT)
         # ==========================
         st.markdown("#### 📐 Construction Details")
         
         # เตรียมข้อมูลสำหรับส่งไป drawing_utils (แปลงหน่วยเป็น mm ทั้งหมด)
-        # 1. Beam Data (mm)
         beam_dict = {
             'h': section_data.get('h', 400),
             'b': section_data.get('b', 200),
@@ -166,48 +165,57 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             'tw': section_data.get('tw', 8)
         }
         
-        # 2. Plate Data (mm)
-        # Assuming standard hole clearance and e1 (horizontal edge) ~ 40-50mm or calculated
         plate_dict = {
             'h': h_plate * 10,       # cm to mm
-            'w': 150,                # Standard Width 150mm (or calculate based on bolt cols)
+            'w': 150,                # Standard Width
             't': pl_thick,           # mm
-            'e1': 50,                # Horizontal edge distance (approx standard)
-            'lv': edge_dist * 10,    # Vertical edge distance (cm to mm)
+            'e1': 50,                # Horizontal edge
+            'lv': edge_dist * 10,    # Vertical edge
             'weld_size': weld_sz     # mm
         }
         
-        # 3. Bolt Data (mm)
         bolt_dict = {
             'd': d_bolt * 10,        # cm to mm
             'rows': n_rows,
             'cols': n_cols,
-            's_v': pitch * 10,       # Vertical pitch (cm to mm)
-            's_h': 60                # Horizontal spacing (mm) - standard approx if col > 1
+            's_v': pitch * 10,       # Vertical pitch
+            's_h': 60                # Horizontal spacing
         }
 
         # Tab Selection for Views
         tab1, tab2, tab3 = st.tabs(["🖼️ Elevation (Front)", "🏗️ Plan (Top)", "✂️ Section (Side)"])
         
+        # --- Helper Function เพื่อปรับกราฟให้พอดีกรอบ ---
+        def fit_layout(fig, height=450):
+            fig.update_layout(
+                height=height,
+                margin=dict(l=10, r=10, t=40, b=10), # ลด Margin ให้ชิดขอบ
+                autosize=True
+            )
+            return fig
+
         with tab1:
             try:
                 fig_front = drawing_utils.create_front_view(beam_dict, plate_dict, bolt_dict)
-                st.plotly_chart(fig_front, use_container_width=True)
+                # ใช้ fit_layout และ use_container_width=True
+                st.plotly_chart(fit_layout(fig_front, height=500), use_container_width=True)
             except Exception as e:
                 st.error(f"Error drawing Front View: {e}")
 
         with tab2:
             try:
                 fig_plan = drawing_utils.create_plan_view(beam_dict, plate_dict, bolt_dict)
-                st.plotly_chart(fig_plan, use_container_width=True)
+                # Plan View เตี้ยกว่านิดหน่อยได้
+                st.plotly_chart(fit_layout(fig_plan, height=400), use_container_width=True)
             except Exception as e:
                 st.error(f"Error drawing Plan View: {e}")
 
         with tab3:
             try:
                 fig_side = drawing_utils.create_side_view(beam_dict, plate_dict, bolt_dict)
-                st.plotly_chart(fig_side, use_container_width=True)
+                # Side View
+                st.plotly_chart(fit_layout(fig_side, height=500), use_container_width=True)
             except Exception as e:
                 st.error(f"Error drawing Side View: {e}")
 
-        st.caption("Interactive Drawing powered by Plotly & drawing_utils.py")
+        st.caption("Interactive Drawing powered by Plotly")
