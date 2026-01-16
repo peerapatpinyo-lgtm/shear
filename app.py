@@ -1,3 +1,4 @@
+#app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,8 +8,12 @@ import plotly.graph_objects as go
 try:
     import connection_design as conn
     import report_generator as rep
+    # [Fix #2] Import Database จาก data_utils แทนการประกาศซ้ำ
+    from data_utils import STEEL_DB
 except ImportError:
-    st.warning("Warning: connection_design.py or report_generator.py not found. Please ensure files are in the same directory.")
+    st.warning("Warning: connection_design.py, report_generator.py, or data_utils.py not found. Please ensure files are in the same directory.")
+    # Fallback กรณีหาไฟล์ไม่เจอ (ป้องกัน Error ตอนรันครั้งแรกถ้าไฟล์ยังไม่ครบ)
+    STEEL_DB = {} 
 
 # ==========================================
 # 1. SETUP & STYLE (Engineering Professional)
@@ -48,23 +53,8 @@ st.markdown("""
 # ==========================================
 # 2. FULL DATA (Steel Sections)
 # ==========================================
-steel_db = {
-    "H 100x100x6x8":    {"h": 100, "b": 100, "tw": 6,   "tf": 8,   "Ix": 383,    "Zx": 76.5,  "w": 17.2},
-    "H 125x125x6.5x9":  {"h": 125, "b": 125, "tw": 6.5, "tf": 9,   "Ix": 847,    "Zx": 136,   "w": 23.8},
-    "H 150x75x5x7":     {"h": 150, "b": 75,  "tw": 5,   "tf": 7,   "Ix": 666,    "Zx": 88.8,  "w": 14.0},
-    "H 150x150x7x10":   {"h": 150, "b": 150, "tw": 7,   "tf": 10,  "Ix": 1640,   "Zx": 219,   "w": 31.5},
-    "H 200x100x5.5x8":  {"h": 200, "b": 100, "tw": 5.5, "tf": 8,   "Ix": 1840,   "Zx": 184,   "w": 21.3},
-    "H 200x200x8x12":   {"h": 200, "b": 200, "tw": 8,   "tf": 12,  "Ix": 4720,   "Zx": 472,   "w": 49.9},
-    "H 250x125x6x9":    {"h": 250, "b": 125, "tw": 6,   "tf": 9,   "Ix": 3690,   "Zx": 295,   "w": 29.6},
-    "H 250x250x9x14":   {"h": 250, "b": 250, "tw": 9,   "tf": 14,  "Ix": 10800,  "Zx": 867,   "w": 72.4},
-    "H 300x150x6.5x9":  {"h": 300, "b": 150, "tw": 6.5, "tf": 9,   "Ix": 7210,   "Zx": 481,   "w": 36.7},
-    "H 300x300x10x15":  {"h": 300, "b": 300, "tw": 10,  "tf": 15,  "Ix": 20400,  "Zx": 1360,  "w": 94.0},
-    "H 350x175x7x11":   {"h": 350, "b": 175, "tw": 7,   "tf": 11,  "Ix": 13600,  "Zx": 775,   "w": 49.6},
-    "H 400x200x8x13":   {"h": 400, "b": 200, "tw": 8,   "tf": 13,  "Ix": 23700,  "Zx": 1190,  "w": 66.0},
-    "H 450x200x9x14":   {"h": 450, "b": 200, "tw": 9,   "tf": 14,  "Ix": 33500,  "Zx": 1490,  "w": 76.0},
-    "H 500x200x10x16":  {"h": 500, "b": 200, "tw": 10,  "tf": 16,  "Ix": 47800,  "Zx": 1910,  "w": 89.6},
-    "H 600x200x11x17":  {"h": 600, "b": 200, "tw": 11,  "tf": 17,  "Ix": 77600,  "Zx": 2590,  "w": 106},
-}
+# [Fix #2] ใช้ STEEL_DB ที่ Import มาจาก data_utils.py แทนการ Hardcode ตรงนี้
+steel_db = STEEL_DB 
 
 with st.sidebar:
     st.title("🏗️ Beam Insight V13")
@@ -79,7 +69,15 @@ with st.sidebar:
     grade_choice = st.selectbox("Steel Grade", list(grade_opts.keys()))
     fy = st.number_input("Fy (kg/cm²)", value=grade_opts[grade_choice])
     
-    sec_name = st.selectbox("Steel Section", list(steel_db.keys()), index=11)
+    # ตรวจสอบว่า DB ว่างหรือไม่ (ป้องกัน Error)
+    if not steel_db:
+        st.error("Steel Database not found in data_utils.py")
+        sec_name = "N/A"
+        p = {"h": 100, "b": 100, "tw": 6, "tf": 8, "Ix": 383, "Zx": 76.5, "w": 17.2}
+    else:
+        sec_name = st.selectbox("Steel Section", list(steel_db.keys()), index=11)
+        p = steel_db[sec_name]
+
     user_span = st.number_input("Span Length (m)", min_value=1.0, value=6.0, step=0.5)
     defl_ratio = st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1)
     defl_lim_val = int(defl_ratio.split("/")[1])
@@ -104,7 +102,7 @@ with st.sidebar:
 # ==========================================
 # 3. CORE CALCULATIONS
 # ==========================================
-p = steel_db[sec_name]
+# p ได้รับค่ามาจากข้างบนแล้ว
 Aw = (p['h']/10) * (p['tw']/10) 
 Ix, Zx = p['Ix'], p['Zx']
 
@@ -219,6 +217,7 @@ with tab1:
 with tab2:
     try:
         # --- ส่งค่าเข้า Tab Connection (พร้อมตัวแปร Linkage ครบถ้วน) ---
+        # [Fix #1 Update] ส่ง mat_grade เข้าไปเพื่อให้ Connection Module ส่งต่อไปยัง Report
         req_bolt, v_bolt = conn.render_connection_tab(
             V_design=V_design, 
             bolt_size=bolt_size, 
@@ -226,7 +225,8 @@ with tab2:
             is_lrfd=is_lrfd,        # <--- ส่งสถานะ LRFD
             section_data=p, 
             conn_type=conn_type,    # <--- ส่งชื่อที่มีคำว่า Double/Single
-            bolt_grade=bolt_grade
+            bolt_grade=bolt_grade,
+            mat_grade=grade_choice  # <--- [เพิ่ม] ส่งชื่อเกรดวัสดุเข้าไป
         )
     except Exception as e:
         st.error(f"⚠️ Error in Connection Tab: {e}")
