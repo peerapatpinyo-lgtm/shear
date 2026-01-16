@@ -18,15 +18,13 @@ except ImportError as e:
 # ==========================================
 # 2. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V18 (Full Fixed)", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V18 (Full Calculation)", layout="wide", page_icon="🏗️")
 
-# Initialize Session State
 if 'design_method' not in st.session_state:
     st.session_state.design_method = "LRFD (Limit State)"
 if 'cal_success' not in st.session_state:
     st.session_state.cal_success = False
 
-# CSS Styling (ห้ามย่อ)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
@@ -48,7 +46,7 @@ with st.sidebar:
     st.title("🏗️ Beam Insight V18")
     st.divider()
     
-    # การเลือก Method
+    # สลับ Method และเก็บเข้า Session ทันที
     method_opts = ["ASD (Allowable Stress)", "LRFD (Limit State)"]
     st.session_state.design_method = st.radio("Method", method_opts, index=1 if "LRFD" in st.session_state.design_method else 0)
     is_lrfd = "LRFD" in st.session_state.design_method
@@ -78,8 +76,7 @@ with st.sidebar:
     
     st.divider()
     user_span = st.number_input("Span Length (m)", 1.0, 30.0, 6.0, step=0.5)
-    defl_ratio = st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1)
-    defl_denom = int(defl_ratio.split("/")[1])
+    defl_denom = int(st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1).split("/")[1])
     
     st.subheader("🔩 Connection Scope")
     design_mode = st.radio("Load Basis:", ["Actual Load (แรงจริง)", "Fixed % Capacity (% หน้าตัด)"])
@@ -89,27 +86,26 @@ with st.sidebar:
 # 4. CALCULATION LOGIC (ASD vs LRFD FIXED)
 # ==========================================
 Aw = (h/10) * (tw/10) # cm2
-
-# AISC 360-16 Constants
-if is_lrfd:
-    # LRFD: ใช้ตัวคูณ Phi (Strength Reduction)
-    M_cap = 0.90 * Fy * Zx 
-    V_cap = 1.00 * 0.60 * Fy * Aw  # Cv = 1.00
-    label_load = "Factored Load (Wu)"
-else:
-    # ASD: ใช้ตัวหาร Omega (Safety Factor) 
-    # Mn/1.67 และ Vn/1.50
-    M_cap = (Fy * Zx) / 1.67 
-    V_cap = (0.60 * Fy * Aw) / 1.50
-    label_load = "Allowable Load (Wa)"
-
 L_cm = user_span * 100
 
-# w = 2V/L (kg/m)
+if is_lrfd:
+    # LRFD: phi_v = 1.0, phi_b = 0.9
+    phi_v, phi_b = 1.00, 0.90
+    V_cap = phi_v * 0.60 * Fy * Aw
+    M_cap = phi_b * Fy * Zx
+    label_load = "Factored Load (Wu)"
+    method_symbol = r"\phi"
+else:
+    # ASD: Omega_v = 1.50, Omega_b = 1.67
+    omg_v, omg_b = 1.50, 1.67
+    V_cap = (0.60 * Fy * Aw) / omg_v
+    M_cap = (Fy * Zx) / omg_b
+    label_load = "Allowable Load (Wa)"
+    method_symbol = r"\Omega"
+
+# Back-solve Loads
 w_shear = (2 * V_cap / L_cm) * 100 
-# w = 8M/L^2 (kg/m)
 w_moment = (8 * M_cap / (L_cm**2)) * 100
-# w = 384EI(Delta)/5L^4
 w_defl = ((L_cm/defl_denom) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100
 
 w_safe = min(w_shear, w_moment, w_defl)
@@ -135,13 +131,13 @@ st.session_state.cal_success = True
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "📋 Load Table", "📝 Report"])
 
 with tab1:
-    st.subheader(f"Engineering Analysis: {sec_name}")
+    st.subheader(f"Engineering Analysis: {sec_name} ({st.session_state.design_method})")
     cause_color = "#dc2626" if gov_cause == "Shear" else ("#d97706" if gov_cause == "Moment" else "#059669")
     
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div><span class="sub-text">Maximum Allowed {label_load}</span><br>
+            <div><span class="sub-text">Max Allowed {label_load}</span><br>
                 <span class="big-num">{w_safe:,.0f}</span> <span style="font-size:20px; color:#4b5563;">kg/m</span></div>
             <div style="text-align: right;"><span class="sub-text">Governing Limit</span><br>
                 <span style="font-size: 20px; font-weight:bold; color:{cause_color}; background-color:{cause_color}15; padding: 6px 15px; border-radius:15px; border: 1px solid {cause_color}30;">{gov_cause.upper()}</span></div>
@@ -149,24 +145,48 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # Detailed Checks
-    def render_box(title, act, lim, unit, ratio_label):
-        ratio = act/lim
-        color = "#10b981" if ratio <= 1.01 else "#ef4444"
-        st.markdown(f"""
-        <div class="detail-card" style="border-top-color: {color}">
-            <h4 style="margin:0; color:#374151;">{title}</h4>
-            <div style="font-size:24px; font-weight:700; color:{color};">{ratio:.3f}</div>
-            <small style="color:#6b7280;">{ratio_label}: {act:,.1f} / {lim:,.1f} {unit}</small>
-        </div>
-        """, unsafe_allow_html=True)
-
+    # --- รายการคำนวณอย่างละเอียด (LaTeX) ---
     c1, c2, c3 = st.columns(3)
-    with c1: render_box("Shear Capacity", v_act, V_cap, "kg", "V/Vn")
-    with c2: render_box("Moment Capacity", m_act, M_cap, "kg-m", "M/Mn")
-    with c3: render_box("Deflection Limit", d_act, d_allow, "cm", "Δ/Δall")
+    
+    with c1:
+        ratio_v = v_act/V_cap
+        st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_v<=1.01 else '#ef4444'}">
+            <h4 style="margin:0;">Shear Check</h4><div style="font-size:24px; font-weight:700;">{ratio_v:.3f}</div>
+            <small>V_act: {v_act:,.0f} / Cap: {V_cap:,.0f} kg</small></div>""", unsafe_allow_html=True)
+        with st.expander("View Shear Calc"):
+            if is_lrfd:
+                st.latex(r"V_n = 0.6 F_y A_w")
+                st.latex(fr"V_u = \phi_v V_n = 1.0 \times {V_cap/phi_v:,.0f} = {V_cap:,.0f} \text{{ kg}}")
+            else:
+                st.latex(r"V_n = 0.6 F_y A_w")
+                st.latex(fr"V_a = V_n / \Omega_v = {V_cap*omg_v:,.0f} / 1.5 = {V_cap:,.0f} \text{{ kg}}")
+            st.latex(fr"w_{{limit}} = \frac{{2 V_{{cap}}}}{{L}} = {w_shear:,.0f} \text{{ kg/m}}")
 
-    # --- กราฟเดิมกลับมาแล้ว ---
+    with c2:
+        ratio_m = m_act/M_cap
+        st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_m<=1.01 else '#ef4444'}">
+            <h4 style="margin:0;">Moment Check</h4><div style="font-size:24px; font-weight:700;">{ratio_m:.3f}</div>
+            <small>M_act: {m_act:,.0f} / Cap: {M_cap:,.0f} kg-m</small></div>""", unsafe_allow_html=True)
+        with st.expander("View Moment Calc"):
+            if is_lrfd:
+                st.latex(r"M_n = F_y Z_x")
+                st.latex(fr"M_u = \phi_b M_n = 0.9 \times {M_cap/phi_b:,.0f} = {M_cap:,.0f} \text{{ kg-m}}")
+            else:
+                st.latex(r"M_n = F_y Z_x")
+                st.latex(fr"M_a = M_n / \Omega_b = {M_cap*omg_b:,.0f} / 1.67 = {M_cap:,.0f} \text{{ kg-m}}")
+            st.latex(fr"w_{{limit}} = \frac{{8 M_{{cap}}}}{{L^2}} = {w_moment:,.0f} \text{{ kg/m}}")
+
+    with c3:
+        ratio_d = d_act/d_allow
+        st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_d<=1.01 else '#ef4444'}">
+            <h4 style="margin:0;">Deflection Check</h4><div style="font-size:24px; font-weight:700;">{ratio_d:.3f}</div>
+            <small>Actual: {d_act:.2f} / Limit: {d_allow:.2f} cm</small></div>""", unsafe_allow_html=True)
+        with st.expander("View Deflection Calc"):
+            st.latex(fr"\Delta_{{all}} = L / {defl_denom} = {d_allow:.2f} \text{{ cm}}")
+            st.latex(r"\Delta_{act} = \frac{5 w L^4}{384 E I}")
+            st.latex(fr"w_{{limit}} = {w_defl:,.0f} \text{{ kg/m}}")
+
+    # --- กราฟ Capacity Envelope ---
     st.markdown("### 📈 Capacity Envelope")
     spans = np.linspace(2, 12, 60)
     y_sh = [(2*V_cap/(s*100))*100 for s in spans]
@@ -212,7 +232,6 @@ with tab3:
     st.dataframe(pd.DataFrame(data_list, columns=["Span (m)", f"Max {label_load} (kg/m)", "Control"]), use_container_width=True)
 
 with tab4:
-    # เรียก Report
     report_generator.render_report_tab(
         method=st.session_state.design_method,
         is_lrfd=is_lrfd,
