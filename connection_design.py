@@ -113,9 +113,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         Fu_MPa = 400 if fy_ksc == 2500 else 490
         Fnv_MPa = 372 if "A325" in b_grade else 457
         
-        # 3.2 Factors (Not used directly here, implicitly in formulas below to match report)
-        
-        # 3.3 Capacities (kN) - Using V13 Formulas exactly
+        # 3.2 Capacities (kN) - Using V13 Formulas exactly
         # Bolt Shear
         Ab_mm2 = math.pi * (d_bolt*10)**2 / 4
         Rn_shear = Fnv_MPa * Ab_mm2 * (n_rows * n_cols) / 1000
@@ -175,7 +173,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         </div>
         """, unsafe_allow_html=True)
         
-        # Table HTML Construction
+        # Table HTML Construction (Fixed Indentation)
         rows_html = ""
         for k, v in caps.items():
             r = V_kN / v if v > 0 else 0
@@ -186,15 +184,8 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             text_class = "pass-text" if r <= 1.0 else "fail-text"
             icon = "⚠️" if r > 1.0 else ""
             
-            # Row Structure: Name | Load | Cap | Ratio
-            rows_html += f"""
-            <tr class='{row_class}'>
-                <td>{k} {icon}</td>
-                <td style='text-align:center; color:#64748b;'>{V_kN:.1f}</td>
-                <td style='text-align:center;'>{v:.1f}</td>
-                <td style='text-align:center;' class='{text_class}'>{r:.2f}</td>
-            </tr>
-            """
+            # Formatted in one line to prevent markdown issues
+            rows_html += f"<tr class='{row_class}'><td>{k} {icon}</td><td style='text-align:center; color:#64748b;'>{V_kN:.1f}</td><td style='text-align:center;'>{v:.1f}</td><td style='text-align:center;' class='{text_class}'>{r:.2f}</td></tr>"
 
         st.markdown(f"""
         <table class="summary-table">
@@ -208,7 +199,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             </thead>
             <tbody>{rows_html}</tbody>
         </table>
-        <div style="font-size:11px; color:gray; text-align:right; margin-top:5px;">*jed: kN</div>
+        <div style="font-size:11px; color:gray; text-align:right; margin-top:5px;">*Load Unit: kN</div>
         """, unsafe_allow_html=True)
 
     # ==========================
