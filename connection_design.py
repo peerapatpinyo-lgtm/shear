@@ -13,10 +13,14 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         .dim-check { font-weight: bold; padding: 4px 8px; border-radius: 4px; font-size: 13px; display: inline-block; margin-top: 5px;}
         .dim-ok { background-color: #dcfce7; color: #166534; }
         .dim-err { background-color: #fee2e2; color: #991b1b; }
-        .summary-table { font-size: 14px; width: 100%; border-collapse: collapse; }
-        .summary-table td, .summary-table th { padding: 6px; border-bottom: 1px solid #eee; }
-        .pass { color: #166534; font-weight: bold; }
-        .fail { color: #991b1b; font-weight: bold; }
+        
+        /* Summary Table Style */
+        .summary-table { font-size: 13px; width: 100%; border-collapse: collapse; margin-top: 5px; }
+        .summary-table th { background-color: #f1f5f9; padding: 6px; border-bottom: 2px solid #cbd5e1; font-weight: bold; color: #334155; }
+        .summary-table td { padding: 6px; border-bottom: 1px solid #e2e8f0; vertical-align: middle; }
+        .pass-text { color: #166534; font-weight: bold; }
+        .fail-text { color: #991b1b; font-weight: bold; }
+        .hl-row { background-color: #fff7ed; } /* Warning highlight for governing case */
     </style>
     """, unsafe_allow_html=True)
 
@@ -102,21 +106,15 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         # ==========================================
         # 3. PRE-CALCULATION (FOR LEFT SUMMARY)
         # ==========================================
-        # ทำการคำนวณจริงตรงนี้เลย เพื่อเอาผลลัพธ์มาโชว์ทางซ้าย (Replicating V13 Logic)
-        
         # 3.1 Unit Conversion
         V_kN = V_design_from_tab1 / 101.97 
         fy_ksc = 2500 if "A36" in default_mat_grade or "SS400" in default_mat_grade else 3500
         Fy_MPa = 250 if fy_ksc == 2500 else 345
         Fu_MPa = 400 if fy_ksc == 2500 else 490
-        Fnv_MPa = 372 if "A325" in b_grade else 457 # A325=372, A490=457
+        Fnv_MPa = 372 if "A325" in b_grade else 457
         
-        # 3.2 Factors
-        if is_lrfd:
-            phi_shear, phi_yield, phi_rupture, phi_weld = 0.75, 1.00, 0.75, 0.75
-        else:
-            om_shear, om_yield, om_rupture, om_weld = 2.00, 1.50, 2.00, 2.00
-
+        # 3.2 Factors (Not used directly here, implicitly in formulas below to match report)
+        
         # 3.3 Capacities (kN) - Using V13 Formulas exactly
         # Bolt Shear
         Ab_mm2 = math.pi * (d_bolt*10)**2 / 4
@@ -138,7 +136,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         Rn_r = 0.60 * Fu_MPa * An / 1000
         cap_rup = (0.75 * Rn_r) if is_lrfd else (Rn_r / 2.00)
         
-        # Block Shear (Complex Logic)
+        # Block Shear
         l_gv = (n_rows - 1) * pitch_v_mm + edge_v_mm
         agv = l_gv * pl_thick
         anv = (l_gv - (n_rows - 0.5) * h_hole) * pl_thick
@@ -155,7 +153,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         caps = {
             "Bolt Shear": cap_shear, "Bolt Bearing": cap_br,
             "Plate Yield": cap_yld, "Plate Rupture": cap_rup,
-            "Block Shear": cap_blk, "Weld": cap_weld
+            "Block Shear": cap_blk, "Weld Strength": cap_weld
         }
         min_cap = min(caps.values())
         overall_ratio = V_kN / min_cap if min_cap > 0 else 999
@@ -173,28 +171,44 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         
         st.markdown(f"""
         <div style="background:{status_bg}; color:{status_txt}; padding:10px; border-radius:6px; margin-bottom:10px; text-align:center; font-weight:bold;">
-            {status_msg} (Ratio: {overall_ratio:.2f})
+            {status_msg} (Max Ratio: {overall_ratio:.2f})
         </div>
         """, unsafe_allow_html=True)
         
-        # Table HTML
+        # Table HTML Construction
         rows_html = ""
         for k, v in caps.items():
             r = V_kN / v if v > 0 else 0
-            color_class = "pass" if r <= 1.0 else "fail"
-            icon = "" if r <= 1.0 else "⚠️"
-            # Highlight governing case
-            bg_style = "background-color:#f1f5f9;" if v == min_cap else ""
-            rows_html += f"<tr style='{bg_style}'><td>{k} {icon}</td><td style='text-align:right'>{v:.1f}</td><td style='text-align:right' class='{color_class}'>{r:.2f}</td></tr>"
+            
+            # Styles
+            is_governing = (v == min_cap)
+            row_class = "hl-row" if is_governing else ""
+            text_class = "pass-text" if r <= 1.0 else "fail-text"
+            icon = "⚠️" if r > 1.0 else ""
+            
+            # Row Structure: Name | Load | Cap | Ratio
+            rows_html += f"""
+            <tr class='{row_class}'>
+                <td>{k} {icon}</td>
+                <td style='text-align:center; color:#64748b;'>{V_kN:.1f}</td>
+                <td style='text-align:center;'>{v:.1f}</td>
+                <td style='text-align:center;' class='{text_class}'>{r:.2f}</td>
+            </tr>
+            """
 
         st.markdown(f"""
         <table class="summary-table">
             <thead>
-                <tr><th style='text-align:left'>Check</th><th style='text-align:right'>Cap (kN)</th><th style='text-align:right'>Ratio</th></tr>
+                <tr>
+                    <th style='text-align:left'>Check List</th>
+                    <th style='text-align:center'>Load</th>
+                    <th style='text-align:center'>Cap.</th>
+                    <th style='text-align:center'>Ratio</th>
+                </tr>
             </thead>
             <tbody>{rows_html}</tbody>
         </table>
-        <div style="font-size:11px; color:gray; text-align:right; margin-top:5px;">*Load: {V_kN:.2f} kN</div>
+        <div style="font-size:11px; color:gray; text-align:right; margin-top:5px;">*jed: kN</div>
         """, unsafe_allow_html=True)
 
     # ==========================
@@ -288,10 +302,8 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                 )
                 
                 # TRICK: Cut off the summary part from the text!
-                # V13 uses "#### 🏁 Final Summary" as header
                 if "#### 🏁 Final Summary" in full_report:
                     report_body = full_report.split("#### 🏁 Final Summary")[0]
-                    # Add a small note at end
                     report_body += "\n\n*(See detailed summary on the left dashboard)*"
                     st.markdown(report_body, unsafe_allow_html=True)
                 else:
