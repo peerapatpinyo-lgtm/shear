@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,7 +10,7 @@ import plotly.graph_objects as go
 try:
     import steel_db             
     import connection_design    
-    import report_generator     # <--- Import ไฟล์ Report Generator V13/V14 ของคุณ
+    import report_generator     
 except ImportError as e:
     st.error(f"⚠️ Modules missing: {e}. Please ensure steel_db.py, connection_design.py, and report_generator.py are in the folder.")
     st.stop()
@@ -17,18 +18,20 @@ except ImportError as e:
 # ==========================================
 # 2. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V17 (Report Fixed)", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V18 (Linked)", layout="wide", page_icon="🏗️")
 
-# Initialize Session State
+# --- INITIALIZE SESSION STATE ---
+# เพิ่ม 'design_method' เพื่อใช้เป็น Global Variable ระหว่าง Tab
+if 'design_method' not in st.session_state:
+    st.session_state.design_method = "LRFD (Limit State)"
 if 'cal_success' not in st.session_state:
     st.session_state.cal_success = False
 if 'res_dict' not in st.session_state:
     st.session_state.res_dict = {}
-# เก็บค่า Connection Type ไว้ใน Session เพื่อส่งไป Report
 if 'conn_type' not in st.session_state:
     st.session_state.conn_type = "Fin Plate"
 
-# CSS Styling
+# CSS Styling (รักษาเอกลักษณ์เดิม)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
@@ -87,12 +90,14 @@ st.markdown("""
 # 3. SIDEBAR INPUTS
 # ==========================================
 with st.sidebar:
-    st.title("🏗️ Beam Insight V17")
+    st.title("🏗️ Beam Insight V18")
     st.divider()
     
-    # Settings
-    method = st.radio("Method", ["ASD (Allowable Stress)", "LRFD (Limit State)"])
-    is_lrfd = True if "LRFD" in method else False
+    # --- METHOD LINKING ---
+    # ใช้ st.session_state เพื่อให้ Tab 2 รู้ว่าเลือกอะไรใน Tab 1
+    method_options = ["ASD (Allowable Stress)", "LRFD (Limit State)"]
+    st.session_state.design_method = st.radio("Method", method_options, index=1)
+    is_lrfd = True if "LRFD" in st.session_state.design_method else False
     
     grade_opts = {"SS400 (Fy 2450)": 2450, "SM520 (Fy 3550)": 3550, "A36 (Fy 2500)": 2500}
     grade_choice = st.selectbox("Steel Grade", list(grade_opts.keys()))
@@ -138,10 +143,8 @@ with st.sidebar:
 # ==========================================
 # 4. CALCULATION LOGIC
 # ==========================================
-# 1. Calculate Section Properties (Area Web)
 Aw = (h/10) * (tw/10) # cm2
 
-# 2. Calculate Capacities (Capacity)
 if is_lrfd:
     M_cap = 0.90 * Fy * Zx 
     V_cap = 1.00 * 0.60 * Fy * Aw
@@ -151,34 +154,21 @@ else:
     V_cap = 0.40 * Fy * Aw
     label_load = "Safe Load (Wa)"
 
-# 3. Back-Calculate Uniform Load (kg/m) based on Span
 L_cm = user_span * 100
-
-# Formula Back-Solving
-# V = wL/2 => w = 2V/L
-w_shear = (2 * V_cap / L_cm) * 100 # *100 converts kg/cm -> kg/m
-
-# M = wL^2/8 => w = 8M/L^2
+w_shear = (2 * V_cap / L_cm) * 100 
 w_moment = (8 * M_cap / (L_cm**2)) * 100
-
-# Delta = 5wL^4 / 384EI => w = 384EI(Delta) / 5L^4
-# Delta_all = L/denom
 w_defl = ((L_cm/defl_denom) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100
 
-# 4. Determine Governing Load
 w_safe = min(w_shear, w_moment, w_defl)
 gov_cause = "Shear" if w_safe == w_shear else ("Moment" if w_safe == w_moment else "Deflection")
 
-# 5. Calculate Actual Forces based on w_safe
 v_act = w_safe * user_span / 2
 m_act = w_safe * user_span**2 / 8
-d_act = (5 * (w_safe/100) * (L_cm**4)) / (384 * E_mod * Ix) # Actual Deflection in cm
+d_act = (5 * (w_safe/100) * (L_cm**4)) / (384 * E_mod * Ix)
 d_allow = L_cm / defl_denom
 
-# 6. Connection Design Load
 v_conn_design = V_cap * (target_pct / 100.0) if "Fixed" in design_mode else v_act
 
-# 7. Store Results in Session State
 st.session_state.cal_success = True
 st.session_state.res_dict = {
     'w_safe': w_safe, 'cause': gov_cause,
@@ -191,18 +181,17 @@ st.session_state.res_dict = {
 # ==========================================
 # 5. UI RENDERING
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Report"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "📋 Load Table", "📝 Report"])
 
 # --- TAB 1: BEAM ANALYSIS ---
 with tab1:
     st.subheader(f"Engineering Analysis: {sec_name}")
     
-    # Highlight Card
     cause_color = "#dc2626" if gov_cause == "Shear" else ("#d97706" if gov_cause == "Moment" else "#059669")
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div><span class="sub-text">Maximum Allowed {label_load}</span><br>
+            <div><span class="sub-text">Maximum Allowed {label_load} ({st.session_state.design_method.split(' ')[0]})</span><br>
                 <span class="big-num">{w_safe:,.0f}</span> <span style="font-size:20px; color:#4b5563;">kg/m</span></div>
             <div style="text-align: right;"><span class="sub-text">Governing Limit</span><br>
                 <span style="font-size: 20px; font-weight:bold; color:{cause_color}; background-color:{cause_color}15; padding: 6px 15px; border-radius:15px; border: 1px solid {cause_color}30;">{gov_cause.upper()}</span></div>
@@ -210,7 +199,6 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # Detailed Checks Function
     def render_check(title, act, lim, ratio_label, eq_w, eq_act, eq_ratio):
         ratio = act / lim
         is_pass = ratio <= 1.01 
@@ -256,17 +244,19 @@ with tab1:
 # --- TAB 2: CONNECTION ---
 with tab2:
     if st.session_state.cal_success:
-        st.markdown("##### ⚙️ Connection Configuration")
+        st.markdown(f"##### ⚙️ Connection Configuration ({st.session_state.design_method})")
         c_type = st.selectbox("Connection Type", ["Fin Plate", "End Plate", "Double Angle"])
-        st.session_state.conn_type = c_type # บันทึกค่าไว้ใช้ใน Tab 4
+        st.session_state.conn_type = c_type 
         
         st.info(f"Designing **{c_type}** for Shear Load: **{v_conn_design:,.0f} kg**")
         
         section_data = {"name": sec_name, "h": h, "b": b, "tw": tw, "tf": tf}
+        
+        # ส่งค่าข้ามไปยัง connection_design.py
         connection_design.render_connection_tab(
             V_design_from_tab1=v_conn_design,
-            default_bolt_size="M20",
-            method=method,
+            default_bolt_size=20, # ส่งเป็น int
+            method=st.session_state.design_method,
             is_lrfd=is_lrfd,
             section_data=section_data,
             conn_type=c_type,
@@ -292,10 +282,8 @@ with tab3:
     df = pd.DataFrame(data, columns=["Span (m)", "Max Load (kg/m)", "Control"])
     st.dataframe(df.style.format({"Max Load (kg/m)": "{:,.0f}", "Span (m)": "{:.1f}"}), use_container_width=True)
 
-# --- TAB 4: REPORT (LINKED TO report_generator.py) ---
+# --- TAB 4: REPORT ---
 with tab4:
-    # 1. เตรียมข้อมูล Bolt เบื้องต้น (Mockup or Default)
-    # ข้อมูลนี้จะถูกใช้อ้างอิงใน Report หาก User ไม่ได้แก้ไขใน Tab 2 (หรือจะดึง session state ถ้ามีการ implment ลึกกว่านี้)
     bolt_info = {
         'type': st.session_state.conn_type,
         'grade': 'A325',
@@ -303,15 +291,13 @@ with tab4:
         'qty': 'See Tab 2'
     }
     
-    # 2. เตรียมข้อมูล Section Param (p)
     section_params = {'h': h, 'b': b, 'tw': tw, 'tf': tf, 'Ix': Ix, 'Zx': Zx}
     
-    # 3. เรียกใช้ฟังก์ชันจากไฟล์ report_generator.py โดยตรง
     report_generator.render_report_tab(
-        method=method,
+        method=st.session_state.design_method,
         is_lrfd=is_lrfd,
         sec_name=sec_name,
-        steel_grade=grade_choice, # ส่งเป็น string ตามที่ต้องการ
+        steel_grade=grade_choice,
         p=section_params,
         res=st.session_state.res_dict,
         bolt=bolt_info
