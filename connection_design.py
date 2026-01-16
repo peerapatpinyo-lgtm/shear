@@ -1,6 +1,6 @@
 import streamlit as st
 import math
-import drawing_utils  # เรียกใช้ไฟล์ drawing_utils.py (Plotly)
+import drawing_utils  # เรียกใช้ไฟล์ drawing_utils.py
 
 def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
     
@@ -151,7 +151,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         st.markdown("---")
         
         # ==========================
-        # 4. PLOTLY DRAWING SECTION (MANUAL RANGE FIX)
+        # 4. PLOTLY DRAWING SECTION (SMART FIT)
         # ==========================
         st.markdown("#### 📐 Construction Details")
         
@@ -185,34 +185,36 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
         tab1, tab2, tab3 = st.tabs(["🖼️ Elevation (Front)", "🏗️ Plan (Top)", "✂️ Section (Side)"])
         
-        # --- FIX: ฟังก์ชันบังคับมุมกล้อง (Manual Range) ---
-        def fit_layout_manual(fig, x_lim, y_lim, height=500):
-            # x_lim: [min, max] ของแกน X ที่ต้องการให้เห็น
-            # y_lim: [min, max] ของแกน Y ที่ต้องการให้เห็น
+        # --- ฟังก์ชันจัดรูปให้ "ฟิตพอดี" โดยอัตโนมัติ ---
+        def fit_layout_smart(fig, width_obj, height_obj, plot_height=500):
+            """
+            คำนวณขอบเขต (Range) โดยอิงจากขนาดวัตถุจริง + เผื่อที่ว่าง (Padding) 10%
+            เพื่อให้รูปดูเต็มกรอบพอดี ไม่เล็กและไม่ใหญ่เกินไป
+            """
+            pad_x = width_obj * 0.1  # เผื่อขอบซ้ายขวา 10%
+            pad_y = height_obj * 0.1 # เผื่อขอบบนล่าง 10%
+            
+            # คำนวณ Range ที่เหมาะสม (สมมติว่ารูปวาดเริ่มที่ 0,0)
+            # ถ้า Drawing Utils วาด Centered ก็ปรับเป็น [-w/2, w/2] ได้ แต่ส่วนใหญ่เริ่มที่ 0,0
+            x_range = [-pad_x, width_obj + pad_x]
+            y_range = [-pad_y, height_obj + pad_y]
+
             fig.update_layout(
-                height=height,
-                margin=dict(l=20, r=20, t=40, b=20),
-                xaxis=dict(range=x_lim, visible=False, scaleanchor="y", scaleratio=1),
-                yaxis=dict(range=y_lim, visible=False),
-                dragmode="pan"
+                height=plot_height,
+                margin=dict(l=10, r=10, t=30, b=10), # ลด Margin ของ Container
+                xaxis=dict(range=x_range, visible=False, scaleanchor="y", scaleratio=1),
+                yaxis=dict(range=y_range, visible=False),
+                dragmode="pan",
+                showlegend=False
             )
             return fig
-
-        # กำหนด Buffer (ขอบว่าง) รอบรูป (mm)
-        pad = 50 
 
         with tab1:
             try:
                 fig_front = drawing_utils.create_front_view(beam_dict, plate_dict, bolt_dict)
-                # Front View: แกน Y คือความสูงคาน, แกน X คือความกว้างหน้าตัด (โดยประมาณ)
-                # เราบังคับให้มองที่ [-buffer, width+buffer] และ [-buffer, height+buffer]
+                # Front View ขนาด: กว้าง=beam_b, สูง=beam_h
                 st.plotly_chart(
-                    fit_layout_manual(
-                        fig_front, 
-                        x_lim=[-pad, beam_b_mm + pad], 
-                        y_lim=[-pad, beam_h_mm + pad],
-                        height=550
-                    ), 
+                    fit_layout_smart(fig_front, beam_b_mm, beam_h_mm, plot_height=500), 
                     use_container_width=True
                 )
             except Exception as e:
@@ -221,15 +223,10 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         with tab2:
             try:
                 fig_plan = drawing_utils.create_plan_view(beam_dict, plate_dict, bolt_dict)
-                # Plan View: มองจากด้านบน (กว้าง x ยาว)
-                # สมมติความยาวช่วงต่อเชื่อมประมาณ 300mm
+                # Plan View ขนาด: กว้าง=beam_b, สูง=ความยาวช่วงต่อ (ประมาณ 350mm)
+                # ปรับความสูงกราฟลงเหลือ 400px เพราะรูปแบน
                 st.plotly_chart(
-                    fit_layout_manual(
-                        fig_plan,
-                        x_lim=[-pad, beam_b_mm + pad],
-                        y_lim=[-pad, 300 + pad], # Plan view ความลึกไม่เกิน 300-400mm
-                        height=400
-                    ),
+                    fit_layout_smart(fig_plan, beam_b_mm, 350, plot_height=400),
                     use_container_width=True
                 )
             except Exception as e:
@@ -238,14 +235,9 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         with tab3:
             try:
                 fig_side = drawing_utils.create_side_view(beam_dict, plate_dict, bolt_dict)
-                # Side View: มองด้านข้าง (ความสูงคาน x ความหนา/ความลึก)
+                # Side View ขนาด: กว้าง=ประมาณ 200mm (plate+web), สูง=beam_h
                 st.plotly_chart(
-                    fit_layout_manual(
-                        fig_side,
-                        x_lim=[-pad, 250], # Side view มักจะไม่กว้างมาก
-                        y_lim=[-pad, beam_h_mm + pad],
-                        height=550
-                    ),
+                    fit_layout_smart(fig_side, 200, beam_h_mm, plot_height=500),
                     use_container_width=True
                 )
             except Exception as e:
