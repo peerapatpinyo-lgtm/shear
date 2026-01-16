@@ -2,7 +2,7 @@ import streamlit as st
 import math
 import plotly.graph_objects as go
 import drawing_utils        # Drawing Logic
-import calculation_report   # The V13 Report File you provided
+import calculation_report   # V13 File
 
 def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
     
@@ -13,6 +13,10 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         .dim-check { font-weight: bold; padding: 4px 8px; border-radius: 4px; font-size: 13px; display: inline-block; margin-top: 5px;}
         .dim-ok { background-color: #dcfce7; color: #166534; }
         .dim-err { background-color: #fee2e2; color: #991b1b; }
+        .summary-table { font-size: 14px; width: 100%; border-collapse: collapse; }
+        .summary-table td, .summary-table th { padding: 6px; border-bottom: 1px solid #eee; }
+        .pass { color: #166534; font-weight: bold; }
+        .fail { color: #991b1b; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -28,7 +32,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
     col_input, col_result = st.columns([1, 1.4], gap="medium")
 
     # ==========================
-    # 1. INPUT SECTION
+    # 1. INPUT SECTION (LEFT)
     # ==========================
     with col_input:
         st.markdown("#### 🛠️ Connection Setup")
@@ -76,18 +80,16 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         else:
             h2.text_input("Pitch H", "-", disabled=True)
 
-        # Validation (Calculations in mm/cm for internal check)
-        w_plate = w_plate_input / 10
-        h_plate = h_plate_input / 10
+        # Validation Calculations
         pitch_v = pitch_v_mm / 10
         edge_v = edge_v_mm / 10
         dist_weld = dist_weld_mm / 10
         pitch_h = pitch_h_mm / 10
         
         req_h = (n_rows - 1) * pitch_v + (2 * edge_v)
-        check_h = h_plate >= req_h
+        check_h = (h_plate_input/10) >= req_h
         req_w_bolts = dist_weld + (max(0, n_cols - 1) * pitch_h)
-        rem_edge_mm = w_plate_input - (req_w_bolts * 10) # This is 'l_side'
+        rem_edge_mm = w_plate_input - (req_w_bolts * 10)
         
         st.markdown(f"""
         <div style="font-size:13px; margin-top:5px;">
@@ -96,57 +98,120 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         </div>
         """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
+
+        # ==========================================
+        # 3. PRE-CALCULATION (FOR LEFT SUMMARY)
+        # ==========================================
+        # ทำการคำนวณจริงตรงนี้เลย เพื่อเอาผลลัพธ์มาโชว์ทางซ้าย (Replicating V13 Logic)
         
-        # Internal ksc for quick check bar
+        # 3.1 Unit Conversion
+        V_kN = V_design_from_tab1 / 101.97 
         fy_ksc = 2500 if "A36" in default_mat_grade or "SS400" in default_mat_grade else 3500
-        fu_ksc = 4000 if fy_ksc == 2500 else 4900
+        Fy_MPa = 250 if fy_ksc == 2500 else 345
+        Fu_MPa = 400 if fy_ksc == 2500 else 490
+        Fnv_MPa = 372 if "A325" in b_grade else 457 # A325=372, A490=457
+        
+        # 3.2 Factors
+        if is_lrfd:
+            phi_shear, phi_yield, phi_rupture, phi_weld = 0.75, 1.00, 0.75, 0.75
+        else:
+            om_shear, om_yield, om_rupture, om_weld = 2.00, 1.50, 2.00, 2.00
 
-    # ==========================
-    # 2. QUICK CHECK (Internal Logic - kg)
-    # ==========================
-    # (ใช้ Logic เดิมคำนวณคร่าวๆ เพื่อแสดง Progress Bar เร็วๆ)
-    Ab_cm = math.pi * (d_bolt**2) / 4
-    Fnv_ksc = 3720 if "A325" in b_grade else 4690
-    Rn_shear = (n_rows * n_cols) * Fnv_ksc * Ab_cm
-    cap_shear = (0.75 * Rn_shear) if is_lrfd else (Rn_shear / 1.5)
-    
-    # Simple Ratio for UI
-    ratio_approx = V_design_from_tab1 / cap_shear if cap_shear > 0 else 999
-    is_pass = ratio_approx <= 1.0
+        # 3.3 Capacities (kN) - Using V13 Formulas exactly
+        # Bolt Shear
+        Ab_mm2 = math.pi * (d_bolt*10)**2 / 4
+        Rn_shear = Fnv_MPa * Ab_mm2 * (n_rows * n_cols) / 1000
+        cap_shear = (0.75 * Rn_shear) if is_lrfd else (Rn_shear / 2.00)
+        
+        # Bolt Bearing
+        Rn_br = 2.4 * (d_bolt*10) * pl_thick * Fu_MPa * (n_rows * n_cols) / 1000
+        cap_br = (0.75 * Rn_br) if is_lrfd else (Rn_br / 2.00)
+        
+        # Plate Yield
+        Ag = h_plate_input * pl_thick
+        Rn_y = 0.60 * Fy_MPa * Ag / 1000
+        cap_yld = (1.00 * Rn_y) if is_lrfd else (Rn_y / 1.50)
+        
+        # Plate Rupture
+        h_hole = (d_bolt*10) + 2
+        An = (h_plate_input - (n_rows * h_hole)) * pl_thick
+        Rn_r = 0.60 * Fu_MPa * An / 1000
+        cap_rup = (0.75 * Rn_r) if is_lrfd else (Rn_r / 2.00)
+        
+        # Block Shear (Complex Logic)
+        l_gv = (n_rows - 1) * pitch_v_mm + edge_v_mm
+        agv = l_gv * pl_thick
+        anv = (l_gv - (n_rows - 0.5) * h_hole) * pl_thick
+        ant = (rem_edge_mm - 0.5 * h_hole) * pl_thick
+        rn_blk = min(0.6*Fu_MPa*anv + 1.0*Fu_MPa*ant, 0.6*Fy_MPa*agv + 1.0*Fu_MPa*ant) / 1000
+        cap_blk = (0.75 * rn_blk) if is_lrfd else (rn_blk / 2.00)
+        
+        # Weld
+        l_weld = h_plate_input * 2
+        rn_weld = 0.6 * 480 * 0.707 * weld_sz * l_weld / 1000
+        cap_weld = (0.75 * rn_weld) if is_lrfd else (rn_weld / 2.00)
 
-    # ==========================
-    # 3. OUTPUT
-    # ==========================
-    with col_result:
-        # Status Box
-        status_color = "#22c55e" if is_pass else "#ef4444"
+        # 3.4 Summary Logic
+        caps = {
+            "Bolt Shear": cap_shear, "Bolt Bearing": cap_br,
+            "Plate Yield": cap_yld, "Plate Rupture": cap_rup,
+            "Block Shear": cap_blk, "Weld": cap_weld
+        }
+        min_cap = min(caps.values())
+        overall_ratio = V_kN / min_cap if min_cap > 0 else 999
+        is_pass = overall_ratio <= 1.0
+
+        # ==========================================
+        # 4. SHOW SUMMARY TABLE (LEFT)
+        # ==========================================
+        st.markdown("#### 🏁 Final Summary")
+        
+        # Status Badge
+        status_bg = "#dcfce7" if is_pass else "#fee2e2"
+        status_txt = "#166534" if is_pass else "#991b1b"
+        status_msg = "PASS ✅" if is_pass else "FAIL ❌"
+        
         st.markdown(f"""
-        <div style="background:{status_color}; color:white; padding:10px 15px; border-radius:5px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-weight:bold; font-size:18px;">{'PROBABLE PASS ✅' if is_pass else 'CHECK DETAILS ⚠️'}</span>
-            <span>Approx Ratio: <b>{ratio_approx:.2f}</b></span>
+        <div style="background:{status_bg}; color:{status_txt}; padding:10px; border-radius:6px; margin-bottom:10px; text-align:center; font-weight:bold;">
+            {status_msg} (Ratio: {overall_ratio:.2f})
         </div>
         """, unsafe_allow_html=True)
-
-        tab_draw, tab_calc = st.tabs(["📐 Drawing & Dims", "📝 Calculation Report"])
         
-        # --- TAB 1: DRAWING ---
+        # Table HTML
+        rows_html = ""
+        for k, v in caps.items():
+            r = V_kN / v if v > 0 else 0
+            color_class = "pass" if r <= 1.0 else "fail"
+            icon = "" if r <= 1.0 else "⚠️"
+            # Highlight governing case
+            bg_style = "background-color:#f1f5f9;" if v == min_cap else ""
+            rows_html += f"<tr style='{bg_style}'><td>{k} {icon}</td><td style='text-align:right'>{v:.1f}</td><td style='text-align:right' class='{color_class}'>{r:.2f}</td></tr>"
+
+        st.markdown(f"""
+        <table class="summary-table">
+            <thead>
+                <tr><th style='text-align:left'>Check</th><th style='text-align:right'>Cap (kN)</th><th style='text-align:right'>Ratio</th></tr>
+            </thead>
+            <tbody>{rows_html}</tbody>
+        </table>
+        <div style="font-size:11px; color:gray; text-align:right; margin-top:5px;">*Load: {V_kN:.2f} kN</div>
+        """, unsafe_allow_html=True)
+
+    # ==========================
+    # 5. RIGHT SECTION (TABS)
+    # ==========================
+    with col_result:
+        tab_draw, tab_calc = st.tabs(["📐 Drawing", "📝 Full Report"])
+        
         with tab_draw:
+            # --- DRAWING LOGIC ---
             beam_h_mm = section_data.get('h', 400)
             beam_b_mm = section_data.get('b', 200)
-            
-            beam_dict = {
-                'h': beam_h_mm, 'b': beam_b_mm,
-                'tf': section_data.get('tf', 13), 'tw': section_data.get('tw', 8)
-            }
-            plate_dict = {
-                'h': h_plate_input, 'w': w_plate_input, 't': pl_thick,
-                'e1': dist_weld_mm, 'lv': edge_v_mm, 'weld_size': weld_sz
-            }
-            bolt_dict = {
-                'd': d_bolt * 10, 'rows': n_rows, 'cols': n_cols,
-                's_v': pitch_v_mm, 's_h': pitch_h_mm
-            }
+            beam_dict = {'h': beam_h_mm, 'b': beam_b_mm, 'tf': section_data.get('tf', 13), 'tw': section_data.get('tw', 8)}
+            plate_dict = {'h': h_plate_input, 'w': w_plate_input, 't': pl_thick, 'e1': dist_weld_mm, 'lv': edge_v_mm, 'weld_size': weld_sz}
+            bolt_dict = {'d': d_bolt * 10, 'rows': n_rows, 'cols': n_cols, 's_v': pitch_v_mm, 's_h': pitch_h_mm}
 
+            # Helper for Dims
             def add_manual_dims(fig, view_type, p_data, b_data):
                 annot_color = "#0369a1"
                 def draw_dim_line(x0, y0, x1, y1, text, offset_x=0, offset_y=0):
@@ -203,52 +268,34 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                     st.plotly_chart(fit_view(fig, [-250, 250], [-(beam_h_mm/2)-100, (beam_h_mm/2)+100], 500), use_container_width=True)
                 except: pass
 
-        # --- TAB 2: CALCULATION REPORT ---
         with tab_calc:
-            # 1. PREPARE DATA FOR REPORT (Unit Conversion)
-            # Report expects: V_load (kN), Dimensions (mm), Stress (MPa)
-            
-            # Load: kg -> kN
-            V_kN = V_design_from_tab1 / 101.97 
-            
-            # Material: ksc -> MPa
-            Fy_MPa = 250 if fy_ksc == 2500 else 345
-            Fu_MPa = 400 if fy_ksc == 2500 else 490 # Simplification for A572
-            
-            # Bolt: ksc -> MPa
-            Fnv_MPa = 372 if "A325" in b_grade else 457 # A325=372MPa, A490=457MPa
-            
-            # Dictionary Packing
+            # Prepare Data for Report
             plate_data_rpt = {
-                't': pl_thick,          # mm
-                'h': h_plate_input,     # mm
-                'w': w_plate_input,     # mm
-                'lv': edge_v_mm,        # mm (vertical edge)
-                'l_side': rem_edge_mm,  # mm (horizontal edge / e2)
-                'weld_size': weld_sz,   # mm
-                'Fy': Fy_MPa,           # MPa
-                'Fu': Fu_MPa            # MPa
+                't': pl_thick, 'h': h_plate_input, 'w': w_plate_input,
+                'lv': edge_v_mm, 'l_side': rem_edge_mm, 'weld_size': weld_sz,
+                'Fy': Fy_MPa, 'Fu': Fu_MPa
             }
-            
             bolt_data_rpt = {
-                'd': d_bolt * 10,       # cm -> mm
-                'rows': n_rows,
-                'cols': n_cols,
-                'Fnv': Fnv_MPa,         # MPa
-                's_v': pitch_v_mm       # mm
+                'd': d_bolt * 10, 'rows': n_rows, 'cols': n_cols,
+                'Fnv': Fnv_MPa, 's_v': pitch_v_mm
             }
             
-            # 2. GENERATE REPORT
             try:
-                report_md = calculation_report.generate_report(
-                    V_load=V_kN,
-                    beam=None, # Not used in V13 report logic
-                    plate=plate_data_rpt,
-                    bolts=bolt_data_rpt,
-                    is_lrfd=is_lrfd,
-                    material_grade=default_mat_grade,
-                    bolt_grade=b_grade
+                # Generate Report
+                full_report = calculation_report.generate_report(
+                    V_load=V_kN, beam=None, plate=plate_data_rpt, bolts=bolt_data_rpt,
+                    is_lrfd=is_lrfd, material_grade=default_mat_grade, bolt_grade=b_grade
                 )
-                st.markdown(report_md, unsafe_allow_html=True)
+                
+                # TRICK: Cut off the summary part from the text!
+                # V13 uses "#### 🏁 Final Summary" as header
+                if "#### 🏁 Final Summary" in full_report:
+                    report_body = full_report.split("#### 🏁 Final Summary")[0]
+                    # Add a small note at end
+                    report_body += "\n\n*(See detailed summary on the left dashboard)*"
+                    st.markdown(report_body, unsafe_allow_html=True)
+                else:
+                    st.markdown(full_report, unsafe_allow_html=True)
+                    
             except Exception as e:
-                st.error(f"Report Generation Error: {e}")
+                st.error(f"Report Error: {e}")
