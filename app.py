@@ -9,32 +9,38 @@ import plotly.graph_objects as go
 try:
     import steel_db             
     import connection_design    
-    import calculation_report   # ไฟล์ใหม่ที่คุณเพิ่งให้มา
+    import report_generator     # <--- Import ไฟล์ V13 ของคุณ
 except ImportError as e:
-    st.error(f"⚠️ Modules missing: {e}. Please ensure steel_db.py, connection_design.py, and calculation_report.py are in the folder.")
+    st.error(f"⚠️ Modules missing: {e}. Please ensure steel_db.py, connection_design.py, and report_generator.py are in the folder.")
     st.stop()
 
 # ==========================================
 # 2. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V17 (Advanced)", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V17 (Report Fixed)", layout="wide", page_icon="🏗️")
 
 if 'cal_success' not in st.session_state:
     st.session_state.cal_success = False
 if 'res_dict' not in st.session_state:
     st.session_state.res_dict = {}
+# เก็บค่า Connection Type ไว้ใน Session เพื่อส่งไป Report
+if 'conn_type' not in st.session_state:
+    st.session_state.conn_type = "Fin Plate"
 
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
+    
     .detail-card { background: white; border-radius: 12px; padding: 20px; border: 1px solid #e5e7eb; border-top: 6px solid #2563eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; }
     .status-badge { padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 12px; float: right; text-transform: uppercase; }
     .pass { background-color: #dcfce7; color: #166534; }
     .fail { background-color: #fee2e2; color: #991b1b; }
+    
     .highlight-card { background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); padding: 25px; border-radius: 20px; border-left: 8px solid #2563eb; box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08); margin-bottom: 25px; border: 1px solid #e5e7eb; }
     .big-num { color: #1e40af; font-size: 42px; font-weight: 800; font-family: 'Roboto Mono', monospace; }
     .sub-text { color: #6b7280; font-size: 14px; font-weight: 600; text-transform: uppercase; }
+    
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] { height: 50px; background-color: #f8fafc; border-radius: 8px 8px 0 0; padding: 10px 20px; font-weight: 600; color: #64748b; }
     .stTabs [aria-selected="true"] { background-color: #ffffff; border-bottom: 3px solid #2563eb; color: #2563eb; }
@@ -46,7 +52,6 @@ st.markdown("""
 # ==========================================
 with st.sidebar:
     st.title("🏗️ Beam Insight V17")
-    st.caption("Advanced Calculation Integrated")
     st.divider()
     
     # Settings
@@ -56,9 +61,6 @@ with st.sidebar:
     grade_opts = {"SS400 (Fy 2450)": 2450, "SM520 (Fy 3550)": 3550, "A36 (Fy 2500)": 2500}
     grade_choice = st.selectbox("Steel Grade", list(grade_opts.keys()))
     Fy = grade_opts[grade_choice]
-    # Map Grade to Fu (Tensile Strength) for Report
-    Fu_map = {"SS400 (Fy 2450)": 400, "SM520 (Fy 3550)": 520, "A36 (Fy 2500)": 400}
-    Fu_val = Fu_map[grade_choice]
     E_mod = 2.04e6 
     
     # Section
@@ -98,7 +100,7 @@ with st.sidebar:
         target_pct = 0
 
 # ==========================================
-# 4. CALCULATION LOGIC (BEAM)
+# 4. CALCULATION LOGIC
 # ==========================================
 Aw = (h/10) * (tw/10) # cm2
 if is_lrfd:
@@ -137,13 +139,14 @@ st.session_state.res_dict = {
 }
 
 # ==========================================
-# 5. UI TABS
+# 5. UI RENDERING
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Report (Advanced)"])
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Report"])
 
 # --- TAB 1: BEAM ANALYSIS ---
 with tab1:
     st.subheader(f"Engineering Analysis: {sec_name}")
+    
     # Highlight Card
     cause_color = "#dc2626" if gov_cause == "Shear" else ("#d97706" if gov_cause == "Moment" else "#059669")
     st.markdown(f"""
@@ -204,7 +207,9 @@ with tab1:
 with tab2:
     if st.session_state.cal_success:
         st.markdown("##### ⚙️ Connection Configuration")
-        c_type = st.selectbox("Connection Type", ["Fin Plate (Shear Tab)", "End Plate", "Double Angle"])
+        c_type = st.selectbox("Connection Type", ["Fin Plate", "End Plate", "Double Angle"])
+        st.session_state.conn_type = c_type # บันทึกค่าไว้ใช้ใน Tab 4
+        
         st.info(f"Designing **{c_type}** for Shear Load: **{v_conn_design:,.0f} kg**")
         
         section_data = {"name": sec_name, "h": h, "b": b, "tw": tw, "tf": tf}
@@ -237,55 +242,27 @@ with tab3:
     df = pd.DataFrame(data, columns=["Span (m)", "Max Load (kg/m)", "Control"])
     st.dataframe(df.style.format({"Max Load (kg/m)": "{:,.0f}", "Span (m)": "{:.1f}"}), use_container_width=True)
 
-# --- TAB 4: REPORT (LINKED TO NEW FILE) ---
+# --- TAB 4: REPORT (LINKED TO report_generator.py) ---
 with tab4:
-    st.markdown("### 📝 Detailed Calculation Report")
-    st.write("This report uses **Advanced Elastic Analysis** for bolt groups (Eccentricity considered).")
-    
-    # 1. Inputs for the advanced report (We map session state here)
-    # Convert kg to kN (1 kN approx 101.97 kg)
-    V_kN = v_conn_design / 101.97
-    
-    # Mock inputs (In a real app, these would come from Tab 2 state)
-    # For now, we use standard defaults to show the report works
-    beam_data = {'tw': tw, 'Fu': Fu_val}
-    
-    # Let user Customize for the report if they want
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        rep_rows = st.number_input("Report: Bolt Rows", 2, 10, 3)
-        rep_cols = st.number_input("Report: Bolt Cols", 1, 4, 1)
-    with c2:
-        rep_sv = st.number_input("Pitch (mm)", 30, 200, 60)
-        rep_d = st.selectbox("Bolt Size", [12, 16, 20, 24], index=2)
-    with c3:
-        rep_t_pl = st.number_input("Plate t (mm)", 6.0, 25.0, 9.0)
-        rep_e1 = st.number_input("Weld-to-Bolt Dist (mm)", 30, 100, 50)
-
-    # 2. Build Dictionaries
-    bolts_dict = {
-        'd': rep_d, 'rows': rep_rows, 'cols': rep_cols, 
-        's_v': rep_sv, 's_h': 60, 'Fnv': 372 # A325 Shear Strength approx
-    }
-    plate_dict = {
-        't': rep_t_pl, 'h': (rep_rows-1)*rep_sv + 2*40, # Est height
-        'e1': rep_e1, 'Fy': Fy, 'Fu': Fu_val,
-        'lv': 40, 'l_side': 40, 'weld_size': 6
+    # 1. เตรียมข้อมูล Bolt เบื้องต้น (Mockup or Default)
+    # ในอนาคตคุณอาจดึงละเอียดจาก Tab 2 แต่ตอนนี้เอาให้ Report รันผ่านก่อน
+    bolt_info = {
+        'type': st.session_state.conn_type,
+        'grade': 'A325',
+        'size': 'M20',
+        'qty': 'See Tab 2'
     }
     
-    st.divider()
+    # 2. เตรียมข้อมูล Section Param (p)
+    section_params = {'h': h, 'b': b, 'tw': tw, 'tf': tf, 'Ix': Ix, 'Zx': Zx}
     
-    # 3. Call the Advanced Module
-    try:
-        markdown_report = calculation_report.generate_report(
-            V_load=V_kN,
-            beam=beam_data,
-            plate=plate_dict,
-            bolts=bolts_dict,
-            is_lrfd=is_lrfd,
-            material_grade=grade_choice,
-            bolt_grade="A325"
-        )
-        st.markdown(markdown_report, unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Error generating advanced report: {e}")
+    # 3. เรียกใช้ฟังก์ชันจากไฟล์ report_generator.py โดยตรง
+    report_generator.render_report_tab(
+        method=method,
+        is_lrfd=is_lrfd,
+        sec_name=sec_name,
+        steel_grade=grade_choice, # ส่งเป็น string ตามที่ต้องการ
+        p=section_params,
+        res=st.session_state.res_dict,
+        bolt=bolt_info
+    )
