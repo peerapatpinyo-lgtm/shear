@@ -1,24 +1,35 @@
-#app.py
+# app.py (V15 - Final Integrated Version)
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
-# --- IMPORT MODULES ---
+# ==========================================
+# 0. SESSION STATE INITIALIZATION (FIX ERROR)
+# ==========================================
+# ต้องประกาศก่อนเรียกใช้ เพื่อป้องกัน AttributeError
+if 'cal_success' not in st.session_state:
+    st.session_state.cal_success = False
+
+if 'res_dict' not in st.session_state:
+    st.session_state.res_dict = {}
+
+# ==========================================
+# 1. IMPORT MODULES
+# ==========================================
 try:
     import connection_design as conn
     import report_generator as rep
-    # [Fix #2] Import Database จาก data_utils แทนการประกาศซ้ำ
     from data_utils import STEEL_DB
-except ImportError:
-    st.warning("Warning: connection_design.py, report_generator.py, or data_utils.py not found. Please ensure files are in the same directory.")
-    # Fallback กรณีหาไฟล์ไม่เจอ (ป้องกัน Error ตอนรันครั้งแรกถ้าไฟล์ยังไม่ครบ)
-    STEEL_DB = {} 
+except ImportError as e:
+    st.error(f"Error loading modules: {e}")
+    st.warning("Please ensure connection_design.py, report_generator.py, and data_utils.py are in the same directory.")
+    STEEL_DB = {} # Fallback
 
 # ==========================================
-# 1. SETUP & STYLE (Engineering Professional)
+# 2. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V13", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V15", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
@@ -51,68 +62,68 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. FULL DATA (Steel Sections)
+# 3. SIDEBAR & INPUTS
 # ==========================================
-# [Fix #2] ใช้ STEEL_DB ที่ Import มาจาก data_utils.py แทนการ Hardcode ตรงนี้
 steel_db = STEEL_DB 
 
 with st.sidebar:
-    st.title("🏗️ Beam Insight V13")
+    st.title("🏗️ Beam Insight V15")
     st.divider()
     
-    # --- 1. GLOBAL SETTINGS & LINKAGE ---
+    # --- GLOBAL SETTINGS ---
     method = st.radio("Method", ["ASD (Allowable Stress)", "LRFD (Limit State)"])
     is_lrfd = True if "LRFD" in method else False
     
     st.subheader("🛠️ Material Grade")
-    grade_opts = {"SS400 (Fy 2450)": 2450, "SM490 (Fy 3250)": 3250, "A36 (Fy 2500)": 2500, "Custom": 2400}
+    grade_opts = {"SS400 (Fy 2450)": 2450, "SM490 (Fy 3250)": 3250, "A36 (Fy 2500)": 2500}
     grade_choice = st.selectbox("Steel Grade", list(grade_opts.keys()))
     fy = st.number_input("Fy (kg/cm²)", value=grade_opts[grade_choice])
     
-    # ตรวจสอบว่า DB ว่างหรือไม่ (ป้องกัน Error)
+    # Section Selection
     if not steel_db:
-        st.error("Steel Database not found in data_utils.py")
+        st.error("Database Empty")
         sec_name = "N/A"
         p = {"h": 100, "b": 100, "tw": 6, "tf": 8, "Ix": 383, "Zx": 76.5, "w": 17.2}
     else:
-        sec_name = st.selectbox("Steel Section", list(steel_db.keys()), index=11)
+        sec_name = st.selectbox("Steel Section", list(steel_db.keys()), index=min(11, len(steel_db)-1))
         p = steel_db[sec_name]
 
+    # Beam Geometry
     user_span = st.number_input("Span Length (m)", min_value=1.0, value=6.0, step=0.5)
     defl_ratio = st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1)
     defl_lim_val = int(defl_ratio.split("/")[1])
     
-    st.subheader("🔩 Connection Design")
+    st.divider()
+    st.subheader("🔩 Connection Defaults")
+    # ค่าเหล่านี้จะถูกส่งไปเป็น Default ใน Tab 2
     conn_type_options = [
         "Fin Plate (Single Shear) - Beam to Col",
         "End Plate (Single Shear) - Beam to Col",
-        "Double Angle (Double Shear) - Beam to Col",
-        "Fin Plate (Single Shear) - Beam to Beam"
+        "Double Angle (Double Shear) - Beam to Col"
     ]
     conn_type = st.selectbox("Connection Type", conn_type_options)
     
     bolt_grade_opts = ["A325 (High Strength)", "Grade 8.8 (Standard)", "A490 (Premium)"]
     bolt_grade = st.selectbox("Bolt Grade", bolt_grade_opts)
-    bolt_size = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
     
-    design_mode = st.radio("Load for Connection:", ["Actual Load", "Fixed % Capacity"])
-    target_pct = st.slider("Target Usage %", 50, 100, 75) if design_mode == "Fixed % Capacity" else None
+    bolt_size = st.selectbox("Bolt Size", ["M12", "M16", "M20", "M22", "M24", "M27"], index=2)
+    
     E_mod = 2.04e6 
 
 # ==========================================
-# 3. CORE CALCULATIONS
+# 4. CORE CALCULATIONS (BEAM)
 # ==========================================
-# p ได้รับค่ามาจากข้างบนแล้ว
+# คำนวณ Properties
 Aw = (p['h']/10) * (p['tw']/10) 
 Ix, Zx = p['Ix'], p['Zx']
 
-# --- CALCULATE CAPACITY BASED ON METHOD (ASD/LRFD) ---
+# Determine Capacity (ASD/LRFD)
 if is_lrfd:
-    M_cap = 0.90 * fy * Zx  # LRFD Factor
+    M_cap = 0.90 * fy * Zx  
     V_cap = 1.00 * 0.6 * fy * Aw
     label_load = "Factored Load (Wu)"
 else:
-    M_cap = 0.60 * fy * Zx  # ASD Factor
+    M_cap = 0.60 * fy * Zx  
     V_cap = 0.40 * fy * Aw
     label_load = "Safe Load (w)"
 
@@ -125,19 +136,34 @@ def get_capacity(L_m):
     cause = "Shear" if w_gov == w_v else ("Moment" if w_gov == w_m else "Deflection")
     return w_v, w_m, w_d, w_gov, cause
 
+# Perform Calculation for Current Input
 w_shear, w_moment, w_defl, user_safe_load, user_cause = get_capacity(user_span)
 
+# Actual Forces based on Safe Load
 v_act = user_safe_load * user_span / 2
 m_act = user_safe_load * user_span**2 / 8
 d_act = (5 * (user_safe_load/100) * ((user_span*100)**4)) / (384 * E_mod * Ix)
 d_all = (user_span*100) / defl_lim_val
-V_design = v_act if design_mode == "Actual Load" else V_cap * (target_pct / 100)
+
+# ✅ UPDATE SESSION STATE (Fix for Tab 2 Access)
+st.session_state.cal_success = True
+st.session_state.res_dict = {
+    'w_safe': user_safe_load,
+    'cause': user_cause,
+    'v_cap': V_cap,
+    'v_act': v_act,
+    'm_cap': M_cap,
+    'm_act': m_act,
+    'd_all': d_all,
+    'd_act': d_act
+}
 
 # ==========================================
-# 4. UI RENDERING
+# 5. UI RENDERING (TABS)
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Report"])
 
+# --- TAB 1: BEAM ANALYSIS ---
 with tab1:
     st.subheader(f"Engineering Analysis: {sec_name} ({'LRFD' if is_lrfd else 'ASD'})")
     cause_color = "#dc2626" if user_cause == "Shear" else ("#d97706" if user_cause == "Moment" else "#059669")
@@ -214,27 +240,28 @@ with tab1:
     fig.update_layout(hovermode="x unified", height=450, margin=dict(t=20, b=20, l=20, r=20), plot_bgcolor='white')
     st.plotly_chart(fig, use_container_width=True)
 
-# แก้ไขในไฟล์ app.py (ส่วน Tab 2)
+# --- TAB 2: CONNECTION DETAIL ---
+with tab2:
+    if st.session_state.cal_success:
+        # เตรียมข้อมูลสำหรับส่งไป Tab 2
+        # ดึงค่าแรงเฉือนที่คำนวณได้จาก Tab 1 (หรือ Session State)
+        max_shear = st.session_state.res_dict.get('v_act', 0) 
+        
+        # เรียกฟังก์ชันจาก connection_design.py ด้วยชื่อ Parameter ใหม่ (V15 Compatible)
+        conn.render_connection_tab(
+            V_design_from_tab1=max_shear,        # ส่งค่าแรงเฉือนจริง
+            default_bolt_size=bolt_size,         # ส่งค่าจาก Sidebar
+            method=method,
+            is_lrfd=is_lrfd,
+            section_data=p,
+            conn_type="Fin Plate",
+            default_bolt_grade=bolt_grade,       # ส่งค่าจาก Sidebar
+            default_mat_grade=grade_choice       # ส่งค่าจาก Sidebar
+        )
+    else:
+        st.warning("⚠️ Calculating... Please wait.")
 
-    with tab2:
-        if st.session_state.cal_success:
-            # เตรียมข้อมูลสำหรับส่งไป Tab 2
-            # ดึงค่าแรงเฉือนที่คำนวณได้จาก Tab 1
-            max_shear = res_dict.get('v_act', 0) 
-            
-            # เรียกฟังก์ชันจาก connection_design.py ด้วยชื่อ Parameter ใหม่
-            conn.render_connection_tab(
-                V_design_from_tab1=max_shear,        # ชื่อใหม่: รับค่าแรงเฉือน
-                default_bolt_size=bolt_size_input,   # ชื่อใหม่: ค่าเริ่มต้นขนาดน็อต
-                method=design_method,
-                is_lrfd=is_lrfd,
-                section_data=selected_steel,
-                conn_type="Fin Plate",
-                default_bolt_grade=bolt_grade_input, # ชื่อใหม่: เกรดน็อตเริ่มต้น
-                default_mat_grade=steel_grade_input  # ชื่อใหม่: เกรดเหล็กเริ่มต้น
-            )
-        else:
-            st.warning("⚠️ กรุณากดปุ่ม 'Run Analysis' ใน Tab 1 เพื่อคำนวณแรงกระทำก่อนออกแบบจุดต่อ")
+# --- TAB 3: LOAD TABLE ---
 with tab3:
     st.subheader("Span-Load Reference Table")
     tbl_spans = np.arange(2.0, 12.5, 0.5)
@@ -242,12 +269,19 @@ with tab3:
     df = pd.DataFrame({"Span (m)": tbl_spans, f"Max {label_load} (kg/m)": [d[3] for d in tbl_data], "Control Factor": [d[4] for d in tbl_data]})
     st.dataframe(df.style.format("{:,.0f}", subset=[f"Max {label_load} (kg/m)"]), use_container_width=True)
 
+# --- TAB 4: SUMMARY REPORT ---
 with tab4:
     # รวบรวมข้อมูลทั้งหมดส่งไปยัง report_generator
-    full_res = {'w_safe': user_safe_load, 'cause': user_cause, 'v_cap': V_cap, 'v_act': v_act, 'm_cap': M_cap, 'm_act': m_act, 'd_all': d_all, 'd_act': d_act}
-    bolt_data = {'size': bolt_size, 'qty': req_bolt if 'req_bolt' in locals() else 0, 'cap': v_bolt if 'v_bolt' in locals() else 0, 'type': conn_type, 'grade': bolt_grade}
+    # ข้อมูล Bolt เบื้องต้น (จะถูก Update หากมีการแก้ใน Tab 2 แต่นี่คือค่าตั้งต้น)
+    bolt_data_report = {
+        'size': bolt_size, 
+        'qty': 'See Tab 2', 
+        'cap': 'See Tab 2', 
+        'type': conn_type, 
+        'grade': bolt_grade
+    }
     
     if 'rep' in locals():
-        rep.render_report_tab(method, is_lrfd, sec_name, grade_choice, p, full_res, bolt_data)
+        rep.render_report_tab(method, is_lrfd, sec_name, grade_choice, p, st.session_state.res_dict, bolt_data_report)
     else:
         st.info("Report Generator module not loaded.")
