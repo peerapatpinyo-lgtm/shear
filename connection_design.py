@@ -153,7 +153,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         st.markdown("---")
         
         # ==========================
-        # 4. PLOTLY DRAWING SECTION (UPDATED FOR FIT)
+        # 4. PLOTLY DRAWING SECTION (Fixed Zoom)
         # ==========================
         st.markdown("#### 📐 Construction Details")
         
@@ -185,37 +185,40 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         # Tab Selection for Views
         tab1, tab2, tab3 = st.tabs(["🖼️ Elevation (Front)", "🏗️ Plan (Top)", "✂️ Section (Side)"])
         
-        # --- Helper Function เพื่อปรับกราฟให้พอดีกรอบ ---
-        def fit_layout(fig, height=450):
+        # --- Helper Function เพื่อปรับกราฟให้พอดีกรอบ (Zoom Out) ---
+        def fit_layout(fig, height=500):
+            # คำนวณ Margin ให้เยอะขึ้น (Padding) เพื่อให้ภาพดู Zoom Out
             fig.update_layout(
                 height=height,
-                margin=dict(l=10, r=10, t=40, b=10), # ลด Margin ให้ชิดขอบ
-                autosize=True
+                margin=dict(l=60, r=60, t=60, b=60), # เพิ่ม Margin เป็น 60px รอบด้าน
+                autosize=True,
+                title_font_size=14,
+                # ยืนยันสัดส่วน 1:1 และให้ Plotly คำนวณ Range ใหม่อัตโนมัติให้ครบทุก object
+                xaxis=dict(visible=False, scaleanchor="y", scaleratio=1), 
+                yaxis=dict(visible=False, automargin=True),
+                dragmode="pan" # ให้ user เลื่อนรูปไปมาได้ง่ายขึ้น
             )
             return fig
 
         with tab1:
             try:
                 fig_front = drawing_utils.create_front_view(beam_dict, plate_dict, bolt_dict)
-                # ใช้ fit_layout และ use_container_width=True
-                st.plotly_chart(fit_layout(fig_front, height=500), use_container_width=True)
+                st.plotly_chart(fit_layout(fig_front, height=550), use_container_width=True)
             except Exception as e:
                 st.error(f"Error drawing Front View: {e}")
 
         with tab2:
             try:
                 fig_plan = drawing_utils.create_plan_view(beam_dict, plate_dict, bolt_dict)
-                # Plan View เตี้ยกว่านิดหน่อยได้
-                st.plotly_chart(fit_layout(fig_plan, height=400), use_container_width=True)
+                st.plotly_chart(fit_layout(fig_plan, height=450), use_container_width=True)
             except Exception as e:
                 st.error(f"Error drawing Plan View: {e}")
 
         with tab3:
             try:
                 fig_side = drawing_utils.create_side_view(beam_dict, plate_dict, bolt_dict)
-                # Side View
-                st.plotly_chart(fit_layout(fig_side, height=500), use_container_width=True)
+                st.plotly_chart(fit_layout(fig_side, height=550), use_container_width=True)
             except Exception as e:
                 st.error(f"Error drawing Side View: {e}")
 
-        st.caption("Interactive Drawing powered by Plotly")
+        st.caption("Interactive Drawing powered by Plotly (Pan/Zoom enabled)")
