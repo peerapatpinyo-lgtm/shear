@@ -1,269 +1,287 @@
 import plotly.graph_objects as go
+import numpy as np
 
-# ==========================================
-# 🎨 STYLES & CONSTANTS
-# ==========================================
-COLORS = {
-    'STEEL_CUT': "#9CA3AF",    # สีเนื้อเหล็กตัด
-    'STEEL_FACE': "#F3F4F6",   # สีผิวเหล็ก
-    'PLATE': "#DBEAFE",        # สีแผ่นเพลท
-    'BOLT': "#374151",         # สีโบลท์
-    'DIM': "#1e40af",          # สีเส้นบอกระยะ
-    'WELD': "#000000"          # สีงานเชื่อม
+# =============================================================================
+# 🎨 STYLES & CONFIG (รูปแบบเดิม)
+# =============================================================================
+STYLE = {
+    'STEEL_CUT':   dict(fillcolor="#D1D5DB", line=dict(color="black", width=2)),
+    'STEEL_FACE':  dict(fillcolor="#F3F4F6", line=dict(color="#6B7280", width=1)),
+    'PLATE':       dict(fillcolor="#BFDBFE", line=dict(color="#1E3A8A", width=2)),
+    'ANGLE':       dict(fillcolor="#C7D2FE", line=dict(color="#312E81", width=2)),
+    'BOLT':        dict(fillcolor="#374151", line=dict(color="black", width=1)),
+    'CL':          dict(color="#DC2626", width=1, dash="dashdot"),
+    'DIM':         dict(color="#1D4ED8", family="Arial", size=11), # สีน้ำเงินแบบเดิม
 }
 
-# ==========================================
-# 🛠️ DIMENSION HELPER
-# ==========================================
-def draw_dim(fig, x0, y0, x1, y1, text, offset=30, type="h"):
-    """
-    วาดเส้นบอกระยะแบบ Construction (มีขีดหัวท้าย)
-    type: 'h' (แนวนอน), 'v' (แนวตั้ง)
-    """
-    c = COLORS['DIM']
-    tick_len = 5
-    
-    if type == "h":
+# =============================================================================
+# 🛠️ HELPER FUNCTIONS (กลับไปใช้แบบมีหัวลูกศร)
+# =============================================================================
+def add_dim(fig, x0, y0, x1, y1, text, offset=30, type="h"):
+    """เขียน Dimension แบบมีหัวลูกศร (Arrow Style - แบบเดิมที่ต้องการ)"""
+    c = STYLE['DIM']['color']
+    if type == "h": 
         y_pos = y0 + offset
-        # Main Line
+        # เส้นหลัก
         fig.add_shape(type="line", x0=x0, y0=y_pos, x1=x1, y1=y_pos, line=dict(color=c, width=1))
-        # Ticks (Left & Right)
-        fig.add_shape(type="line", x0=x0, y0=y_pos-tick_len, x1=x0, y1=y_pos+tick_len, line=dict(color=c, width=1))
-        fig.add_shape(type="line", x0=x1, y0=y_pos-tick_len, x1=x1, y1=y_pos+tick_len, line=dict(color=c, width=1))
-        # Extension Lines (From Object to Dim Line)
-        ext_dir = 1 if offset > 0 else -1
-        gap = 5 * ext_dir
-        fig.add_shape(type="line", x0=x0, y0=y0+gap, x1=x0, y1=y_pos, line=dict(color=c, width=0.5, dash='dot'))
-        fig.add_shape(type="line", x0=x1, y0=y1+gap, x1=x1, y1=y_pos, line=dict(color=c, width=0.5, dash='dot'))
-        # Text
-        fig.add_annotation(x=(x0+x1)/2, y=y_pos, text=f"<b>{text}</b>", showarrow=False, yshift=10*ext_dir, font=dict(color=c, size=11))
-
+        # ขาหยั่ง
+        dir = 1 if offset >= 0 else -1
+        fig.add_shape(type="line", x0=x0, y0=y0, x1=x0, y1=y_pos+(5*dir), line=dict(color=c, width=0.5))
+        fig.add_shape(type="line", x0=x1, y0=y1, x1=x1, y1=y_pos+(5*dir), line=dict(color=c, width=0.5))
+        # หัวลูกศร
+        fig.add_annotation(x=x0, y=y_pos, ax=15, ay=0, axref="pixel", ayref="pixel", arrowhead=2, arrowsize=1, arrowcolor=c, text="")
+        fig.add_annotation(x=x1, y=y_pos, ax=-15, ay=0, axref="pixel", ayref="pixel", arrowhead=2, arrowsize=1, arrowcolor=c, text="")
+        # ข้อความ
+        fig.add_annotation(x=(x0+x1)/2, y=y_pos, text=f"<b>{text}</b>", showarrow=False, yshift=10*dir, font=dict(size=11, color=c))
     else: # Vertical
         x_pos = x0 + offset
-        # Main Line
+        dir = 1 if offset >= 0 else -1
+        # เส้นหลัก
         fig.add_shape(type="line", x0=x_pos, y0=y0, x1=x_pos, y1=y1, line=dict(color=c, width=1))
-        # Ticks
-        fig.add_shape(type="line", x0=x_pos-tick_len, y0=y0, x1=x_pos+tick_len, y1=y0, line=dict(color=c, width=1))
-        fig.add_shape(type="line", x0=x_pos-tick_len, y0=y1, x1=x_pos+tick_len, y1=y1, line=dict(color=c, width=1))
-        # Extension
-        ext_dir = 1 if offset > 0 else -1
-        gap = 5 * ext_dir
-        fig.add_shape(type="line", x0=x0+gap, y0=y0, x1=x_pos, y1=y0, line=dict(color=c, width=0.5, dash='dot'))
-        fig.add_shape(type="line", x0=x1+gap, y0=y1, x1=x_pos, y1=y1, line=dict(color=c, width=0.5, dash='dot'))
-        # Text
-        fig.add_annotation(x=x_pos, y=(y0+y1)/2, text=f"<b>{text}</b>", showarrow=False, xshift=10*ext_dir, textangle=-90, font=dict(color=c, size=11))
+        # ขาหยั่ง
+        fig.add_shape(type="line", x0=x0, y0=y0, x1=x_pos+(5*dir), y1=y0, line=dict(color=c, width=0.5))
+        fig.add_shape(type="line", x0=x1, y0=y1, x1=x_pos+(5*dir), y1=y1, line=dict(color=c, width=0.5))
+        # หัวลูกศร
+        fig.add_annotation(x=x_pos, y=y0, ax=0, ay=15, axref="pixel", ayref="pixel", arrowhead=2, arrowsize=1, arrowcolor=c, text="")
+        fig.add_annotation(x=x_pos, y=y1, ax=0, ay=-15, axref="pixel", ayref="pixel", arrowhead=2, arrowsize=1, arrowcolor=c, text="")
+        # ข้อความ
+        fig.add_annotation(x=x_pos, y=(y0+y1)/2, text=f"<b>{text}</b>", showarrow=False, xshift=15*dir, textangle=-90, font=dict(size=11, color=c))
 
-def draw_weld_symbol(fig, x, y, size, length=None, orient="right"):
-    """
-    วาดสัญลักษณ์การเชื่อม (Weld Symbol) ชี้ไปที่ตำแหน่ง x,y
-    """
-    ax = 40 if orient == "right" else -40
-    text_label = f"Fillet {size}mm"
-    if length: text_label += f" (L={length})"
-    
-    fig.add_annotation(
-        x=x, y=y, ax=ax, ay=-30,
-        text=f"<b>{text_label}</b>",
-        showarrow=True, arrowhead=2, arrowsize=1,
-        bgcolor="white", bordercolor="black", borderwidth=1
-    )
+def add_leader(fig, x, y, text, ax=40, ay=-40, align="left"):
+    fig.add_annotation(x=x, y=y, ax=ax, ay=ay, axref="pixel", ayref="pixel", text=f"<b>{text}</b>", showarrow=True, arrowhead=2, arrowsize=1, font=dict(size=11), align=align, bgcolor="rgba(255,255,255,0.8)")
 
-def setup_canvas(fig, limit):
-    fig.update_layout(
-        xaxis=dict(visible=False, range=[-limit, limit], scaleanchor="y", scaleratio=1),
-        yaxis=dict(visible=False, range=[-limit, limit]),
-        plot_bgcolor="white",
-        margin=dict(l=20, r=20, t=50, b=20),
-        height=500
-    )
+def draw_h_beam_section(fig, x_cen, y_cen, h, b, tf, tw, style, orientation="I"):
+    if orientation == "I":
+        fig.add_shape(type="path", path=f"M {x_cen-tw/2} {y_cen-h/2+tf} L {x_cen-tw/2} {y_cen+h/2-tf} L {x_cen+tw/2} {y_cen+h/2-tf} L {x_cen+tw/2} {y_cen-h/2+tf} Z", fillcolor=style['fillcolor'], line=dict(width=0))
+        fig.add_shape(type="rect", x0=x_cen-b/2, y0=y_cen+h/2-tf, x1=x_cen+b/2, y1=y_cen+h/2, fillcolor=style['fillcolor'], line=style['line'])
+        fig.add_shape(type="rect", x0=x_cen-b/2, y0=y_cen-h/2, x1=x_cen+b/2, y1=y_cen-h/2+tf, fillcolor=style['fillcolor'], line=style['line'])
+        fig.add_shape(type="line", x0=x_cen-tw/2, y0=y_cen-h/2+tf, x1=x_cen-tw/2, y1=y_cen+h/2-tf, line=style['line'])
+        fig.add_shape(type="line", x0=x_cen+tw/2, y0=y_cen-h/2+tf, x1=x_cen+tw/2, y1=y_cen+h/2-tf, line=style['line'])
+    else: 
+        fig.add_shape(type="rect", x0=x_cen-h/2, y0=y_cen-b/2, x1=x_cen-h/2+tf, y1=y_cen+b/2, fillcolor=style['fillcolor'], line=style['line'])
+        fig.add_shape(type="rect", x0=x_cen+h/2-tf, y0=y_cen-b/2, x1=x_cen+h/2, y1=y_cen+b/2, fillcolor=style['fillcolor'], line=style['line'])
+        fig.add_shape(type="rect", x0=x_cen-h/2+tf, y0=y_cen-tw/2, x1=x_cen+h/2-tf, y1=y_cen+tw/2, fillcolor=style['fillcolor'], line=dict(width=0))
+        fig.add_shape(type="line", x0=x_cen-h/2+tf, y0=y_cen-tw/2, x1=x_cen+h/2-tf, y1=y_cen-tw/2, line=style['line'])
+        fig.add_shape(type="line", x0=x_cen-h/2+tf, y0=y_cen+tw/2, x1=x_cen+h/2-tf, y1=y_cen+tw/2, line=style['line'])
 
-# ==========================================
-# 1. FRONT VIEW (ELEVATION)
-# ==========================================
+def force_range(fig, limit):
+    fig.update_layout(xaxis=dict(range=[-limit, limit], visible=False, scaleanchor="y", scaleratio=1, fixedrange=True), yaxis=dict(range=[-limit, limit], visible=False, fixedrange=True), height=500, margin=dict(l=20, r=20, t=50, b=20), plot_bgcolor="white", showlegend=False)
+
+# =============================================================================
+# 3. FRONT VIEW (ELEVATION) - ใส่ระยะครบ
+# =============================================================================
 def create_front_view(beam, plate, inp):
     fig = go.Figure()
-    
-    # Unpack inputs
+    ctype = plate.get('type', 'Fin Plate')
+    h_b = beam['h']
     h_pl, w_pl = plate['h'], plate['w']
-    rows, cols = inp['rows'], inp['cols']
-    sv, sh = inp['s_v'], inp['s_h']
-    lv, leh = inp['lv'], inp['leh'] # Edge distances
-    e1 = inp['e1']
+    lv, sv, rows = inp['lv'], inp['s_v'], inp['rows']
+    leh, cols, sh = inp['leh'], inp['cols'], inp['s_h']
+    d = inp['d']
     sb = inp['setback']
-    weld_sz = inp['weld_size']
+
+    # Context elements (Cleaner style)
+    fig.add_shape(type="line", x0=0, y0=-h_b/2-50, x1=0, y1=h_b/2+50, line=dict(color="black", width=2)) # Col CL
     
-    # 1. Draw Beam Limits (Visual context)
-    fig.add_shape(type="rect", x0=sb, y0=-beam['h']/2, x1=sb+w_pl+300, y1=beam['h']/2, 
-                  fillcolor=COLORS['STEEL_FACE'], line=dict(width=0))
-    fig.add_shape(type="line", x0=sb, y0=-beam['h']/2, x1=sb+w_pl+300, y1=-beam['h']/2, line=dict(color="black", width=1))
-    fig.add_shape(type="line", x0=sb, y0=beam['h']/2, x1=sb+w_pl+300, y1=beam['h']/2, line=dict(color="black", width=1))
-    
-    # 2. Draw Column Line
-    fig.add_shape(type="line", x0=0, y0=-beam['h']/2-100, x1=0, y1=beam['h']/2+100, 
-                  line=dict(color="black", width=3)) # Column Face
-
-    # 3. Draw Plate
-    if "Fin" in plate['type']:
-        # Fin Plate starts at Column Face (0)
-        fig.add_shape(type="rect", x0=0, y0=-h_pl/2, x1=w_pl, y1=h_pl/2, 
-                      fillcolor=COLORS['PLATE'], line=dict(color="blue", width=2))
+    if "End" in ctype:
+        # --- END PLATE ---
+        draw_w = max(beam['b'], w_pl)
+        y_top, y_bot = h_pl/2, -h_pl/2
+        fig.add_shape(type="rect", x0=-draw_w/2, y0=y_bot, x1=draw_w/2, y1=y_top, fillcolor=STYLE['PLATE']['fillcolor'], line=STYLE['PLATE']['line'])
         
-        # Weld (Vertical Line at 0)
-        fig.add_shape(type="line", x0=0, y0=-h_pl/2, x1=0, y1=h_pl/2, line=dict(color="black", width=4))
-        draw_weld_symbol(fig, 0, h_pl/4, weld_sz, orient="left")
-        
-        # Bolt Holes
-        start_y = h_pl/2 - lv
-        start_x = e1 # For Fin, e1 is from Column Face usually? Or from Plate Edge? 
-        # Standard: e1 is from Bolt to Beam End. But for Fin layout, usually define distance from Col.
-        # Let's assume w_pl is calculated to cover everything.
-        # Draw bolts based on w_pl - leh (Right Edge)
-        
-        # Let's re-calculate coordinates relative to Plate Origin (0,0)
-        # Bolt Group Center X
-        bg_width = (cols-1)*sh
-        first_bolt_x = w_pl - leh - bg_width
-        
-        for c in range(cols):
-            bx = first_bolt_x + (c*sh)
-            for r in range(rows):
-                by = start_y - (r*sv)
-                fig.add_shape(type="circle", x0=bx-inp['d']/2, y0=by-inp['d']/2, x1=bx+inp['d']/2, y1=by+inp['d']/2, 
-                              fillcolor="white", line=dict(color="black"))
-                # Bolt Cross
-                fig.add_shape(type="line", x0=bx-2, y0=by, x1=bx+2, y1=by, line=dict(color="black", width=1))
-                fig.add_shape(type="line", x0=bx, y0=by-2, x1=bx, y1=by+2, line=dict(color="black", width=1))
-
-        # Dimensions
-        draw_dim(fig, 0, -h_pl/2-20, w_pl, -h_pl/2-20, f"W={w_pl}", -20, "h")
-        draw_dim(fig, w_pl+20, h_pl/2, w_pl+20, -h_pl/2, f"H={h_pl}", 20, "v")
-        draw_dim(fig, w_pl+50, h_pl/2, w_pl+50, start_y, f"Lv={lv}", 10, "v")
-        if rows > 1:
-            draw_dim(fig, w_pl+50, start_y, w_pl+50, start_y - (rows-1)*sv, f"{rows-1}@{sv}", 10, "v")
-
-    elif "End" in plate['type']:
-        # End Plate (Centered at Beam End, but Beam End is at Setback usually?)
-        # Let's assume View is looking at End Plate Face
-        fig.add_shape(type="rect", x0=-w_pl/2, y0=-h_pl/2, x1=w_pl/2, y1=h_pl/2, 
-                      fillcolor=COLORS['PLATE'], line=dict(color="blue", width=2))
-        
-        # Bolts (Gauge centered)
-        start_y = h_pl/2 - lv
+        g = sh # Gauge
+        start_y = y_top - lv
         for s in [-1, 1]:
-            bx = s * sh / 2
+            bx = s*g/2
             for r in range(rows):
                 by = start_y - (r*sv)
-                fig.add_shape(type="circle", x0=bx-inp['d']/2, y0=by-inp['d']/2, x1=bx+inp['d']/2, y1=by+inp['d']/2, 
-                              fillcolor="white", line=dict(color="black"))
-
-        # Dimensions
-        draw_dim(fig, -w_pl/2, -h_pl/2-20, w_pl/2, -h_pl/2-20, f"W={w_pl}", -20, "h")
-        draw_dim(fig, -sh/2, -h_pl/2-50, sh/2, -h_pl/2-50, f"Gauge={sh}", -20, "h")
-        draw_dim(fig, w_pl/2+20, h_pl/2, w_pl/2+20, -h_pl/2, f"H={h_pl}", 20, "v")
+                fig.add_shape(type="circle", x0=bx-d/2, y0=by-d/2, x1=bx+d/2, y1=by+d/2, fillcolor="white", line=dict(color="black", width=1))
         
-    fig.update_layout(title="<b>FRONT VIEW (ELEVATION)</b>")
-    setup_canvas(fig, max(h_pl, beam['h']))
+        add_leader(fig, -draw_w/2, y_top, "End Plate", ax=-40, ay=-40)
+        # Dimensions (Full set)
+        dim_x = draw_w/2 + 20
+        add_dim(fig, dim_x, y_top, dim_x, y_top-lv, f"lv={lv}", 20, "v") # Top edge
+        if rows > 1:
+            add_dim(fig, dim_x, y_top-lv, dim_x, y_top-lv-((rows-1)*sv), f"{rows-1}@{sv}", 20, "v") # Pitch
+        add_dim(fig, dim_x+30, y_top, dim_x+30, y_bot, f"H={h_pl}", 20, "v") # Total Height
+        add_dim(fig, -g/2, y_bot-30, g/2, y_bot-30, f"Gauge={g}", -20, "h") # Gauge
+        draw_h_final = h_pl
+
+    else:
+        # --- FIN / ANGLE ---
+        # Beam ghost
+        fig.add_shape(type="rect", x0=sb, y0=-h_b/2, x1=w_pl+100, y1=h_b/2, fillcolor=STYLE['STEEL_FACE']['fillcolor'], line=dict(color="gray", width=1, dash="dot"))
+        
+        y_top, y_bot = h_pl/2, -h_pl/2
+        style = STYLE['ANGLE'] if "Double" in ctype else STYLE['PLATE']
+        fig.add_shape(type="rect", x0=0, y0=y_bot, x1=w_pl, y1=y_top, fillcolor=style['fillcolor'], line=style['line'])
+
+        # Calculate bolt starting position relative to Plate Right Edge
+        # Plate Width = Setback + e1 + BoltGroup + leh
+        # First bolt X (from col center) = Setback + e1
+        first_bolt_x = sb + inp['e1']
+        start_y = y_top - lv
+        
+        bolt_count = 0
+        for c in range(cols):
+            cx = first_bolt_x + (c * sh)
+            for r in range(rows):
+                cy = start_y - (r * sv)
+                fig.add_shape(type="circle", x0=cx-d/2, y0=cy-d/2, x1=cx+d/2, y1=cy+d/2, fillcolor="white", line=dict(color="black", width=1))
+                bolt_count += 1
+        
+        lbl = "2L-Angle" if "Double" in ctype else "Fin Plate"
+        add_leader(fig, w_pl, y_top, lbl, ax=40, ay=-40)
+        
+        # Dimensions (Full set)
+        # Vertical
+        dim_x_v = w_pl + 20
+        add_dim(fig, dim_x_v, y_top, dim_x_v, y_top-lv, f"lv={lv}", 20, "v") # Top edge
+        if rows > 1:
+            add_dim(fig, dim_x_v, y_top-lv, dim_x_v, y_top-lv-((rows-1)*sv), f"{rows-1}@{sv}", 20, "v") # Pitch
+        add_dim(fig, dim_x_v+30, y_top, dim_x_v+30, y_bot, f"H={h_pl}", 20, "v") # Total Height
+        
+        # Horizontal
+        last_bolt_x = first_bolt_x + ((cols-1)*sh)
+        dim_y_h = y_bot - 20
+        add_dim(fig, last_bolt_x, dim_y_h, w_pl, dim_y_h, f"leh={leh}", -20, "h") # Edge Horiz
+        if cols > 1:
+             add_dim(fig, first_bolt_x, dim_y_h, last_bolt_x, dim_y_h, f"{cols-1}@{sh}", -20, "h") # Spacing Horiz
+        add_dim(fig, 0, dim_y_h-30, w_pl, dim_y_h-30, f"W={w_pl}", -20, "h") # Total Width
+
+        draw_h_final = h_pl
+
+    limit = max(h_b, draw_h_final) + 100
+    force_range(fig, limit/2)
+    fig.update_layout(title_text=f"<b>ELEVATION VIEW</b> : {ctype}")
     return fig
 
-# ==========================================
-# 2. SIDE VIEW (SECTION)
-# ==========================================
+# =============================================================================
+# 4. SIDE VIEW (SECTION)
+# =============================================================================
 def create_side_view(beam, plate, inp):
     fig = go.Figure()
-    
-    tp = inp['t']
-    h_beam = beam['h']
-    
-    # 1. Draw Column (Left Side)
-    col_d = 300 # Mockup Column Depth
-    fig.add_shape(type="rect", x0=-col_d, y0=-h_beam/2-100, x1=0, y1=h_beam/2+100, 
-                  fillcolor="#E5E7EB", line=dict(width=0)) # Column Body
-    fig.add_shape(type="line", x0=0, y0=-h_beam/2-100, x1=0, y1=h_beam/2+100, line=dict(width=2)) # Col Face
+    ctype = plate.get('type', 'Fin Plate')
+    h, b, tf, tw = beam['h'], beam['b'], beam['tf'], beam['tw']
+    hp, tp = plate['h'], inp['t']
+    rows, sv, lv = inp['rows'], inp['s_v'], inp['lv']
+    d = inp['d']
 
-    if "End" in plate['type']:
-        # End Plate is flush with Column
-        fig.add_shape(type="rect", x0=0, y0=-plate['h']/2, x1=tp, y1=plate['h']/2, 
-                      fillcolor=COLORS['PLATE'], line=dict(width=1))
-        
-        # Beam starts after Plate
-        beam_start = tp
-        fig.add_shape(type="rect", x0=beam_start, y0=-h_beam/2, x1=beam_start+400, y1=h_beam/2,
-                      fillcolor=COLORS['STEEL_CUT'], line=dict(width=0))
-        # Beam Flanges
-        tf = beam['tf']
-        fig.add_shape(type="rect", x0=beam_start, y0=h_beam/2-tf, x1=beam_start+400, y1=h_beam/2, fillcolor="black")
-        fig.add_shape(type="rect", x0=beam_start, y0=-h_beam/2, x1=beam_start+400, y1=-h_beam/2+tf, fillcolor="black")
+    # Column (Background)
+    col_w, col_h = b + 50, h + 150
+    fig.add_shape(type="rect", x0=-col_w/2, y0=-col_h/2, x1=col_w/2, y1=col_h/2, fillcolor=STYLE['STEEL_FACE']['fillcolor'], line=dict(color="black", width=2))
+    fig.add_trace(go.Scatter(x=[-col_w/2, col_w/2, col_w/2, -col_w/2], y=[-col_h/2, -col_h/2, col_h/2, col_h/2], mode='lines', line=dict(width=0), hoverinfo='skip', fillpattern=dict(shape="/", size=10, solidity=0.2, fgcolor="#D1D5DB"), fill='toself'))
 
-        # Weld (Beam to Plate)
-        draw_weld_symbol(fig, beam_start, h_beam/2+20, inp['weld_size'], orient="right")
-        
-        # Bolts passing through
-        start_y = plate['h']/2 - inp['lv']
-        for r in range(inp['rows']):
-            by = start_y - (r*inp['s_v'])
-            fig.add_shape(type="rect", x0=-20, y0=by-inp['d']/2, x1=tp+20, y1=by+inp['d']/2, fillcolor=COLORS['BOLT'])
+    if "End" in ctype:
+        # End Plate Side
+        fig.add_shape(type="rect", x0=0, y0=-hp/2, x1=tp, y1=hp/2, fillcolor=STYLE['PLATE']['fillcolor'], line=STYLE['PLATE']['line'])
+        L=250
+        fig.add_shape(type="rect", x0=tp, y0=-h/2, x1=tp+L, y1=h/2, fillcolor=STYLE['STEEL_FACE']['fillcolor'], line=dict(width=0))
+        fig.add_shape(type="line", x0=tp, y0=h/2, x1=tp+L, y1=h/2, line=dict(color="black", width=2))
+        fig.add_shape(type="line", x0=tp, y0=-h/2, x1=tp+L, y1=-h/2, line=dict(color="black", width=2))
+        start_y = hp/2 - lv
+        for r in range(rows):
+            y = start_y - (r*sv)
+            fig.add_shape(type="rect", x0=-20, y0=y-d/2, x1=tp+15, y1=y+d/2, fillcolor=STYLE['BOLT']['fillcolor'], line=dict(width=0))
+            fig.add_shape(type="rect", x0=tp, y0=y-d, x1=tp+10, y1=y+d, fillcolor="black", line=dict(width=0))
+        add_leader(fig, tp, hp/2, "End Plate", ax=40, ay=-40)
 
-    else: # Fin Plate
-        # Plate comes out of Column
-        fig.add_shape(type="rect", x0=0, y0=-plate['h']/2, x1=plate['w'], y1=plate['h']/2,
-                      fillcolor=COLORS['PLATE'], line=dict(color="blue", width=1))
-        
-        # Beam starts at Setback
-        sb = inp['setback']
-        beam_x = sb
-        # Draw Beam Web Cut
-        fig.add_shape(type="rect", x0=beam_x, y0=-h_beam/2, x1=beam_x+400, y1=h_beam/2, 
-                      fillcolor=COLORS['STEEL_CUT'], opacity=0.3)
-        
-        # Bolts passing through
-        bg_width = (inp['cols']-1)*inp['s_h']
-        first_bolt = plate['w'] - inp['leh'] - bg_width
-        start_y = plate['h']/2 - inp['lv']
-        
-        for c in range(inp['cols']):
-            bx = first_bolt + (c*inp['s_h'])
-            for r in range(inp['rows']):
-                by = start_y - (r*inp['s_v'])
-                fig.add_shape(type="rect", x0=bx-inp['d']/2, y0=by-10, x1=bx+inp['d']/2, y1=by+10, fillcolor=COLORS['BOLT'])
+    elif "Double" in ctype:
+        # Double Angle Side
+        draw_h_beam_section(fig, 0, 0, h, b, tf, tw, STYLE['STEEL_CUT'], "I")
+        fig.add_shape(type="rect", x0=-tw/2-tp, y0=-hp/2, x1=-tw/2, y1=hp/2, fillcolor=STYLE['ANGLE']['fillcolor'], line=STYLE['ANGLE']['line'])
+        fig.add_shape(type="rect", x0=tw/2, y0=-hp/2, x1=tw/2+tp, y1=hp/2, fillcolor=STYLE['ANGLE']['fillcolor'], line=STYLE['ANGLE']['line'])
+        start_y = hp/2 - lv
+        for r in range(rows):
+            y = start_y - (r*sv)
+            fig.add_shape(type="rect", x0=-tw/2-tp-15, y0=y-d/2, x1=tw/2+tp+15, y1=y+d/2, fillcolor=STYLE['BOLT']['fillcolor'], line=dict(width=0))
+        add_leader(fig, tw/2+tp, 0, "2L-Angle", ax=40, ay=-40)
 
-        # Dimensions
-        draw_dim(fig, 0, -plate['h']/2-50, sb, -plate['h']/2-50, f"Gap={sb}", -20, "h")
-        draw_dim(fig, sb, -plate['h']/2-50, first_bolt, -plate['h']/2-50, f"e1={inp['e1']}", -20, "h")
+    else:
+        # Fin Plate Side
+        draw_h_beam_section(fig, 0, 0, h, b, tf, tw, STYLE['STEEL_CUT'], "I")
+        fig.add_shape(type="rect", x0=tw/2, y0=-hp/2, x1=tw/2+tp, y1=hp/2, fillcolor=STYLE['PLATE']['fillcolor'], line=STYLE['PLATE']['line'])
+        y_start = hp/2 - lv
+        for r in range(rows):
+            y = y_start - (r * sv)
+            fig.add_shape(type="line", x0=-col_w/2, y0=y, x1=col_w/2, y1=y, line=STYLE['CL'])
+            fig.add_shape(type="rect", x0=-tw/2-15, y0=y-d/2, x1=tw/2+tp+15, y1=y+d/2, fillcolor=STYLE['BOLT']['fillcolor'], line=dict(width=0))
+            fig.add_shape(type="rect", x0=tw/2+tp, y0=y-d, x1=tw/2+tp+10, y1=y+d, fillcolor="black", line=dict(width=0))
+            fig.add_shape(type="rect", x0=-tw/2-12, y0=y-d, x1=-tw/2, y1=y+d, fillcolor="black", line=dict(width=0))
+        add_dim(fig, -b/2-30, h/2, -b/2-30, -h/2, f"Beam H={h}", 30, "v") # Added Beam Depth
+        add_leader(fig, tw/2+tp, 0, "Fin Plate", ax=40, ay=-30)
 
-    fig.update_layout(title="<b>SIDE VIEW (SECTION)</b>")
-    setup_canvas(fig, h_beam)
+    limit = max(h, hp) + 100
+    force_range(fig, limit/2)
+    fig.update_layout(title_text=f"<b>SECTION A-A</b> : {ctype}")
     return fig
 
-# ==========================================
-# 3. PLAN VIEW
-# ==========================================
+# =============================================================================
+# 5. PLAN VIEW (TOP)
+# =============================================================================
 def create_plan_view(beam, plate, inp):
     fig = go.Figure()
+    ctype = plate.get('type', 'Fin Plate')
+    h, b, tf, tw = beam['h'], beam['b'], beam['tf'], beam['tw']
+    wp, tp = plate['w'], inp['t']
+    d = inp['d']
+    sb = inp['setback']
     
-    tp = inp['t']
-    w_pl = plate['w']
-    tw = beam['tw']
-    
-    # Column Top View
-    col_w = 300
-    fig.add_shape(type="rect", x0=-col_w/2, y0=-20, x1=col_w/2, y1=0, fillcolor="black") # Flange
-    
-    if "Fin" in plate['type']:
-        # Fin Plate from Col center
-        fig.add_shape(type="rect", x0=-tp/2, y0=0, x1=tp/2, y1=w_pl, fillcolor=COLORS['PLATE'], line=dict(color="blue"))
+    # Column Section
+    col_h, col_b = max(300, b+50), max(300, b+50)
+    draw_h_beam_section(fig, -col_h/2, 0, col_h, col_b, 16, 12, STYLE['STEEL_CUT'], "H")
+
+    if "End" in ctype:
+        # End Plate Plan
+        fig.add_shape(type="rect", x0=0, y0=-wp/2, x1=tp, y1=wp/2, fillcolor=STYLE['PLATE']['fillcolor'], line=STYLE['PLATE']['line'])
+        fig.add_shape(type="rect", x0=tp, y0=-b/2, x1=tp+250, y1=b/2, fillcolor=STYLE['STEEL_FACE']['fillcolor'], line=STYLE['STEEL_FACE']['line'])
+        fig.add_shape(type="line", x0=tp, y0=0, x1=tp+250, y1=0, line=STYLE['CL'])
+        g = inp['s_h']
+        for s in [-1, 1]:
+            y_b = s*g/2
+            fig.add_shape(type="rect", x0=-20, y0=y_b-d/2, x1=tp+15, y1=y_b+d/2, fillcolor=STYLE['BOLT']['fillcolor'], line=dict(width=0))
+            fig.add_shape(type="rect", x0=tp, y0=y_b-d, x1=tp+10, y1=y_b+d, fillcolor="black", line=dict(width=0))
+        add_leader(fig, tp, wp/2, "End Plate", ax=40, ay=-40)
+        add_dim(fig, 0, -wp/2-30, tp, -wp/2-30, f"t={tp}", -20, "h")
+
+    elif "Double" in ctype:
+        # Double Angle Plan
+        beam_len = wp + 60
+        fig.add_shape(type="rect", x0=sb, y0=-tw/2, x1=beam_len, y1=tw/2, fillcolor=STYLE['STEEL_CUT']['fillcolor'], line=STYLE['STEEL_CUT']['line'])
+        leg_L = 100
+        for s in [-1, 1]:
+            y_in = s*tw/2
+            y_out = s*(tw/2+tp)
+            fig.add_shape(type="rect", x0=sb, y0=y_in, x1=sb+wp, y1=y_out, fillcolor=STYLE['ANGLE']['fillcolor'], line=STYLE['ANGLE']['line'])
+            fig.add_shape(type="rect", x0=sb, y0=y_in, x1=sb+tp, y1=y_in+(s*leg_L), fillcolor=STYLE['ANGLE']['fillcolor'], line=STYLE['ANGLE']['line'])
+        bx = sb + inp['e1']
+        full_t = tw + 2*tp
+        fig.add_shape(type="rect", x0=bx-d/2, y0=-full_t/2-15, x1=bx+d/2, y1=full_t/2+15, fillcolor=STYLE['BOLT']['fillcolor'], line=dict(width=0))
+        add_leader(fig, sb, tw/2+tp, "2L-Angle", ax=40, ay=-40)
+        add_dim(fig, 0, 0, sb, 0, f"Gap={sb}", -30, "h") # Added Setback
+        add_dim(fig, sb, full_t/2+30, bx, full_t/2+30, f"e1={inp['e1']}", 20, "h") # Added e1
+
+    else:
+        # Fin Plate Plan
+        fig.add_shape(type="rect", x0=0, y0=-tp/2, x1=wp, y1=tp/2, fillcolor=STYLE['PLATE']['fillcolor'], line=STYLE['PLATE']['line'])
+        beam_len = wp + 60
+        fig.add_shape(type="rect", x0=sb, y0=tp/2, x1=beam_len, y1=tp/2+tw, fillcolor=STYLE['STEEL_CUT']['fillcolor'], line=STYLE['STEEL_CUT']['line'])
+        bolt_x = sb + inp['e1']
+        y_head_out = -tp/2 - 8
+        y_nut_out = tp/2 + tw + 10
+        fig.add_shape(type="rect", x0=bolt_x-d/2, y0=y_head_out, x1=bolt_x+d/2, y1=y_nut_out, fillcolor=STYLE['BOLT']['fillcolor'], line=dict(width=0))
+        fig.add_shape(type="rect", x0=bolt_x-d, y0=y_head_out-6, x1=bolt_x+d, y1=y_head_out, fillcolor=STYLE['BOLT']['fillcolor'], line=dict(color="black", width=1))
+        fig.add_shape(type="rect", x0=bolt_x-d, y0=y_nut_out, x1=bolt_x+d, y1=y_nut_out+10, fillcolor=STYLE['BOLT']['fillcolor'], line=dict(color="black", width=1))
+        ws = inp.get('weld_size', 5)
+        fig.add_shape(type="path", path=f"M 0 {-tp/2} L {ws} {-tp/2} L 0 {-tp/2-ws} Z", fillcolor="black", line_width=0)
+        fig.add_shape(type="path", path=f"M 0 {tp/2} L {ws} {tp/2} L 0 {tp/2+ws} Z", fillcolor="black", line_width=0)
+        add_leader(fig, 0, -tp/2-ws, f"Weld {ws}mm", ax=-40, ay=-30, align="right")
         
-        # Beam Web (shifted by setback)
-        sb = inp['setback']
-        # Beam Web (Top/Bot of Fin) -> Actually Fin is usually welded to Col Flange or Web.
-        # Let's assume Fin is welded to Col Flange center.
-        
-        # Beam Web next to Fin
-        fig.add_shape(type="rect", x0=tp/2, y0=sb, x1=tp/2+tw, y1=sb+400, fillcolor=COLORS['STEEL_CUT'])
-        
-        # Dimensions
-        draw_dim(fig, tp/2+tw+20, 0, tp/2+tw+20, sb, f"Gap={sb}", 20, "v")
-        draw_dim(fig, tp/2+tw+20, sb, tp/2+tw+20, w_pl, f"Lap={w_pl-sb}", 20, "v")
-        
-    fig.update_layout(title="<b>PLAN VIEW</b>")
-    setup_canvas(fig, w_pl+100)
+        # Dimensions (Setback & e1)
+        add_dim(fig, 0, 0, sb, 0, f"Gap={sb}", -30, "h") 
+        add_dim(fig, sb, tp/2+tw+30, bolt_x, tp/2+tw+30, f"e1={inp['e1']}", 20, "h")
+        add_leader(fig, wp, 0, "Fin Plate", ax=40, ay=-30)
+
+    force_range(fig, 250)
+    fig.update_layout(title_text=f"<b>PLAN VIEW</b> : {ctype}")
     return fig
