@@ -1,6 +1,5 @@
 import streamlit as st
 import math
-import plotly.graph_objects as go
 import drawing_utils        
 import calculation_report   
 import steel_db             
@@ -21,8 +20,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         .fail-text { color: #991b1b; font-weight: bold; }
         .hl-row { background-color: #fff7ed; }
         .load-source { font-size: 11px; color: #64748b; font-style: italic; margin-top: 4px; display: block; }
-        .read-only-box { background-color: #e2e8f0; padding: 10px; border-radius: 5px; color: #475569; font-size: 14px; margin-bottom: 10px;}
-        .section-header { font-weight: bold; color: #1e293b; font-size: 1.1em;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -43,32 +40,26 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
     with col_input:
         st.markdown("#### 🛠️ Configuration")
         
-        # --- 1.1 Beam Section (FIXED: Hidden by default to avoid duplication) ---
-        # Logic: รับค่าจาก Tab 1 มาเป็นค่าตั้งต้นเสมอ
+        # --- 1.1 Beam Section (INTELLIGENT INHERITANCE) ---
         current_beam_name = section_data.get('name', 'Custom Section')
         
-        # ใช้ Expander แบบ Collapsed (expanded=False) เพื่อซ่อน input ซ้ำซ้อน
-        # หัวข้อจะบอกเลยว่ากำลังใช้หน้าตัดอะไรอยู่
+        # Expander แบบหุบ (Collapsed) เพื่อซ่อน input ที่ซ้ำซ้อน
         with st.expander(f"🔹 Beam: {current_beam_name} (Click to Edit)", expanded=False):
             
-            # Checkbox เพื่อขอดูหรือแก้ไขข้อมูล
             enable_override = st.checkbox("🔓 Unlock to Change Section manually", value=False)
             
             if not enable_override:
-                # READ-ONLY MODE (แสดงค่าที่รับมาจาก Tab 1)
+                # READ-ONLY MODE (ค่าจาก Tab 1)
                 beam_h_mm = float(section_data.get('h', 400))
                 beam_b_mm = float(section_data.get('b', 200))
                 beam_tw = float(section_data.get('tw', 8.0))
                 beam_tf = float(section_data.get('tf', 13.0))
                 beam_label = current_beam_name
                 
-                # Show neat summary
-                st.info(f"Using data from Load Analysis Tab:\n- H: {beam_h_mm} mm\n- Web (tw): {beam_tw} mm")
-                
+                st.info(f"Using data from Load Analysis Tab:\n- Depth: {beam_h_mm} mm\n- Web (tw): {beam_tw} mm")
             else:
-                # OVERRIDE MODE (เปิด Dropdown Database ให้เลือกใหม่ได้)
+                # OVERRIDE MODE
                 st.warning("⚠️ Override Mode: This will not update Tab 1.")
-                
                 beam_source = st.radio("Source", ["Standard (SYS/TIS)", "Custom Input"], horizontal=True, label_visibility="collapsed")
                 
                 if "Standard" in beam_source:
@@ -79,10 +70,8 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                     selected_sec = st.selectbox("Select New Section", sec_list, index=def_idx)
                     props = steel_db.get_properties(selected_sec)
                     
-                    beam_h_mm = props['h']
-                    beam_b_mm = props['b']
-                    beam_tw = props['tw']
-                    beam_tf = props['tf']
+                    beam_h_mm, beam_b_mm = props['h'], props['b']
+                    beam_tw, beam_tf = props['tw'], props['tf']
                     beam_label = selected_sec
                 else:
                     c_cust1, c_cust2 = st.columns(2)
@@ -167,7 +156,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             om_v, om_y, om_r, om_w = 2.00, 1.50, 2.00, 2.00
             def get_cap(Rn, type_f): return Rn / type_f
 
-        # --- Bolt Eccentricity ---
+        # --- Bolt Analysis ---
         d = d_bolt * 10 
         Ab = math.pi * d**2 / 4
         n_total = n_rows * n_cols
@@ -185,7 +174,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                 dy = row_start + (r * pitch_v_mm)
                 sum_r2 += (dx**2 + dy**2)
         
-        # Resultant Force
+        # Forces
         Rv_direct = V_kN / n_total
         crit_x = x_bar 
         crit_y = ((n_rows - 1) * pitch_v_mm) / 2 
@@ -234,7 +223,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         rn_weld = (0.6 * Fexx * 0.707 * weld_sz * l_weld) / 1000
         cap_weld = get_cap(rn_weld, phi_w if is_lrfd else om_w)
 
-        # Ratios & Status
+        # Ratios
         ratio_bolt = V_resultant / cap_bolt_single
         ratio_bear = V_resultant / cap_br_gov
         ratio_yld = V_kN / cap_yld
