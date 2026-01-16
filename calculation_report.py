@@ -1,4 +1,4 @@
-# calculation_report.py
+# calculation_report.py (V13 - Full Clean Version)
 import math
 
 def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A36", bolt_grade="A325"):
@@ -16,7 +16,7 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
     l_side = plate['l_side'] 
     weld_size = plate['weld_size']
     
-    # 🆕 DYNAMIC MATERIAL PROPERTIES
+    # DYNAMIC MATERIAL PROPERTIES
     Fy_pl = plate['Fy']  
     Fu_pl = plate['Fu']  
     Fnv = bolts['Fnv']   
