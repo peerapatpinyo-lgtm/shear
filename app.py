@@ -214,24 +214,27 @@ with tab1:
     fig.update_layout(hovermode="x unified", height=450, margin=dict(t=20, b=20, l=20, r=20), plot_bgcolor='white')
     st.plotly_chart(fig, use_container_width=True)
 
-with tab2:
-    try:
-        # --- ส่งค่าเข้า Tab Connection (พร้อมตัวแปร Linkage ครบถ้วน) ---
-        # [Fix #1 Update] ส่ง mat_grade เข้าไปเพื่อให้ Connection Module ส่งต่อไปยัง Report
-        req_bolt, v_bolt = conn.render_connection_tab(
-            V_design=V_design, 
-            bolt_size=bolt_size, 
-            method=method, 
-            is_lrfd=is_lrfd,        # <--- ส่งสถานะ LRFD
-            section_data=p, 
-            conn_type=conn_type,    # <--- ส่งชื่อที่มีคำว่า Double/Single
-            bolt_grade=bolt_grade,
-            mat_grade=grade_choice  # <--- [เพิ่ม] ส่งชื่อเกรดวัสดุเข้าไป
-        )
-    except Exception as e:
-        st.error(f"⚠️ Error in Connection Tab: {e}")
-        st.caption("Please check if connection_design.py is up to date.")
+# แก้ไขในไฟล์ app.py (ส่วน Tab 2)
 
+    with tab2:
+        if st.session_state.cal_success:
+            # เตรียมข้อมูลสำหรับส่งไป Tab 2
+            # ดึงค่าแรงเฉือนที่คำนวณได้จาก Tab 1
+            max_shear = res_dict.get('v_act', 0) 
+            
+            # เรียกฟังก์ชันจาก connection_design.py ด้วยชื่อ Parameter ใหม่
+            conn.render_connection_tab(
+                V_design_from_tab1=max_shear,        # ชื่อใหม่: รับค่าแรงเฉือน
+                default_bolt_size=bolt_size_input,   # ชื่อใหม่: ค่าเริ่มต้นขนาดน็อต
+                method=design_method,
+                is_lrfd=is_lrfd,
+                section_data=selected_steel,
+                conn_type="Fin Plate",
+                default_bolt_grade=bolt_grade_input, # ชื่อใหม่: เกรดน็อตเริ่มต้น
+                default_mat_grade=steel_grade_input  # ชื่อใหม่: เกรดเหล็กเริ่มต้น
+            )
+        else:
+            st.warning("⚠️ กรุณากดปุ่ม 'Run Analysis' ใน Tab 1 เพื่อคำนวณแรงกระทำก่อนออกแบบจุดต่อ")
 with tab3:
     st.subheader("Span-Load Reference Table")
     tbl_spans = np.arange(2.0, 12.5, 0.5)
