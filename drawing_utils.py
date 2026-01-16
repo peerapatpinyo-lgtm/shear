@@ -2,7 +2,7 @@ import plotly.graph_objects as go
 import numpy as np
 
 # =============================================================================
-# 1. 🎨 STYLES & CONFIG
+# 🎨 STYLES & CONFIG
 # =============================================================================
 STYLE = {
     'STEEL_CUT':   dict(fillcolor="#D1D5DB", line=dict(color="black", width=2)),
@@ -17,7 +17,7 @@ STYLE = {
 SETBACK = 15
 
 # =============================================================================
-# 2. 🛠️ HELPER FUNCTIONS
+# 🛠️ HELPER FUNCTIONS
 # =============================================================================
 def add_dim(fig, x0, y0, x1, y1, text, offset=30, type="h"):
     c = STYLE['DIM']['color']
@@ -27,8 +27,6 @@ def add_dim(fig, x0, y0, x1, y1, text, offset=30, type="h"):
         dir = 1 if offset >= 0 else -1
         fig.add_shape(type="line", x0=x0, y0=y0, x1=x0, y1=y_pos+(5*dir), line=dict(color=c, width=0.5))
         fig.add_shape(type="line", x0=x1, y0=y1, x1=x1, y1=y_pos+(5*dir), line=dict(color=c, width=0.5))
-        fig.add_annotation(x=x0, y=y_pos, ax=15, ay=0, axref="pixel", ayref="pixel", arrowhead=2, arrowsize=1, arrowcolor=c, text="")
-        fig.add_annotation(x=x1, y=y_pos, ax=-15, ay=0, axref="pixel", ayref="pixel", arrowhead=2, arrowsize=1, arrowcolor=c, text="")
         fig.add_annotation(x=(x0+x1)/2, y=y_pos, text=f"<b>{text}</b>", showarrow=False, yshift=10*dir, font=dict(size=11, color=c))
     else:
         x_pos = x0 + offset
@@ -36,8 +34,6 @@ def add_dim(fig, x0, y0, x1, y1, text, offset=30, type="h"):
         fig.add_shape(type="line", x0=x_pos, y0=y0, x1=x_pos, y1=y1, line=dict(color=c, width=1))
         fig.add_shape(type="line", x0=x0, y0=y0, x1=x_pos+(5*dir), y1=y0, line=dict(color=c, width=0.5))
         fig.add_shape(type="line", x0=x1, y0=y1, x1=x_pos+(5*dir), y1=y1, line=dict(color=c, width=0.5))
-        fig.add_annotation(x=x_pos, y=y0, ax=0, ay=15, axref="pixel", ayref="pixel", arrowhead=2, arrowsize=1, arrowcolor=c, text="")
-        fig.add_annotation(x=x_pos, y=y1, ax=0, ay=-15, axref="pixel", ayref="pixel", arrowhead=2, arrowsize=1, arrowcolor=c, text="")
         fig.add_annotation(x=x_pos, y=(y0+y1)/2, text=f"<b>{text}</b>", showarrow=False, xshift=15*dir, textangle=-90, font=dict(size=11, color=c))
 
 def add_leader(fig, x, y, text, ax=40, ay=-40, align="left"):
@@ -53,7 +49,6 @@ def draw_h_beam_section(fig, x_cen, y_cen, h, b, tf, tw, style, orientation="I")
     else: 
         fig.add_shape(type="rect", x0=x_cen-h/2, y0=y_cen-b/2, x1=x_cen-h/2+tf, y1=y_cen+b/2, fillcolor=style['fillcolor'], line=style['line'])
         fig.add_shape(type="rect", x0=x_cen+h/2-tf, y0=y_cen-b/2, x1=x_cen+h/2, y1=y_cen+b/2, fillcolor=style['fillcolor'], line=style['line'])
-        fig.add_shape(type="rect", x0=x_cen-h/2+tf, y0=y_cen-tw/2, x1=x_cen+h/2-tf, y1=y_cen+tw/2, fillcolor=style['fillcolor'], line=dict(width=0))
         fig.add_shape(type="line", x0=x_cen-h/2+tf, y0=y_cen-tw/2, x1=x_cen+h/2-tf, y1=y_cen-tw/2, line=style['line'])
         fig.add_shape(type="line", x0=x_cen-h/2+tf, y0=y_cen+tw/2, x1=x_cen+h/2-tf, y1=y_cen+tw/2, line=style['line'])
 
@@ -79,7 +74,7 @@ def create_front_view(beam, plate, bolts):
         dw = max(beam['b'], w_pl)
         fig.add_shape(type="rect", x0=-dw/2, y0=y_bot, x1=dw/2, y1=y_top, fillcolor=STYLE['PLATE']['fillcolor'], line=STYLE['PLATE']['line'])
         # Bolts (Left/Right of web)
-        g = 100 # Gauge assumption
+        g = sh # Use s_h as Gauge for End Plate
         start_y = y_top - lv
         for s in [-1, 1]:
             bx = s*g/2
@@ -103,7 +98,7 @@ def create_front_view(beam, plate, bolts):
         add_dim(fig, w_pl+20, y_top, w_pl+20, y_top-lv, f"{lv}", 10, "v")
 
     else:
-        # --- ORIGINAL: FIN PLATE FRONT (User's Favorite) ---
+        # --- ORIGINAL: FIN PLATE FRONT ---
         min_edge = 1.5 * d
         req_h = lv + ((rows-1)*sv) + min_edge
         is_short = h_pl < req_h
@@ -159,7 +154,7 @@ def create_side_view(beam, plate, bolts):
     fig.add_trace(go.Scatter(x=[-col_w/2, col_w/2, col_w/2, -col_w/2], y=[-col_h/2, -col_h/2, col_h/2, col_h/2], mode='lines', line=dict(width=0), hoverinfo='skip', fillpattern=dict(shape="/", size=10, solidity=0.2, fgcolor="#D1D5DB"), fill='toself'))
 
     if "End" in ctype:
-        # --- NEW: END PLATE SIDE (Shows Beam Length) ---
+        # --- NEW: END PLATE SIDE ---
         fig.add_shape(type="rect", x0=0, y0=-hp/2, x1=tp, y1=hp/2, fillcolor=STYLE['PLATE']['fillcolor'], line=STYLE['PLATE']['line'])
         L=250
         fig.add_shape(type="rect", x0=tp, y0=-h/2, x1=tp+L, y1=h/2, fillcolor=STYLE['STEEL_FACE']['fillcolor'], line=dict(width=0))
@@ -221,11 +216,11 @@ def create_plan_view(beam, plate, bolts):
     if "End" in ctype:
         # --- NEW: END PLATE PLAN ---
         fig.add_shape(type="rect", x0=0, y0=-wp/2, x1=tp, y1=wp/2, fillcolor=STYLE['PLATE']['fillcolor'], line=STYLE['PLATE']['line'])
-        # Beam Top Flange (Visible in plan)
+        # Beam Top Flange
         fig.add_shape(type="rect", x0=tp, y0=-b/2, x1=tp+250, y1=b/2, fillcolor=STYLE['STEEL_FACE']['fillcolor'], line=STYLE['STEEL_FACE']['line'])
         fig.add_shape(type="line", x0=tp, y0=0, x1=tp+250, y1=0, line=STYLE['CL'])
         # Bolts
-        g = 100
+        g = bolts['s_h'] # Use gauge
         for s in [-1, 1]:
             y_b = s*g/2
             fig.add_shape(type="rect", x0=-20, y0=y_b-d/2, x1=tp+15, y1=y_b+d/2, fillcolor=STYLE['BOLT']['fillcolor'], line=dict(width=0))
