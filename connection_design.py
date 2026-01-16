@@ -33,7 +33,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         with st.container():
             st.markdown('<div class="input-card">', unsafe_allow_html=True)
             
-            # Bolt Params
+            # --- 1. Bolt Settings ---
             st.markdown("**1. Bolt Settings**")
             c1, c2 = st.columns(2)
             with c1:
@@ -50,22 +50,32 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
             st.markdown("---")
             
-            # Plate Geometry
+            # --- 2. Plate Geometry (Detailed) ---
             st.markdown("**2. Geometry (Plate)**")
             h_beam = section_data.get('h', 400)/10 # cm
+            
+            # Row 2.1: Quantity
+            c_qty1, c_qty2 = st.columns(2)
             default_rows = max(2, int(h_beam / 8))
+            n_rows = c_qty1.number_input("Rows", min_value=1, value=default_rows)
+            n_cols = c_qty2.number_input("Columns", min_value=1, value=1)
             
-            row_c1, row_c2 = st.columns(2)
-            n_rows = row_c1.number_input("Rows", min_value=1, value=default_rows)
-            n_cols = row_c2.number_input("Columns", min_value=1, value=1)
+            # Row 2.2: Vertical Dimensions
+            st.caption("↕️ Vertical Dimensions (cm)")
+            c_v1, c_v2 = st.columns(2)
+            pitch_v = c_v1.number_input("Pitch (V)", min_value=3.0, value=7.5, step=0.5, help="ระยะห่างระหว่างแถวแนวดิ่ง")
+            edge_v = c_v2.number_input("Edge (V)", min_value=2.0, value=4.0, step=0.5, help="ระยะขอบบน-ล่าง")
             
-            geo_c1, geo_c2 = st.columns(2)
-            pitch = geo_c1.number_input("Pitch (cm)", min_value=3.0, value=7.5, step=0.5)
-            edge_dist = geo_c2.number_input("Edge Dist (cm)", min_value=3.0, value=4.0, step=0.5)
-            
+            # Row 2.3: Horizontal Dimensions
+            st.caption("↔️ Horizontal Dimensions (cm)")
+            c_h1, c_h2, c_h3 = st.columns(3)
+            dist_weld = c_h1.number_input("To Weld", min_value=3.0, value=5.0, step=0.5, help="ระยะจากแนวเชื่อมถึงน็อตแถวแรก (e1)")
+            dist_edge = c_h2.number_input("To Edge", min_value=3.0, value=4.0, step=0.5, help="ระยะจากน็อตแถวสุดท้ายถึงขอบแผ่น (e2)")
+            pitch_h = c_h3.number_input("Pitch (H)", min_value=3.0, value=6.0, step=0.5, disabled=(n_cols<=1), help="ระยะห่างระหว่างคอลัมน์")
+
             st.markdown("---")
             
-            # Plate & Weld Spec
+            # --- 3. Plate & Weld Spec ---
             st.markdown("**3. Plate & Weld**")
             pl_thick = st.selectbox("Plate Thick (mm)", [6, 9, 10, 12, 16, 20, 25], index=2)
             weld_sz = st.number_input("Weld Size (mm)", min_value=3, value=6)
@@ -76,8 +86,13 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # Validation
-            h_plate = (n_rows - 1) * pitch + (2 * edge_dist) # cm
+            # --- Validation & Calculations ---
+            h_plate = (n_rows - 1) * pitch_v + (2 * edge_v) # cm
+            w_plate = dist_weld + ((n_cols - 1) * pitch_h) + dist_edge # cm (Auto Calculate Width)
+            
+            # Display Calculated Dimensions
+            st.info(f"📏 Plate Size: **{w_plate:.1f} x {h_plate:.1f} cm**")
+            
             if h_plate > h_beam:
                 st.error(f"⚠️ Plate height ({h_plate}cm) > Beam depth ({h_beam}cm)")
 
@@ -151,7 +166,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         st.markdown("---")
         
         # ==========================
-        # 4. PLOTLY DRAWING SECTION (FINE TUNED)
+        # 4. PLOTLY DRAWING SECTION
         # ==========================
         st.markdown("#### 📐 Construction Details")
         
@@ -166,21 +181,22 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             'tw': section_data.get('tw', 8)
         }
         
+        # Update Plate Data with calculated WIDTH and Inputs
         plate_dict = {
-            'h': h_plate * 10,
-            'w': 150,
-            't': pl_thick,
-            'e1': 50,
-            'lv': edge_dist * 10,
-            'weld_size': weld_sz
+            'h': h_plate * 10,       
+            'w': w_plate * 10,       # Use calculated width
+            't': pl_thick,           
+            'e1': dist_weld * 10,    # Horizontal dist to first bolt
+            'lv': edge_v * 10,       # Vertical edge
+            'weld_size': weld_sz     
         }
         
         bolt_dict = {
-            'd': d_bolt * 10,
+            'd': d_bolt * 10,        
             'rows': n_rows,
             'cols': n_cols,
-            's_v': pitch * 10,
-            's_h': 60
+            's_v': pitch_v * 10,      # Vertical pitch
+            's_h': pitch_h * 10       # Horizontal pitch
         }
 
         tab1, tab2, tab3 = st.tabs(["🖼️ Elevation (Front)", "🏗️ Plan (Top)", "✂️ Section (Side)"])
@@ -196,13 +212,13 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             )
             return fig
 
-        # Standard Padding
         pad = 50 
 
         with tab1:
             try:
-                # Elevation: Keep as is (User liked it)
                 fig_front = drawing_utils.create_front_view(beam_dict, plate_dict, bolt_dict)
+                
+                # Elevation Range
                 y_max = (beam_h_mm / 2) + pad
                 y_min = -(beam_h_mm / 2) - pad
                 x_max = beam_b_mm + pad
@@ -217,13 +233,10 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
         with tab2:
             try:
-                # Plan View: Move UP (Increase bottom negative space)
                 fig_plan = drawing_utils.create_plan_view(beam_dict, plate_dict, bolt_dict)
                 
+                # Plan Range
                 x_half = (beam_b_mm / 2) + pad
-                
-                # --- FIX: Shifted Y Range ---
-                # เพิ่มค่าติดลบด้านล่าง (จาก -50 เป็น -150) เพื่อดันรูป (ที่เริ่มจาก 0) ให้ลอยขึ้นไปอยู่กลางเฟรม
                 y_range_shifted = [-150, 250] 
                 
                 st.plotly_chart(
@@ -235,16 +248,12 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
         with tab3:
             try:
-                # Section View: Zoom OUT (Increase Limits)
                 fig_side = drawing_utils.create_side_view(beam_dict, plate_dict, bolt_dict)
                 
-                # --- FIX: Zoom Out ---
-                # ขยายขอบเขตการมองเห็น (Range) ให้กว้างขึ้น
-                pad_zoom = 100 # เพิ่ม Padding เป็น 100 (Zoom Out)
+                # Section Range
+                pad_zoom = 100 
                 y_max = (beam_h_mm / 2) + pad_zoom
                 y_min = -(beam_h_mm / 2) - pad_zoom
-                
-                # ขยายแกน X ออกไปข้างละ 250mm
                 x_limit_zoomed = 250 
                 
                 st.plotly_chart(
