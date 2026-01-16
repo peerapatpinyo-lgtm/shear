@@ -22,6 +22,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         .hl-row { background-color: #fff7ed; }
         .load-source { font-size: 11px; color: #64748b; font-style: italic; margin-top: 4px; display: block; }
         .read-only-box { background-color: #e2e8f0; padding: 10px; border-radius: 5px; color: #475569; font-size: 14px; margin-bottom: 10px;}
+        .section-header { font-weight: bold; color: #1e293b; font-size: 1.1em;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -42,13 +43,16 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
     with col_input:
         st.markdown("#### 🛠️ Configuration")
         
-        # --- 1.1 Beam Section (INTELLIGENT INHERITANCE) ---
+        # --- 1.1 Beam Section (FIXED: Hidden by default to avoid duplication) ---
         # Logic: รับค่าจาก Tab 1 มาเป็นค่าตั้งต้นเสมอ
         current_beam_name = section_data.get('name', 'Custom Section')
         
-        with st.expander("1. Beam Section Data", expanded=True):
-            # Checkbox เพื่อขอดูหรือแก้ไขข้อมูล (ปกติจะซ่อนไว้เพื่อลดความซ้ำซ้อน)
-            enable_override = st.checkbox(f"Change Beam Section (Current: {current_beam_name})", value=False)
+        # ใช้ Expander แบบ Collapsed (expanded=False) เพื่อซ่อน input ซ้ำซ้อน
+        # หัวข้อจะบอกเลยว่ากำลังใช้หน้าตัดอะไรอยู่
+        with st.expander(f"🔹 Beam: {current_beam_name} (Click to Edit)", expanded=False):
+            
+            # Checkbox เพื่อขอดูหรือแก้ไขข้อมูล
+            enable_override = st.checkbox("🔓 Unlock to Change Section manually", value=False)
             
             if not enable_override:
                 # READ-ONLY MODE (แสดงค่าที่รับมาจาก Tab 1)
@@ -59,24 +63,16 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                 beam_label = current_beam_name
                 
                 # Show neat summary
-                st.markdown(f"""
-                <div class="read-only-box">
-                    <b>🔒 Locked (Inherited from Load Analysis)</b><br>
-                    • Section: <b>{current_beam_name}</b><br>
-                    • Depth (d): {beam_h_mm:.0f} mm<br>
-                    • Web (tw): {beam_tw:.1f} mm <span style='color:red'>(Critical for Bearing)</span>
-                </div>
-                """, unsafe_allow_html=True)
+                st.info(f"Using data from Load Analysis Tab:\n- H: {beam_h_mm} mm\n- Web (tw): {beam_tw} mm")
                 
             else:
                 # OVERRIDE MODE (เปิด Dropdown Database ให้เลือกใหม่ได้)
-                st.warning("⚠️ Warning: Changing section here will NOT update Load Analysis in Tab 1.")
+                st.warning("⚠️ Override Mode: This will not update Tab 1.")
                 
                 beam_source = st.radio("Source", ["Standard (SYS/TIS)", "Custom Input"], horizontal=True, label_visibility="collapsed")
                 
                 if "Standard" in beam_source:
                     sec_list = steel_db.get_section_list()
-                    # พยายามหา Index เดิม ถ้าหาไม่เจอให้เลือกตัวแรก
                     try: def_idx = sec_list.index(current_beam_name)
                     except: def_idx = 0
                     
@@ -88,8 +84,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                     beam_tw = props['tw']
                     beam_tf = props['tf']
                     beam_label = selected_sec
-                    
-                    st.info(f"Using: {selected_sec} (tw={beam_tw}mm)")
                 else:
                     c_cust1, c_cust2 = st.columns(2)
                     beam_h_mm = c_cust1.number_input("Depth (d)", 100, 2000, int(section_data.get('h', 400)))
@@ -156,7 +150,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         st.markdown('</div>', unsafe_allow_html=True)
 
         # ==========================================
-        # 3. CALCULATION CORE (PHASE 1 + 2 LOGIC)
+        # 3. CALCULATION CORE
         # ==========================================
         conversion_factor = 101.97
         V_kN = V_design_from_tab1 / conversion_factor
