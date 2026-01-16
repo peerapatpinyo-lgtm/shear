@@ -151,7 +151,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         st.markdown("---")
         
         # ==========================
-        # 4. PLOTLY DRAWING SECTION (SMART FIT)
+        # 4. PLOTLY DRAWING SECTION (CORRECTED COORDINATES)
         # ==========================
         st.markdown("#### 📐 Construction Details")
         
@@ -185,23 +185,12 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
         tab1, tab2, tab3 = st.tabs(["🖼️ Elevation (Front)", "🏗️ Plan (Top)", "✂️ Section (Side)"])
         
-        # --- ฟังก์ชันจัดรูปให้ "ฟิตพอดี" โดยอัตโนมัติ ---
-        def fit_layout_smart(fig, width_obj, height_obj, plot_height=500):
-            """
-            คำนวณขอบเขต (Range) โดยอิงจากขนาดวัตถุจริง + เผื่อที่ว่าง (Padding) 10%
-            เพื่อให้รูปดูเต็มกรอบพอดี ไม่เล็กและไม่ใหญ่เกินไป
-            """
-            pad_x = width_obj * 0.1  # เผื่อขอบซ้ายขวา 10%
-            pad_y = height_obj * 0.1 # เผื่อขอบบนล่าง 10%
-            
-            # คำนวณ Range ที่เหมาะสม (สมมติว่ารูปวาดเริ่มที่ 0,0)
-            # ถ้า Drawing Utils วาด Centered ก็ปรับเป็น [-w/2, w/2] ได้ แต่ส่วนใหญ่เริ่มที่ 0,0
-            x_range = [-pad_x, width_obj + pad_x]
-            y_range = [-pad_y, height_obj + pad_y]
-
+        # --- ฟังก์ชันจัดรูป (แก้ไขให้รองรับพิกัด Center: +/-) ---
+        def fit_view(fig, x_range, y_range, height=500):
             fig.update_layout(
-                height=plot_height,
-                margin=dict(l=10, r=10, t=30, b=10), # ลด Margin ของ Container
+                height=height,
+                margin=dict(l=20, r=20, t=40, b=20),
+                # กำหนด Range แบบ Manual เพื่อบังคับให้มองเห็นทั้งค่าบวกและลบ
                 xaxis=dict(range=x_range, visible=False, scaleanchor="y", scaleratio=1),
                 yaxis=dict(range=y_range, visible=False),
                 dragmode="pan",
@@ -209,12 +198,24 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             )
             return fig
 
+        # ระยะขอบ (Padding)
+        pad = 50 
+
         with tab1:
             try:
                 fig_front = drawing_utils.create_front_view(beam_dict, plate_dict, bolt_dict)
-                # Front View ขนาด: กว้าง=beam_b, สูง=beam_h
+                
+                # [แก้ไข] Elevation View: 
+                # แกน Y เป็นแบบ Center (ครึ่งบน +, ครึ่งล่าง -)
+                # แกน X ส่วนใหญ่อาจจะเริ่มที่ 0 หรือ Center แต่เผื่อไว้ทั้งคู่
+                
+                y_max = (beam_h_mm / 2) + pad
+                y_min = -(beam_h_mm / 2) - pad
+                x_max = beam_b_mm + pad
+                x_min = -pad # เผื่อซ้ายนิดหน่อยกรณีมีเส้นหนา
+                
                 st.plotly_chart(
-                    fit_layout_smart(fig_front, beam_b_mm, beam_h_mm, plot_height=500), 
+                    fit_view(fig_front, [x_min, x_max], [y_min, y_max], height=550), 
                     use_container_width=True
                 )
             except Exception as e:
@@ -223,10 +224,14 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         with tab2:
             try:
                 fig_plan = drawing_utils.create_plan_view(beam_dict, plate_dict, bolt_dict)
-                # Plan View ขนาด: กว้าง=beam_b, สูง=ความยาวช่วงต่อ (ประมาณ 350mm)
-                # ปรับความสูงกราฟลงเหลือ 400px เพราะรูปแบน
+                
+                # [แก้ไข] Plan View:
+                # แกน X (หน้ากว้างคาน) มักจะเป็น Center (ซ้าย -, ขวา +)
+                # แกน Y (ความยาว) มักจะเป็นค่าบวก
+                
+                x_half = (beam_b_mm / 2) + pad
                 st.plotly_chart(
-                    fit_layout_smart(fig_plan, beam_b_mm, 350, plot_height=400),
+                    fit_view(fig_plan, [-x_half, x_half], [-pad, 350+pad], height=400),
                     use_container_width=True
                 )
             except Exception as e:
@@ -235,9 +240,17 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         with tab3:
             try:
                 fig_side = drawing_utils.create_side_view(beam_dict, plate_dict, bolt_dict)
-                # Side View ขนาด: กว้าง=ประมาณ 200mm (plate+web), สูง=beam_h
+                
+                # [แก้ไข] Section View:
+                # แกน Y (ความสูง) เป็น Center (บน +, ล่าง -) เหมือน Front
+                # แกน X (ความกว้างหน้าตัด) เป็น Center (ซ้าย -, ขวา +)
+                
+                y_max = (beam_h_mm / 2) + pad
+                y_min = -(beam_h_mm / 2) - pad
+                x_limit = 150 # กว้างพอประมาณสำหรับมองข้าง
+                
                 st.plotly_chart(
-                    fit_layout_smart(fig_side, 200, beam_h_mm, plot_height=500),
+                    fit_view(fig_side, [-x_limit, x_limit], [y_min, y_max], height=550),
                     use_container_width=True
                 )
             except Exception as e:
