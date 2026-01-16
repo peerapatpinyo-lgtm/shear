@@ -1,6 +1,7 @@
-# connection_design.py (V13 - Final Fix)
+# connection_design.py (V13 - Final Fix - Integrated Calculation)
 import math
 import streamlit as st
+import calculation_report as calc_rep  # [Fix #1] Import โมดูลคำนวณที่ถูกต้อง
 
 # พยายาม Import drawing_utils และตรวจสอบ Error
 try:
@@ -10,7 +11,8 @@ except Exception as e:
     DRAWING_AVAILABLE = False
     DRAWING_ERROR = str(e)
 
-def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade):
+def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade, mat_grade="A36"):
+    # [Fix #1 Update] เพิ่ม parameter mat_grade เพื่อรับค่าเกรดเหล็กจาก app.py
     st.subheader(f"🔩 Connection Design: {conn_type}")
     
     # 1. จัดการข้อมูล Bolt Size (M16, M20 -> 16, 20)
@@ -74,66 +76,20 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     else:
         st.error(f"❌ Drawing Module Error: {DRAWING_ERROR}")
 
-    # 6. ส่วนคำนวณและสร้าง Report
+    # 6. ส่วนคำนวณและสร้าง Report [Fix #1]
     V_load_kn = V_design / 100
-    report_md = generate_report(V_load_kn, section_data, plate_data, bolts_data, is_lrfd)
+    
+    # เรียกใช้ฟังก์ชันจาก calculation_report.py แทนฟังก์ชันภายใน
+    report_md = calc_rep.generate_report(
+        V_load=V_load_kn, 
+        beam=section_data, 
+        plate=plate_data, 
+        bolts=bolts_data, 
+        is_lrfd=is_lrfd,
+        material_grade=mat_grade,
+        bolt_grade=bolt_grade
+    )
+    
     st.markdown(report_md, unsafe_allow_html=True)
     
     return (bolt_rows * bolt_cols), V_load_kn
-
-def generate_report(V_load, beam, plate, bolts, is_lrfd=True):
-    # --- AISC Calculation Logic ---
-    d = bolts['d']
-    h_hole = d + 2 
-    n_rows = bolts['rows']
-    n_cols = bolts['cols']
-    n_total = n_rows * n_cols
-    
-    t_pl = plate['t']
-    h_pl = plate['h']
-    lv = plate['lv'] 
-    l_side = plate['l_side'] 
-    weld_size = plate['weld_size']
-    Fy_pl, Fu_pl = plate['Fy'], plate['Fu']
-    Fnv, Fexx = bolts['Fnv'], 480
-
-    if is_lrfd:
-        method_name, load_symbol = "LRFD", "V_u"
-        phi_shear, phi_yield, phi_rupture, phi_weld = 0.75, 1.00, 0.75, 0.75
-        def apply_f(Rn, phi): return phi * Rn, r"\phi R_n", f"{phi} \cdot {Rn:.2f}"
-    else:
-        method_name, load_symbol = "ASD", "V_a"
-        om_shear, om_yield, om_rupture, om_weld = 2.00, 1.50, 2.00, 2.00
-        def apply_f(Rn, omega): return Rn / omega, r"\frac{R_n}{\Omega}", f"\\frac{{{Rn:.2f}}}{{{omega}}}"
-
-    # Calculations
-    Ab = (math.pi * d**2) / 4
-    Rn_bs = (Fnv * Ab * n_total) / 1000
-    cap_bs, f_bs, c_bs = apply_f(Rn_bs, phi_shear if is_lrfd else om_shear)
-
-    Rn_br = (2.4 * d * t_pl * Fu_pl * n_total) / 1000
-    cap_br, f_br, c_br = apply_f(Rn_br, phi_shear if is_lrfd else om_shear)
-
-    Rn_y = 0.60 * Fy_pl * (h_pl * t_pl) / 1000
-    cap_y, f_y, c_y = apply_f(Rn_y, phi_yield if is_lrfd else om_yield)
-
-    Rn_r = 0.60 * Fu_pl * ((h_pl - (n_rows * h_hole)) * t_pl) / 1000
-    cap_r, f_r, c_r = apply_f(Rn_r, phi_rupture if is_lrfd else om_rupture)
-
-    # Summary logic
-    caps = {"Bolt Shear": cap_bs, "Bolt Bearing": cap_br, "Plate Yielding": cap_y, "Plate Rupture": cap_r}
-    min_cap = min(caps.values())
-    ratio = V_load / min_cap if min_cap > 0 else 999
-    status_color = "green" if ratio <= 1.0 else "red"
-
-    return f"""
-<div style="border:1px solid #e5e7eb; padding:20px; border-radius:10px; background-color: #ffffff;">
-<h3>📝 AISC Connection Report ({method_name})</h3>
-<b>Design Shear ({load_symbol}): {V_load:.2f} kN</b><br>
-<b>Status: <span style="color:{status_color}">{"✅ PASS" if ratio <= 1.0 else "❌ FAIL"}</span></b> (Ratio: {ratio:.2f})
-<hr>
-<b>1. Bolt Capacity:</b> {cap_bs:.2f} kN ({f_bs})<br>
-<b>2. Plate Yielding:</b> {cap_y:.2f} kN ({f_y})<br>
-<b>3. Plate Rupture:</b> {cap_r:.2f} kN ({f_r})
-</div>
-"""
