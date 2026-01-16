@@ -1,3 +1,4 @@
+# app.py (V13 - Full Clean Version)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -70,7 +71,6 @@ with st.sidebar:
     st.title("🏗️ Beam Insight V13")
     st.divider()
     
-    # --- 1. GLOBAL SETTINGS & LINKAGE ---
     method = st.radio("Method", ["ASD (Allowable Stress)", "LRFD (Limit State)"])
     is_lrfd = True if "LRFD" in method else False
     
@@ -88,13 +88,10 @@ with st.sidebar:
     conn_type_options = [
         "Fin Plate (Single Shear) - Beam to Col",
         "End Plate (Single Shear) - Beam to Col",
-        "Double Angle (Double Shear) - Beam to Col",
-        "Fin Plate (Single Shear) - Beam to Beam"
+        "Double Angle (Double Shear) - Beam to Col"
     ]
     conn_type = st.selectbox("Connection Type", conn_type_options)
-    
-    bolt_grade_opts = ["A325 (High Strength)", "Grade 8.8 (Standard)", "A490 (Premium)"]
-    bolt_grade = st.selectbox("Bolt Grade", bolt_grade_opts)
+    bolt_grade = st.selectbox("Bolt Grade", ["A325 (High Strength)", "Grade 8.8 (Standard)", "A490 (Premium)"])
     bolt_size = st.selectbox("Bolt Size", ["M16", "M20", "M22", "M24"], index=1)
     
     design_mode = st.radio("Load for Connection:", ["Actual Load", "Fixed % Capacity"])
@@ -108,13 +105,12 @@ p = steel_db[sec_name]
 Aw = (p['h']/10) * (p['tw']/10) 
 Ix, Zx = p['Ix'], p['Zx']
 
-# --- CALCULATE CAPACITY BASED ON METHOD (ASD/LRFD) ---
 if is_lrfd:
-    M_cap = 0.90 * fy * Zx  # LRFD Factor
+    M_cap = 0.90 * fy * Zx 
     V_cap = 1.00 * 0.6 * fy * Aw
     label_load = "Factored Load (Wu)"
 else:
-    M_cap = 0.60 * fy * Zx  # ASD Factor
+    M_cap = 0.60 * fy * Zx 
     V_cap = 0.40 * fy * Aw
     label_load = "Safe Load (w)"
 
@@ -128,7 +124,6 @@ def get_capacity(L_m):
     return w_v, w_m, w_d, w_gov, cause
 
 w_shear, w_moment, w_defl, user_safe_load, user_cause = get_capacity(user_span)
-
 v_act = user_safe_load * user_span / 2
 m_act = user_safe_load * user_span**2 / 8
 d_act = (5 * (user_safe_load/100) * ((user_span*100)**4)) / (384 * E_mod * Ix)
@@ -141,110 +136,50 @@ V_design = v_act if design_mode == "Actual Load" else V_cap * (target_pct / 100)
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Report"])
 
 with tab1:
-    st.subheader(f"Engineering Analysis: {sec_name} ({'LRFD' if is_lrfd else 'ASD'})")
+    st.subheader(f"Engineering Analysis: {sec_name}")
     cause_color = "#dc2626" if user_cause == "Shear" else ("#d97706" if user_cause == "Moment" else "#059669")
-
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <div><span class="sub-text">Maximum Allowed {label_load}</span><br>
-                <span class="big-num">{user_safe_load:,.0f}</span> <span style="font-size:20px; color:#4b5563;">kg/m</span></div>
+                <span class="big-num">{user_safe_load:,.0f}</span> <span style="font-size:20px;">kg/m</span></div>
             <div style="text-align: right;"><span class="sub-text">Governing Limit</span><br>
                 <span style="font-size: 22px; font-weight:bold; color:{cause_color}; background-color:{cause_color}15; padding: 8px 20px; border-radius:15px; border: 1px solid {cause_color}30;">{user_cause.upper()}</span></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    def render_check_ratio_with_w(title, act, lim, ratio_label, eq_w, eq_act, eq_ratio):
-        ratio = act / lim
-        is_pass = ratio <= 1.01 
-        status_class = "pass" if is_pass else "fail"
-        border_color = "#10b981" if is_pass else "#ef4444"
-
-        st.markdown(f"""
-        <div class="detail-card" style="border-top-color: {border_color}">
-            <span class="status-badge {status_class}">{'PASS' if is_pass else 'FAIL'}</span>
-            <h4 style="margin:0; color:#374151;">{title}</h4>
-            <div style="margin-top:10px;">
-                <small style="color:#6b7280;">Usage Ratio ({ratio_label}):</small>
-                <div style="font-size:24px; font-weight:700; color:{border_color};">{ratio:.3f}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        with st.expander(f"View {title} Step-by-Step Calculation"):
-            st.info(f"**Step 1: Calculate Max Load (w) from {title}**")
-            st.latex(eq_w)
-            st.divider()
-            st.info(f"**Step 2: Compare Actual Stress vs Capacity**")
-            st.latex(eq_act)
-            st.latex(eq_ratio)
-
     c1, c2, c3 = st.columns(3)
-    L_cm_disp = user_span * 100
-    
-    with c1:
-        render_check_ratio_with_w(
-            "Shear Check", v_act, V_cap, "V/V_cap",
-            fr"w_{{limit}} = \frac{{2 \cdot V_{{cap}}}}{{L}} = \frac{{2 \cdot {V_cap:,.0f}}}{{{L_cm_disp:,.0f}}} \cdot 100 = {w_shear:,.0f} \text{{ kg/m}}",
-            fr"V_{{act}} = \frac{{w \cdot L}}{{2}} = \frac{{{user_safe_load:,.0f} \cdot {user_span}}}{{2}} = {v_act:,.0f} \text{{ kg}}",
-            fr"Ratio = \frac{{{v_act:,.0f}}}{{{V_cap:,.0f}}} = {v_act/V_cap:.3f}"
-        )
-    with c2:
-        render_check_ratio_with_w(
-            "Moment Check", m_act, (M_cap/100), "M/M_cap",
-            fr"w_{{limit}} = \frac{{8 \cdot M_{{cap}}}}{{L^2}} = \frac{{8 \cdot {M_cap:,.0f}}}{{{L_cm_disp:,.0f}^2}} \cdot 100 = {w_moment:,.0f} \text{{ kg/m}}",
-            fr"M_{{act}} = \frac{{w \cdot L^2}}{{8}} = \frac{{{user_safe_load:,.0f} \cdot {user_span}^2}}{{8}} = {m_act:,.0f} \text{{ kg.m}}",
-            fr"Ratio = \frac{{{m_act:,.0f}}}{{{M_cap/100:,.0f}}} = {m_act/(M_cap/100):.3f}"
-        )
-    with c3:
-        render_check_ratio_with_w(
-            "Deflection Check", d_act, d_all, "Δ/Δ_allow",
-            fr"w_{{limit}} = \frac{{384 E I \Delta_{{all}}}}{{5 L^4}} = \frac{{384 \cdot 2.04 \cdot 10^6 \cdot {Ix} \cdot {d_all:.2f}}}{{5 \cdot {L_cm_disp:,.0f}^4}} \cdot 100 = {w_defl:,.0f} \text{{ kg/m}}",
-            fr"\Delta_{{act}} = \frac{{5 w L^4}}{{384 E I}} = {d_act:.3f} \text{{ cm}}",
-            fr"Ratio = \frac{{{d_act:.3f}}}{{{d_all:.3f}}} = {d_act/d_all:.3f}"
-        )
+    with c1: st.metric("Shear Usage", f"{v_act/V_cap:.3f}")
+    with c2: st.metric("Moment Usage", f"{m_act/(M_cap/100):.3f}")
+    with c3: st.metric("Deflection Usage", f"{d_act/d_all:.3f}")
 
-    st.markdown("### Capacity Envelope Curve")
+    # Capacity Chart
     spans = np.linspace(2, 12, 100)
     data_env = [get_capacity(s) for s in spans]
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=spans, y=[d[0] for d in data_env], name='Shear Limit', line=dict(color='#ef4444', dash='dash')))
-    fig.add_trace(go.Scatter(x=spans, y=[d[1] for d in data_env], name='Moment Limit', line=dict(color='#f59e0b', dash='dash')))
-    fig.add_trace(go.Scatter(x=spans, y=[d[2] for d in data_env], name='Deflection Limit', line=dict(color='#3b82f6', dash='dash')))
-    fig.add_trace(go.Scatter(x=spans, y=[d[3] for d in data_env], name='Safe Envelope', fill='tozeroy', fillcolor='rgba(37, 99, 235, 0.1)', line=dict(color='#1e40af', width=4)))
-    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers+text', name='Design Point', text=[f" ({user_span}m, {user_safe_load:,.0f}kg/m)"], textposition="top right", marker=dict(color='red', size=12, symbol='diamond', line=dict(width=2, color='white'))))
-    fig.update_layout(hovermode="x unified", height=450, margin=dict(t=20, b=20, l=20, r=20), plot_bgcolor='white')
+    fig.add_trace(go.Scatter(x=spans, y=[d[3] for d in data_env], fill='tozeroy', name='Safe Envelope', line=dict(color='#1e40af', width=4)))
+    fig.add_trace(go.Scatter(x=[user_span], y=[user_safe_load], mode='markers', name='Design Point', marker=dict(color='red', size=12)))
+    fig.update_layout(title="Load Capacity Envelope", xaxis_title="Span (m)", yaxis_title="Load (kg/m)", height=450)
     st.plotly_chart(fig, use_container_width=True)
 
 with tab2:
     try:
-        # --- ส่งค่าเข้า Tab Connection (พร้อมตัวแปร Linkage ครบถ้วน) ---
         req_bolt, v_bolt = conn.render_connection_tab(
-            V_design=V_design, 
-            bolt_size=bolt_size, 
-            method=method, 
-            is_lrfd=is_lrfd,        # <--- ส่งสถานะ LRFD
-            section_data=p, 
-            conn_type=conn_type,    # <--- ส่งชื่อที่มีคำว่า Double/Single
-            bolt_grade=bolt_grade
+            V_design=V_design, bolt_size=bolt_size, method=method, 
+            is_lrfd=is_lrfd, section_data=p, conn_type=conn_type, bolt_grade=bolt_grade
         )
     except Exception as e:
-        st.error(f"⚠️ Error in Connection Tab: {e}")
-        st.caption("Please check if connection_design.py is up to date.")
+        st.error(f"⚠️ Connection Module Error: {e}")
 
 with tab3:
-    st.subheader("Span-Load Reference Table")
     tbl_spans = np.arange(2.0, 12.5, 0.5)
     tbl_data = [get_capacity(s) for s in tbl_spans]
     df = pd.DataFrame({"Span (m)": tbl_spans, f"Max {label_load} (kg/m)": [d[3] for d in tbl_data], "Control Factor": [d[4] for d in tbl_data]})
-    st.dataframe(df.style.format("{:,.0f}", subset=[f"Max {label_load} (kg/m)"]), use_container_width=True)
+    st.table(df)
 
 with tab4:
-    # รวบรวมข้อมูลทั้งหมดส่งไปยัง report_generator
     full_res = {'w_safe': user_safe_load, 'cause': user_cause, 'v_cap': V_cap, 'v_act': v_act, 'm_cap': M_cap, 'm_act': m_act, 'd_all': d_all, 'd_act': d_act}
     bolt_data = {'size': bolt_size, 'qty': req_bolt if 'req_bolt' in locals() else 0, 'cap': v_bolt if 'v_bolt' in locals() else 0, 'type': conn_type, 'grade': bolt_grade}
-    
     if 'rep' in locals():
         rep.render_report_tab(method, is_lrfd, sec_name, grade_choice, p, full_res, bolt_data)
-    else:
-        st.info("Report Generator module not loaded.")
