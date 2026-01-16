@@ -1,111 +1,97 @@
 import plotly.graph_objects as go
 
 # =============================================================================
-# 🎨 มาตรฐานสีและสไตล์ (Color Palette)
+# 🎨 PROFESSIONAL COLOR PALETTE (Industry Standard)
 # =============================================================================
-C_COL_OUTLINE = "#fbbf24"  # สีเหลือง (ขอบเขตเสาที่คานไปเกาะ)
-C_COL_FILL = "#f8fafc"     # สีพื้นเสา
-C_BEAM_FILL = "#f1f5f9"    # สีเนื้อเหล็กคาน
-C_BEAM_OUT = "#334155"     # สีขอบเหล็ก
-C_PLATE_FILL = "#0ea5e9"   # สี Plate (ฟ้า)
-C_BOLT_FILL = "#dc2626"    # สี Bolt (แดง)
-C_DIM = "#475569"          # สีเส้นบอกขนาด
-C_CL = "#ef4444"           # สีเส้น Centerline
+C_STEEL_DARK = "#1e293b"    # ขอบเหล็กเข้ม
+C_STEEL_LIGHT = "#f8fafc"   # สีผิวเหล็ก (Galvanized look)
+C_PLATE = "#0284c7"         # สีเพลท (Deep Sky Blue)
+C_BOLT = "#be123c"          # สีโบลท์ (Crimson)
+C_WELD = "#94a3b8"          # สีรอยเชื่อม
+C_DIM = "#334155"           # สีเส้น Dimension
+C_YELLOW_COL = "#eab308"    # เส้นขอบเขตเสา (Yellow Line)
 
 # =============================================================================
-# 🛠️ ฟังก์ชันเสริม (Helper Functions)
+# 🛠️ ADVANCED HELPERS
 # =============================================================================
-def add_cad_dim(fig, x0, y0, x1, y1, text, type="horiz", offset=0):
-    if type == "horiz":
-        y_dim = y0 + offset
-        fig.add_shape(type="line", x0=x0, y0=y0, x1=x0, y1=y_dim, line=dict(color=C_DIM, width=0.5))
-        fig.add_shape(type="line", x0=x1, y0=y1, x1=x1, y1=y_dim, line=dict(color=C_DIM, width=0.5))
-        fig.add_shape(type="line", x0=x0, y0=y_dim, x1=x1, y1=y_dim, line=dict(color=C_DIM, width=1))
-        fig.add_annotation(x=(x0+x1)/2, y=y_dim, text=f"<b>{text}</b>", showarrow=False, yshift=10, font=dict(size=10, color=C_DIM), bgcolor="white")
-    elif type == "vert":
-        x_dim = x0 + offset
-        fig.add_shape(type="line", x0=x0, y0=y0, x1=x_dim, y1=y0, line=dict(color=C_DIM, width=0.5))
-        fig.add_shape(type="line", x0=x1, y0=y1, x1=x_dim, y1=y1, line=dict(color=C_DIM, width=0.5))
-        fig.add_shape(type="line", x0=x_dim, y0=y0, x1=x_dim, y1=y1, line=dict(color=C_DIM, width=1))
-        fig.add_annotation(x=x_dim, y=(y0+y1)/2, text=f"<b>{text}</b>", showarrow=False, xshift=-15, textangle=-90, font=dict(size=10, color=C_DIM), bgcolor="white")
+def add_weld_symbol(fig, x, y, size=8, side="left"):
+    """ วาดสัญลักษณ์รอยเชื่อม Fillet Weld """
+    sign = -1 if side == "left" else 1
+    fig.add_trace(go.Scatter(
+        x=[x, x, x + (sign * size), x],
+        y=[y - size, y, y, y - size],
+        fill="toself", fillcolor=C_WELD, line=dict(color=C_STEEL_DARK, width=0.5),
+        mode='lines', hoverinfo='skip', showlegend=False
+    ))
 
-def add_centerline(fig, x0, y0, x1, y1):
-    fig.add_shape(type="line", x0=x0, y0=y0, x1=x1, y1=y1, line=dict(color=C_CL, width=1, dash="dashdot"), opacity=0.6)
-
-# =============================================================================
-# 1. PLAN VIEW
-# =============================================================================
-def create_plan_view(beam, plate, bolts):
-    fig = go.Figure()
-    tw, b = beam['tw'], beam['b']
-    t_pl, w_pl = plate['t'], plate['w']
-    fig.add_shape(type="rect", x0=-20, y0=-b/2-20, x1=0, y1=b/2+20, fillcolor="#e2e8f0", line_width=0)
-    fig.add_shape(type="rect", x0=0, y0=-tw/2, x1=150, y1=tw/2, fillcolor=C_BEAM_FILL, line=dict(color=C_BEAM_OUT))
-    fig.add_shape(type="rect", x0=0, y0=tw/2, x1=w_pl, y1=tw/2+t_pl, fillcolor=C_PLATE_FILL, line=dict(color=C_BEAM_OUT))
-    add_centerline(fig, -30, 0, 160, 0)
-    fig.update_layout(title="PLAN VIEW", plot_bgcolor="white", height=300, showlegend=False)
-    fig.update_xaxes(visible=False, range=[-50, 150]); fig.update_yaxes(visible=False, scaleanchor="x", scaleratio=1)
-    return fig
+def get_i_section_path(x_center, y_center, h, b, tf, tw, r=10):
+    """ สร้างเส้นรอบรูป I-Section แบบมี Root Radius (ความโค้งโคนปีก) """
+    # คำนวณพิกัดจุดโค้งเพื่อให้เหมือนเหล็กจริงที่สุด
+    return (f"M {x_center-b/2},{y_center-h/2} L {x_center+b/2},{y_center-h/2} "
+            f"L {x_center+b/2},{y_center-h/2+tf} L {x_center+tw/2+r},{y_center-h/2+tf} "
+            f"Q {x_center+tw/2},{y_center-h/2+tf} {x_center+tw/2},{y_center-h/2+tf+r} "
+            f"L {x_center+tw/2},{y_center+h/2-tf-r} "
+            f"Q {x_center+tw/2},{y_center+h/2-tf} {x_center+tw/2+r},{y_center+h/2-tf} "
+            f"L {x_center+b/2},{y_center+h/2-tf} L {x_center+b/2},{y_center+h/2} "
+            f"L {x_center-b/2},{y_center+h/2} L {x_center-b/2},{y_center+h/2-tf} "
+            f"L {x_center-tw/2-r},{y_center+h/2-tf} "
+            f"Q {x_center-tw/2},{y_center+h/2-tf} {x_center-tw/2},{y_center+h/2-tf-r} "
+            f"L {x_center-tw/2},{y_center-h/2+tf+r} "
+            f"Q {x_center-tw/2},{y_center-h/2+tf} {x_center-tw/2-r},{y_center-h/2+tf} "
+            f"L {x_center-b/2},{y_center-h/2+tf} Z")
 
 # =============================================================================
-# 2. ELEVATION VIEW (Front) - แก้ไข 'lv' Error
-# =============================================================================
-def create_front_view(beam, plate, bolts):
-    fig = go.Figure()
-    h_beam = beam['h']
-    h_pl, w_pl = plate['h'], plate['w']
-    # ตรวจสอบว่า lv อยู่ใน plate หรือ bolts
-    lv = plate.get('lv', bolts.get('lv', 30)) 
-    n_rows, s_v = bolts['rows'], bolts['s_v']
-    
-    fig.add_shape(type="rect", x0=-40, y0=-h_beam/2-20, x1=0, y1=h_beam/2+20, fillcolor="#cbd5e1", line_width=0)
-    fig.add_shape(type="rect", x0=0, y0=-h_pl/2, x1=w_pl, y1=h_pl/2, fillcolor=C_PLATE_FILL, opacity=0.8)
-    
-    for i in range(n_rows):
-        y_pos = h_pl/2 - lv - (i * s_v)
-        fig.add_shape(type="circle", x0=w_pl/2-5, y0=y_pos-5, x1=w_pl/2+5, y1=y_pos+5, fillcolor=C_BOLT_FILL, line_width=0)
-
-    add_cad_dim(fig, w_pl+15, h_pl/2, w_pl+15, -h_pl/2, f"H_PL={h_pl}", "vert")
-    fig.update_layout(title="ELEVATION VIEW", plot_bgcolor="white", height=350, showlegend=False)
-    fig.update_xaxes(visible=False, range=[-60, 100]); fig.update_yaxes(visible=False, scaleanchor="x", scaleratio=1)
-    return fig
-
-# =============================================================================
-# 3. SIDE VIEW (Section) - แก้ไข 'lv' Error และหน้าตัดเสา
+# 3. SIDE VIEW (SECTION) - อัปเกรดความละเอียดสูงสุด
 # =============================================================================
 def create_side_view(beam, plate, bolts):
     fig = go.Figure()
     h, b, tf, tw = beam['h'], beam['b'], beam['tf'], beam['tw']
     h_pl, t_pl = plate['h'], plate['t']
-    # ตรวจสอบว่า lv อยู่ใน plate หรือ bolts
-    lv = plate.get('lv', bolts.get('lv', 30))
+    lv = plate.get('lv', bolts.get('lv', 35))
     n_rows, s_v = bolts['rows'], bolts['s_v']
 
-    # 1. วาดความกว้างเสา (เส้นเหลือง)
-    b_col = b + 30 
-    fig.add_shape(type="rect", x0=-b_col/2, y0=-h/2-40, x1=b_col/2, y1=h/2+40, 
-                  line=dict(color=C_COL_OUTLINE, width=3), fillcolor=C_COL_FILL)
+    # --- 1. COLUMN BOUNDARY (เส้นเหลือง - ความกว้างเสา) ---
+    b_col = b + 40
+    fig.add_shape(type="rect", x0=-b_col/2, y0=-h/2-60, x1=b_col/2, y1=h/2+60, 
+                  line=dict(color=C_YELLOW_COL, width=2.5, dash="dash"), fillcolor="rgba(248, 250, 252, 0.5)")
 
-    # 2. หน้าตัดคาน (I-Section)
-    fig.add_shape(type="rect", x0=-b/2, y0=h/2-tf, x1=b/2, y1=h/2, line=dict(color=C_BEAM_OUT), fillcolor=C_BEAM_FILL)
-    fig.add_shape(type="rect", x0=-b/2, y0=-h/2, x1=b/2, y1=-h/2+tf, line=dict(color=C_BEAM_OUT), fillcolor=C_BEAM_FILL)
-    fig.add_shape(type="rect", x0=-tw/2, y0=-h/2+tf, x1=tw/2, y1=h/2-tf, line=dict(color=C_BEAM_OUT), fillcolor=C_BEAM_FILL)
+    # --- 2. BEAM I-SECTION WITH ROOT RADIUS ---
+    beam_path = get_i_section_path(0, 0, h, b, tf, tw, r=12)
+    fig.add_shape(type="path", path=beam_path, fillcolor=C_STEEL_LIGHT, line=dict(color=C_STEEL_DARK, width=2))
 
-    # 3. Plate และ Bolt (ด้านข้าง)
-    p_x1 = tw/2 + t_pl
-    fig.add_shape(type="rect", x0=tw/2, y0=-h_pl/2, x1=p_x1, y1=h_pl/2, fillcolor=C_PLATE_FILL)
+    # --- 3. SHEAR PLATE & BOLTS ---
+    # ระยะ Clearance ระหว่าง Web กับ Plate (สมมติ 2mm)
+    p_x0 = tw/2
+    p_x1 = p_x0 + t_pl
+    fig.add_shape(type="rect", x0=p_x0, y0=-h_pl/2, x1=p_x1, y1=h_pl/2, 
+                  fillcolor=C_PLATE, line=dict(color=C_STEEL_DARK, width=1.5))
     
+    # วาด Bolt พร้อมหัวน็อตและแหวน (Hex Bolt Detail)
     for i in range(n_rows):
         y_bolt = h_pl/2 - lv - (i * s_v)
-        fig.add_shape(type="rect", x0=p_x1, y0=y_bolt-4, x1=p_x1+8, y1=y_bolt+4, fillcolor=C_BOLT_FILL, line_width=0)
+        # Shank
+        fig.add_shape(type="rect", x0=p_x1, y0=y_bolt-5, x1=p_x1+15, y1=y_bolt+5, fillcolor=C_BOLT, line_width=0.5)
+        # Nut
+        fig.add_shape(type="rect", x0=p_x1+10, y0=y_bolt-8, x1=p_x1+18, y1=y_bolt+8, fillcolor="#4b5563", line_width=1)
 
-    # 4. ตัดเส้นแดงออก (เหลือแค่แนวราบเพื่อบอกกึ่งกลาง)
-    add_centerline(fig, -b/2-20, 0, b/2+20, 0) 
-    
-    add_cad_dim(fig, -b/2, h/2+10, b/2, h/2+10, f"B={b:.0f}", offset=20)
-    add_cad_dim(fig, b/2+30, h/2, b/2+30, -h/2, f"H={h:.0f}", "vert")
+    # --- 4. WELDING DETAILS ---
+    # รอยเชื่อมระหว่าง Plate กับหน้าเสา (ตามที่คุณอธิบายว่า Plate เชื่อมเสา)
+    add_weld_symbol(fig, p_x0, h_pl/2, size=10, side="left")
+    add_weld_symbol(fig, p_x0, -h_pl/2 + 10, size=10, side="left")
 
-    fig.update_layout(title="SIDE VIEW (SECTION)", plot_bgcolor="white", height=400, showlegend=False,
-                      xaxis=dict(visible=False, range=[-b_col, b_col]),
-                      yaxis=dict(visible=False, scaleanchor="x", scaleratio=1))
+    # --- 5. DIMENSIONING ---
+    from drawing_utils import add_cad_dim # เรียกใช้ฟังก์ชันเดิมของคุณ
+    add_cad_dim(fig, -b/2, h/2+15, b/2, h/2+15, f"BEAM B={int(b)}", offset=25)
+    add_cad_dim(fig, b/2+25, h/2, b/2+25, -h/2, f"BEAM H={int(h)}", "vert", offset=40)
+
+    fig.update_layout(
+        title=dict(text="<b>DETAILED SECTION VIEW</b>", font=dict(size=16)),
+        plot_bgcolor="white", height=500, width=500,
+        xaxis=dict(visible=False, range=[-b_col*0.8, b_col*1.2]),
+        yaxis=dict(visible=False, scaleanchor="x", scaleratio=1),
+        margin=dict(l=20, r=20, t=50, b=20)
+    )
     return fig
+
+# หมายเหตุ: สำหรับ create_plan_view และ create_front_view ให้คงโค้ดเดิมไว้ 
+# เพื่อความเสถียรของแอปพลิเคชัน
