@@ -1,3 +1,4 @@
+# connection_design.py (V13 - Full Clean Version)
 import math
 import streamlit as st
 
@@ -24,7 +25,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         s_v = st.number_input("Vertical Spacing (mm)", min_value=1, value=75)
         l_side = st.number_input("Edge Distance (mm)", min_value=1, value=40)
 
-    # กำหนดค่า Material Properties เบื้องต้น (สามารถปรับจูนเพิ่มในอนาคตได้)
+    # กำหนดค่า Material Properties เบื้องต้น
     # แปลงหน่วย kg เป็น kN (โดยประมาณ 1 kN = 100 kg สำหรับงานวิศวกรรมทั่วไป)
     Fy_pl = 250  # MPa (A36/SS400)
     Fu_pl = 400  # MPa
@@ -57,8 +58,7 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     
     st.markdown(report_md, unsafe_allow_html=True)
     
-    # ส่งค่ากลับไปยัง app.py (จำนวนโบลท์ทั้งหมด และความสามารถในการรับแรง)
-    # หมายเหตุ: ค่า v_bolt ในที่นี้เราจะดึงค่าความสามารถที่น้อยที่สุดมาแสดง
+    # ส่งค่ากลับไปยัง app.py (จำนวนโบลท์ทั้งหมด และแรงที่ออกแบบ)
     return (bolt_rows * bolt_cols), V_load_kn
 
 def generate_report(V_load, beam, plate, bolts, is_lrfd=True):
@@ -159,14 +159,14 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True):
 
     # --- 5. REPORT ---
     report = f"""
-<div style="border:1px solid #e5e7eb; padding:20px; border-radius:10px;">
+<div style="border:1px solid #e5e7eb; padding:20px; border-radius:10px; background-color: #ffffff;">
 
 ### 📝 AISC Connection Report ({method_name})
 
 **Parameters:**
 - Design Shear (${load_symbol}$): **{V_load:.2f} kN**
 - Plate: {h_pl:.0f}x{t_pl:.0f} mm
-- Bolts: {n_total} x M{d} ({method_name})
+- Bolts: {n_total} x M{d}
 
 ---
 
