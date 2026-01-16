@@ -1,6 +1,10 @@
 # connection_design.py (V13 - Full Clean Version)
 import math
 import streamlit as st
+try:
+    import drawing_utils as drw
+except ImportError:
+    st.warning("Warning: drawing_utils.py not found. Drawings will not be displayed.")
 
 def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, conn_type, bolt_grade):
     """
@@ -26,7 +30,6 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
         l_side = st.number_input("Edge Distance (mm)", min_value=1, value=40)
 
     # กำหนดค่า Material Properties เบื้องต้น
-    # แปลงหน่วย kg เป็น kN (โดยประมาณ 1 kN = 100 kg สำหรับงานวิศวกรรมทั่วไป)
     Fy_pl = 250  # MPa (A36/SS400)
     Fu_pl = 400  # MPa
     
@@ -47,11 +50,37 @@ def render_connection_tab(V_design, bolt_size, method, is_lrfd, section_data, co
     
     bolts = {
         'd': d, 'rows': bolt_rows, 'cols': bolt_cols,
-        's_v': s_v, 'Fnv': fnv
+        's_v': s_v, 'Fnv': fnv, 's_h': 60 # ระยะห่างแนวนอนสมมติเพื่อวาดรูป
     }
 
     # แปลง V_design จาก kg เป็น kN
     V_load_kn = V_design / 100
+
+    # แสดงผล Drawing (เพิ่มส่วนนี้เพื่อให้รูปปรากฏใน Tab 2)
+    if 'drw' in globals():
+        st.divider()
+        st.subheader("🎨 Engineering Drawing (3 Views)")
+        
+        # จัดเตรียมข้อมูลสำหรับโมดูลวาดภาพ
+        beam_draw_data = {
+            'h': section_data['h'], 
+            'b': section_data['b'], 
+            'tf': section_data['tf'], 
+            'tw': section_data['tw']
+        }
+        
+        # แสดงผลรูปภาพ 3 มุม
+        col_draw_a, col_draw_b = st.columns(2)
+        with col_draw_a:
+            fig_plan = drw.create_plan_view(beam_draw_data, plate, bolts)
+            st.plotly_chart(fig_plan, use_container_width=True)
+            
+            fig_side = drw.create_side_view(beam_draw_data, plate, bolts)
+            st.plotly_chart(fig_side, use_container_width=True)
+
+        with col_draw_b:
+            fig_front = drw.create_front_view(beam_draw_data, plate, bolts)
+            st.plotly_chart(fig_front, use_container_width=True)
 
     # เรียกใช้ฟังก์ชันคำนวณเพื่อสร้าง Report
     report_md = generate_report(V_load_kn, section_data, plate, bolts, is_lrfd)
