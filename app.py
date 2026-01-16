@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 try:
     import steel_db             
     import connection_design    
-    import report_generator     # <--- Import ไฟล์ V13 ของคุณ
+    import report_generator     # <--- Import ไฟล์ Report Generator V13/V14 ของคุณ
 except ImportError as e:
     st.error(f"⚠️ Modules missing: {e}. Please ensure steel_db.py, connection_design.py, and report_generator.py are in the folder.")
     st.stop()
@@ -19,6 +19,7 @@ except ImportError as e:
 # ==========================================
 st.set_page_config(page_title="Beam Insight V17 (Report Fixed)", layout="wide", page_icon="🏗️")
 
+# Initialize Session State
 if 'cal_success' not in st.session_state:
     st.session_state.cal_success = False
 if 'res_dict' not in st.session_state:
@@ -27,23 +28,58 @@ if 'res_dict' not in st.session_state:
 if 'conn_type' not in st.session_state:
     st.session_state.conn_type = "Fin Plate"
 
+# CSS Styling
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
     
-    .detail-card { background: white; border-radius: 12px; padding: 20px; border: 1px solid #e5e7eb; border-top: 6px solid #2563eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    .status-badge { padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 12px; float: right; text-transform: uppercase; }
+    .detail-card { 
+        background: white; 
+        border-radius: 12px; 
+        padding: 20px; 
+        border: 1px solid #e5e7eb; 
+        border-top: 6px solid #2563eb; 
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); 
+        margin-bottom: 20px; 
+    }
+    .status-badge { 
+        padding: 4px 12px; 
+        border-radius: 20px; 
+        font-weight: 700; 
+        font-size: 12px; 
+        float: right; 
+        text-transform: uppercase; 
+    }
     .pass { background-color: #dcfce7; color: #166534; }
     .fail { background-color: #fee2e2; color: #991b1b; }
     
-    .highlight-card { background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); padding: 25px; border-radius: 20px; border-left: 8px solid #2563eb; box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08); margin-bottom: 25px; border: 1px solid #e5e7eb; }
+    .highlight-card { 
+        background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); 
+        padding: 25px; 
+        border-radius: 20px; 
+        border-left: 8px solid #2563eb; 
+        box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08); 
+        margin-bottom: 25px; 
+        border: 1px solid #e5e7eb; 
+    }
     .big-num { color: #1e40af; font-size: 42px; font-weight: 800; font-family: 'Roboto Mono', monospace; }
     .sub-text { color: #6b7280; font-size: 14px; font-weight: 600; text-transform: uppercase; }
     
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; background-color: #f8fafc; border-radius: 8px 8px 0 0; padding: 10px 20px; font-weight: 600; color: #64748b; }
-    .stTabs [aria-selected="true"] { background-color: #ffffff; border-bottom: 3px solid #2563eb; color: #2563eb; }
+    .stTabs [data-baseweb="tab"] { 
+        height: 50px; 
+        background-color: #f8fafc; 
+        border-radius: 8px 8px 0 0; 
+        padding: 10px 20px; 
+        font-weight: 600; 
+        color: #64748b; 
+    }
+    .stTabs [aria-selected="true"] { 
+        background-color: #ffffff; 
+        border-bottom: 3px solid #2563eb; 
+        color: #2563eb; 
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -102,7 +138,10 @@ with st.sidebar:
 # ==========================================
 # 4. CALCULATION LOGIC
 # ==========================================
+# 1. Calculate Section Properties (Area Web)
 Aw = (h/10) * (tw/10) # cm2
+
+# 2. Calculate Capacities (Capacity)
 if is_lrfd:
     M_cap = 0.90 * Fy * Zx 
     V_cap = 1.00 * 0.60 * Fy * Aw
@@ -112,23 +151,34 @@ else:
     V_cap = 0.40 * Fy * Aw
     label_load = "Safe Load (Wa)"
 
-# Back-Calculate
+# 3. Back-Calculate Uniform Load (kg/m) based on Span
 L_cm = user_span * 100
-w_shear = (2 * V_cap / L_cm) * 100
+
+# Formula Back-Solving
+# V = wL/2 => w = 2V/L
+w_shear = (2 * V_cap / L_cm) * 100 # *100 converts kg/cm -> kg/m
+
+# M = wL^2/8 => w = 8M/L^2
 w_moment = (8 * M_cap / (L_cm**2)) * 100
+
+# Delta = 5wL^4 / 384EI => w = 384EI(Delta) / 5L^4
+# Delta_all = L/denom
 w_defl = ((L_cm/defl_denom) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100
 
+# 4. Determine Governing Load
 w_safe = min(w_shear, w_moment, w_defl)
 gov_cause = "Shear" if w_safe == w_shear else ("Moment" if w_safe == w_moment else "Deflection")
 
+# 5. Calculate Actual Forces based on w_safe
 v_act = w_safe * user_span / 2
 m_act = w_safe * user_span**2 / 8
-d_act = (5 * (w_safe/100) * (L_cm**4)) / (384 * E_mod * Ix)
+d_act = (5 * (w_safe/100) * (L_cm**4)) / (384 * E_mod * Ix) # Actual Deflection in cm
 d_allow = L_cm / defl_denom
 
-# Connection Load
+# 6. Connection Design Load
 v_conn_design = V_cap * (target_pct / 100.0) if "Fixed" in design_mode else v_act
 
+# 7. Store Results in Session State
 st.session_state.cal_success = True
 st.session_state.res_dict = {
     'w_safe': w_safe, 'cause': gov_cause,
@@ -160,7 +210,7 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # Detailed Checks
+    # Detailed Checks Function
     def render_check(title, act, lim, ratio_label, eq_w, eq_act, eq_ratio):
         ratio = act / lim
         is_pass = ratio <= 1.01 
@@ -245,7 +295,7 @@ with tab3:
 # --- TAB 4: REPORT (LINKED TO report_generator.py) ---
 with tab4:
     # 1. เตรียมข้อมูล Bolt เบื้องต้น (Mockup or Default)
-    # ในอนาคตคุณอาจดึงละเอียดจาก Tab 2 แต่ตอนนี้เอาให้ Report รันผ่านก่อน
+    # ข้อมูลนี้จะถูกใช้อ้างอิงใน Report หาก User ไม่ได้แก้ไขใน Tab 2 (หรือจะดึง session state ถ้ามีการ implment ลึกกว่านี้)
     bolt_info = {
         'type': st.session_state.conn_type,
         'grade': 'A325',
