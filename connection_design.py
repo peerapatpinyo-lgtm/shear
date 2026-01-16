@@ -151,7 +151,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         st.markdown("---")
         
         # ==========================
-        # 4. PLOTLY DRAWING SECTION (CORRECTED COORDINATES)
+        # 4. PLOTLY DRAWING SECTION (FINE TUNED)
         # ==========================
         st.markdown("#### 📐 Construction Details")
         
@@ -185,12 +185,10 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
         tab1, tab2, tab3 = st.tabs(["🖼️ Elevation (Front)", "🏗️ Plan (Top)", "✂️ Section (Side)"])
         
-        # --- ฟังก์ชันจัดรูป (แก้ไขให้รองรับพิกัด Center: +/-) ---
         def fit_view(fig, x_range, y_range, height=500):
             fig.update_layout(
                 height=height,
                 margin=dict(l=20, r=20, t=40, b=20),
-                # กำหนด Range แบบ Manual เพื่อบังคับให้มองเห็นทั้งค่าบวกและลบ
                 xaxis=dict(range=x_range, visible=False, scaleanchor="y", scaleratio=1),
                 yaxis=dict(range=y_range, visible=False),
                 dragmode="pan",
@@ -198,21 +196,17 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             )
             return fig
 
-        # ระยะขอบ (Padding)
+        # Standard Padding
         pad = 50 
 
         with tab1:
             try:
+                # Elevation: Keep as is (User liked it)
                 fig_front = drawing_utils.create_front_view(beam_dict, plate_dict, bolt_dict)
-                
-                # [แก้ไข] Elevation View: 
-                # แกน Y เป็นแบบ Center (ครึ่งบน +, ครึ่งล่าง -)
-                # แกน X ส่วนใหญ่อาจจะเริ่มที่ 0 หรือ Center แต่เผื่อไว้ทั้งคู่
-                
                 y_max = (beam_h_mm / 2) + pad
                 y_min = -(beam_h_mm / 2) - pad
                 x_max = beam_b_mm + pad
-                x_min = -pad # เผื่อซ้ายนิดหน่อยกรณีมีเส้นหนา
+                x_min = -pad 
                 
                 st.plotly_chart(
                     fit_view(fig_front, [x_min, x_max], [y_min, y_max], height=550), 
@@ -223,15 +217,17 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
         with tab2:
             try:
+                # Plan View: Move UP (Increase bottom negative space)
                 fig_plan = drawing_utils.create_plan_view(beam_dict, plate_dict, bolt_dict)
                 
-                # [แก้ไข] Plan View:
-                # แกน X (หน้ากว้างคาน) มักจะเป็น Center (ซ้าย -, ขวา +)
-                # แกน Y (ความยาว) มักจะเป็นค่าบวก
-                
                 x_half = (beam_b_mm / 2) + pad
+                
+                # --- FIX: Shifted Y Range ---
+                # เพิ่มค่าติดลบด้านล่าง (จาก -50 เป็น -150) เพื่อดันรูป (ที่เริ่มจาก 0) ให้ลอยขึ้นไปอยู่กลางเฟรม
+                y_range_shifted = [-150, 250] 
+                
                 st.plotly_chart(
-                    fit_view(fig_plan, [-x_half, x_half], [-pad, 350+pad], height=400),
+                    fit_view(fig_plan, [-x_half, x_half], y_range_shifted, height=400),
                     use_container_width=True
                 )
             except Exception as e:
@@ -239,18 +235,20 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
         with tab3:
             try:
+                # Section View: Zoom OUT (Increase Limits)
                 fig_side = drawing_utils.create_side_view(beam_dict, plate_dict, bolt_dict)
                 
-                # [แก้ไข] Section View:
-                # แกน Y (ความสูง) เป็น Center (บน +, ล่าง -) เหมือน Front
-                # แกน X (ความกว้างหน้าตัด) เป็น Center (ซ้าย -, ขวา +)
+                # --- FIX: Zoom Out ---
+                # ขยายขอบเขตการมองเห็น (Range) ให้กว้างขึ้น
+                pad_zoom = 100 # เพิ่ม Padding เป็น 100 (Zoom Out)
+                y_max = (beam_h_mm / 2) + pad_zoom
+                y_min = -(beam_h_mm / 2) - pad_zoom
                 
-                y_max = (beam_h_mm / 2) + pad
-                y_min = -(beam_h_mm / 2) - pad
-                x_limit = 150 # กว้างพอประมาณสำหรับมองข้าง
+                # ขยายแกน X ออกไปข้างละ 250mm
+                x_limit_zoomed = 250 
                 
                 st.plotly_chart(
-                    fit_view(fig_side, [-x_limit, x_limit], [y_min, y_max], height=550),
+                    fit_view(fig_side, [-x_limit_zoomed, x_limit_zoomed], [y_min, y_max], height=550),
                     use_container_width=True
                 )
             except Exception as e:
