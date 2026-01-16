@@ -144,20 +144,47 @@ with tab1:
         ratio_v = v_act/V_cap
         st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_v<=1.001 else '#ef4444'}">
             <h4 style="margin:0;">Shear Ratio</h4><div style="font-size:24px; font-weight:700;">{ratio_v:.3f}</div>
-            <small>V_cap: {V_cap:,.0f} kg</small></div>""", unsafe_allow_html=True)
+            <small>V_act: {v_act:,.0f} / V_cap: {V_cap:,.0f} kg</small></div>""", unsafe_allow_html=True)
+        
         with st.expander("🔍 View Detailed Shear Calc"):
-            st.latex(fr"V_{{cap}} = {V_cap:,.0f} \text{{ kg}}")
-            st.latex(fr"w_{{limit}} = \frac{{2 V_{{cap}}}}{{L}} = {w_shear:,.0f} \text{{ kg/m}}")
+            st.markdown("**1. Nominal Shear Strength ($V_n$)**")
+            st.latex(r"V_n = 0.6 \cdot F_y \cdot A_w")
+            st.latex(fr"V_n = 0.6 \cdot {Fy:,.0f} \cdot {Aw:.2f} = {0.6*Fy*Aw:,.0f} \text{{ kg}}")
+            
+            st.markdown("**2. Design Shear Capacity ($V_{{cap}}$)**")
+            if is_lrfd:
+                st.latex(fr"V_u = \phi_v \cdot V_n = 1.0 \cdot {0.6*Fy*Aw:,.0f} = {V_cap:,.0f} \text{{ kg}}")
+            else:
+                st.latex(fr"V_a = V_n / \Omega_v = {0.6*Fy*Aw:,.0f} / 1.5 = {V_cap:,.0f} \text{{ kg}}")
+            
+            st.markdown("**3. Max Load for Shear ($w_{{shear}}$)**")
+            st.latex(fr"w_{{shear}} = \frac{{2 \cdot V_{{cap}}}}{{L}} = \frac{{2 \cdot {V_cap:,.0f}}}{{{user_span}}} = \mathbf{{{w_shear:,.0f} \text{{ kg/m}}}}")
+            
+            st.markdown("**4. Check Ratio**")
             st.latex(fr"Ratio = \frac{{{w_safe:,.0f}}}{{{w_shear:,.0f}}} = \mathbf{{{w_safe/w_shear:.3f}}}")
 
     with c2:
         ratio_m = m_act/M_cap
         st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_m<=1.001 else '#ef4444'}">
             <h4 style="margin:0;">Moment Ratio</h4><div style="font-size:24px; font-weight:700;">{ratio_m:.3f}</div>
-            <small>M_cap: {M_cap:,.0f} kg-m</small></div>""", unsafe_allow_html=True)
+            <small>M_act: {m_act:,.0f} / M_cap: {M_cap:,.0f} kg-m</small></div>""", unsafe_allow_html=True)
+        
         with st.expander("🔍 View Detailed Moment Calc"):
-            st.latex(fr"M_{{cap}} = {M_cap:,.0f} \text{{ kg-m}}")
-            st.latex(fr"w_{{limit}} = \frac{{8 M_{{cap}}}}{{L^2}} = {w_moment:,.0f} \text{{ kg/m}}")
+            st.markdown("**1. Nominal Moment Strength ($M_n$)**")
+            st.latex(r"M_n = F_y \cdot Z_x")
+            st.latex(fr"M_n = {Fy:,.0f} \cdot {Zx:,.2f} = {Fy*Zx:,.0f} \text{{ kg-cm}}")
+            st.latex(fr"M_n = {Fy*Zx/100:,.0f} \text{{ kg-m}}")
+            
+            st.markdown("**2. Design Moment Capacity ($M_{{cap}}$)**")
+            if is_lrfd:
+                st.latex(fr"M_u = \phi_b \cdot M_n = 0.9 \cdot {Fy*Zx/100:,.0f} = {M_cap:,.0f} \text{{ kg-m}}")
+            else:
+                st.latex(fr"M_a = M_n / \Omega_b = {Fy*Zx/100:,.0f} / 1.67 = {M_cap:,.0f} \text{{ kg-m}}")
+            
+            st.markdown("**3. Max Load for Moment ($w_{{moment}}$)**")
+            st.latex(fr"w_{{moment}} = \frac{{8 \cdot M_{{cap}}}}{{L^2}} = \frac{{8 \cdot {M_cap:,.0f}}}{{{user_span}^2}} = \mathbf{{{w_moment:,.0f} \text{{ kg/m}}}}")
+            
+            st.markdown("**4. Check Ratio**")
             st.latex(fr"Ratio = \frac{{{w_safe:,.0f}}}{{{w_moment:,.0f}}} = \mathbf{{{w_safe/w_moment:.3f}}}")
 
     with c3:
