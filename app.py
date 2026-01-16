@@ -30,9 +30,6 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
     .detail-card { background: white; border-radius: 12px; padding: 20px; border: 1px solid #e5e7eb; border-top: 6px solid #2563eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; }
-    .status-badge { padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 12px; float: right; text-transform: uppercase; }
-    .pass { background-color: #dcfce7; color: #166534; }
-    .fail { background-color: #fee2e2; color: #991b1b; }
     .highlight-card { background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); padding: 25px; border-radius: 20px; border-left: 8px solid #2563eb; box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08); margin-bottom: 25px; border: 1px solid #e5e7eb; }
     .big-num { color: #1e40af; font-size: 42px; font-weight: 800; font-family: 'Roboto Mono', monospace; }
     .sub-text { color: #6b7280; font-size: 14px; font-weight: 600; text-transform: uppercase; }
@@ -46,9 +43,8 @@ with st.sidebar:
     st.title("🏗️ Beam Insight V18")
     st.divider()
     
-    # สลับ Method และเก็บเข้า Session ทันที
     method_opts = ["ASD (Allowable Stress)", "LRFD (Limit State)"]
-    st.session_state.design_method = st.radio("Method", method_opts, index=1 if "LRFD" in st.session_state.design_method else 0)
+    st.session_state.design_method = st.radio("Design Method", method_opts, index=1 if "LRFD" in st.session_state.design_method else 0)
     is_lrfd = "LRFD" in st.session_state.design_method
 
     grade_opts = {"SS400 (Fy 2450)": 2450, "SM520 (Fy 3550)": 3550, "A36 (Fy 2500)": 2500}
@@ -83,27 +79,22 @@ with st.sidebar:
     target_pct = st.slider("% of Shear Capacity", 50, 100, 75) if "Fixed" in design_mode else 0
 
 # ==========================================
-# 4. CALCULATION LOGIC (ASD vs LRFD FIXED)
+# 4. CALCULATION LOGIC (ASD vs LRFD)
 # ==========================================
 Aw = (h/10) * (tw/10) # cm2
 L_cm = user_span * 100
 
 if is_lrfd:
-    # LRFD: phi_v = 1.0, phi_b = 0.9
     phi_v, phi_b = 1.00, 0.90
     V_cap = phi_v * 0.60 * Fy * Aw
     M_cap = phi_b * Fy * Zx
     label_load = "Factored Load (Wu)"
-    method_symbol = r"\phi"
 else:
-    # ASD: Omega_v = 1.50, Omega_b = 1.67
     omg_v, omg_b = 1.50, 1.67
     V_cap = (0.60 * Fy * Aw) / omg_v
     M_cap = (Fy * Zx) / omg_b
     label_load = "Allowable Load (Wa)"
-    method_symbol = r"\Omega"
 
-# Back-solve Loads
 w_shear = (2 * V_cap / L_cm) * 100 
 w_moment = (8 * M_cap / (L_cm**2)) * 100
 w_defl = ((L_cm/defl_denom) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100
@@ -115,7 +106,6 @@ v_act = w_safe * user_span / 2
 m_act = w_safe * user_span**2 / 8
 d_act = (5 * (w_safe/100) * (L_cm**4)) / (384 * E_mod * Ix)
 d_allow = L_cm / defl_denom
-
 v_conn_design = V_cap * (target_pct / 100.0) if "Fixed" in design_mode else v_act
 
 st.session_state.res_dict = {
@@ -137,7 +127,7 @@ with tab1:
     st.markdown(f"""
     <div class="highlight-card">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div><span class="sub-text">Max Allowed {label_load}</span><br>
+            <div><span class="sub-text">Max Allowed {label_load} (w_safe)</span><br>
                 <span class="big-num">{w_safe:,.0f}</span> <span style="font-size:20px; color:#4b5563;">kg/m</span></div>
             <div style="text-align: right;"><span class="sub-text">Governing Limit</span><br>
                 <span style="font-size: 20px; font-weight:bold; color:{cause_color}; background-color:{cause_color}15; padding: 6px 15px; border-radius:15px; border: 1px solid {cause_color}30;">{gov_cause.upper()}</span></div>
@@ -145,48 +135,46 @@ with tab1:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- รายการคำนวณอย่างละเอียด (LaTeX) ---
     c1, c2, c3 = st.columns(3)
     
     with c1:
         ratio_v = v_act/V_cap
         st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_v<=1.01 else '#ef4444'}">
-            <h4 style="margin:0;">Shear Check</h4><div style="font-size:24px; font-weight:700;">{ratio_v:.3f}</div>
-            <small>V_act: {v_act:,.0f} / Cap: {V_cap:,.0f} kg</small></div>""", unsafe_allow_html=True)
-        with st.expander("View Shear Calc"):
+            <h4 style="margin:0;">Shear Ratio</h4><div style="font-size:24px; font-weight:700;">{ratio_v:.3f}</div>
+            <small>V_act: {v_act:,.0f} / V_cap: {V_cap:,.0f} kg</small></div>""", unsafe_allow_html=True)
+        with st.expander("🔍 View Detailed Shear Calc"):
+            st.latex(r"V_n = 0.6 F_y A_w")
             if is_lrfd:
-                st.latex(r"V_n = 0.6 F_y A_w")
-                st.latex(fr"V_u = \phi_v V_n = 1.0 \times {V_cap/phi_v:,.0f} = {V_cap:,.0f} \text{{ kg}}")
+                st.latex(fr"V_u = \phi_v V_n = 1.0 \times {V_cap:,.0f} = {V_cap:,.0f} \text{{ kg}}")
             else:
-                st.latex(r"V_n = 0.6 F_y A_w")
                 st.latex(fr"V_a = V_n / \Omega_v = {V_cap*omg_v:,.0f} / 1.5 = {V_cap:,.0f} \text{{ kg}}")
-            st.latex(fr"w_{{limit}} = \frac{{2 V_{{cap}}}}{{L}} = {w_shear:,.0f} \text{{ kg/m}}")
+            st.latex(fr"w_{{limit}} = \frac{{2 V_{{cap}}}}{{L}} = \frac{{2 \times {V_cap:,.0f}}}{{{user_span}}} = {w_shear:,.0f} \text{{ kg/m}}")
+            st.latex(fr"\text{{Ratio}} = \frac{{w_{{safe}}}}{{w_{{limit}}}} = \frac{{{w_safe:,.0f}}}{{{w_shear:,.0f}}} = \mathbf{{{w_safe/w_shear:.3f}}}")
 
     with c2:
         ratio_m = m_act/M_cap
         st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_m<=1.01 else '#ef4444'}">
-            <h4 style="margin:0;">Moment Check</h4><div style="font-size:24px; font-weight:700;">{ratio_m:.3f}</div>
-            <small>M_act: {m_act:,.0f} / Cap: {M_cap:,.0f} kg-m</small></div>""", unsafe_allow_html=True)
-        with st.expander("View Moment Calc"):
+            <h4 style="margin:0;">Moment Ratio</h4><div style="font-size:24px; font-weight:700;">{ratio_m:.3f}</div>
+            <small>M_act: {m_act:,.0f} / M_cap: {M_cap:,.0f} kg-m</small></div>""", unsafe_allow_html=True)
+        with st.expander("🔍 View Detailed Moment Calc"):
+            st.latex(r"M_n = F_y Z_x")
             if is_lrfd:
-                st.latex(r"M_n = F_y Z_x")
-                st.latex(fr"M_u = \phi_b M_n = 0.9 \times {M_cap/phi_b:,.0f} = {M_cap:,.0f} \text{{ kg-m}}")
+                st.latex(fr"M_u = \phi_b M_n = 0.9 \times {M_cap/0.9:,.0f} = {M_cap:,.0f} \text{{ kg-m}}")
             else:
-                st.latex(r"M_n = F_y Z_x")
                 st.latex(fr"M_a = M_n / \Omega_b = {M_cap*omg_b:,.0f} / 1.67 = {M_cap:,.0f} \text{{ kg-m}}")
-            st.latex(fr"w_{{limit}} = \frac{{8 M_{{cap}}}}{{L^2}} = {w_moment:,.0f} \text{{ kg/m}}")
+            st.latex(fr"w_{{limit}} = \frac{{8 M_{{cap}}}}{{L^2}} = \frac{{8 \times {M_cap:,.0f}}}{{{user_span}^2}} = {w_moment:,.0f} \text{{ kg/m}}")
+            st.latex(fr"\text{{Ratio}} = \frac{{w_{{safe}}}}{{w_{{limit}}}} = \frac{{{w_safe:,.0f}}}{{{w_moment:,.0f}}} = \mathbf{{{w_safe/w_moment:.3f}}}")
 
     with c3:
         ratio_d = d_act/d_allow
         st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_d<=1.01 else '#ef4444'}">
-            <h4 style="margin:0;">Deflection Check</h4><div style="font-size:24px; font-weight:700;">{ratio_d:.3f}</div>
+            <h4 style="margin:0;">Deflection Ratio</h4><div style="font-size:24px; font-weight:700;">{ratio_d:.3f}</div>
             <small>Actual: {d_act:.2f} / Limit: {d_allow:.2f} cm</small></div>""", unsafe_allow_html=True)
-        with st.expander("View Deflection Calc"):
+        with st.expander("🔍 View Detailed Defl Calc"):
             st.latex(fr"\Delta_{{all}} = L / {defl_denom} = {d_allow:.2f} \text{{ cm}}")
-            st.latex(r"\Delta_{act} = \frac{5 w L^4}{384 E I}")
-            st.latex(fr"w_{{limit}} = {w_defl:,.0f} \text{{ kg/m}}")
+            st.latex(fr"w_{{limit}} = \frac{{384 E I \Delta_{{all}}}}{{5 L^4}} = {w_defl:,.0f} \text{{ kg/m}}")
+            st.latex(fr"\text{{Ratio}} = \frac{{w_{{safe}}}}{{w_{{limit}}}} = \frac{{{w_safe:,.0f}}}{{{w_defl:,.0f}}} = \mathbf{{{w_safe/w_defl:.3f}}}")
 
-    # --- กราฟ Capacity Envelope ---
     st.markdown("### 📈 Capacity Envelope")
     spans = np.linspace(2, 12, 60)
     y_sh = [(2*V_cap/(s*100))*100 for s in spans]
