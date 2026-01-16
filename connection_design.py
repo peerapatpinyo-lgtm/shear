@@ -84,7 +84,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
     # ==========================
     # 2. CALCULATION LOGIC
     # ==========================
-    # (Calculation logic remains strictly in cm/kg/ksc as per design codes)
     Ab = math.pi * (d_bolt**2) / 4
     Fnv = 3720 if "A325" in b_grade else (4690 if "A490" in b_grade else 2800)
     if not is_lrfd: Fnv = Fnv / 1.5
@@ -145,7 +144,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         </div>
         """, unsafe_allow_html=True)
 
-        # Progress Bars
         for name, cap in capacities.items():
             r = V_design_from_tab1 / cap if cap > 0 else 1.5
             st.progress(min(r, 1.0), text=f"{name}: {cap:,.0f} kg (Ratio: {r:.2f})")
@@ -153,72 +151,104 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         st.markdown("---")
         
         # ==========================
-        # 4. PLOTLY DRAWING SECTION (Fixed Zoom)
+        # 4. PLOTLY DRAWING SECTION (MANUAL RANGE FIX)
         # ==========================
         st.markdown("#### 📐 Construction Details")
         
-        # เตรียมข้อมูลสำหรับส่งไป drawing_utils (แปลงหน่วยเป็น mm ทั้งหมด)
+        # Data Prep (mm)
+        beam_h_mm = section_data.get('h', 400)
+        beam_b_mm = section_data.get('b', 200)
+        
         beam_dict = {
-            'h': section_data.get('h', 400),
-            'b': section_data.get('b', 200),
+            'h': beam_h_mm,
+            'b': beam_b_mm,
             'tf': section_data.get('tf', 13),
             'tw': section_data.get('tw', 8)
         }
         
         plate_dict = {
-            'h': h_plate * 10,       # cm to mm
-            'w': 150,                # Standard Width
-            't': pl_thick,           # mm
-            'e1': 50,                # Horizontal edge
-            'lv': edge_dist * 10,    # Vertical edge
-            'weld_size': weld_sz     # mm
+            'h': h_plate * 10,
+            'w': 150,
+            't': pl_thick,
+            'e1': 50,
+            'lv': edge_dist * 10,
+            'weld_size': weld_sz
         }
         
         bolt_dict = {
-            'd': d_bolt * 10,        # cm to mm
+            'd': d_bolt * 10,
             'rows': n_rows,
             'cols': n_cols,
-            's_v': pitch * 10,       # Vertical pitch
-            's_h': 60                # Horizontal spacing
+            's_v': pitch * 10,
+            's_h': 60
         }
 
-        # Tab Selection for Views
         tab1, tab2, tab3 = st.tabs(["🖼️ Elevation (Front)", "🏗️ Plan (Top)", "✂️ Section (Side)"])
         
-        # --- Helper Function เพื่อปรับกราฟให้พอดีกรอบ (Zoom Out) ---
-        def fit_layout(fig, height=500):
-            # คำนวณ Margin ให้เยอะขึ้น (Padding) เพื่อให้ภาพดู Zoom Out
+        # --- FIX: ฟังก์ชันบังคับมุมกล้อง (Manual Range) ---
+        def fit_layout_manual(fig, x_lim, y_lim, height=500):
+            # x_lim: [min, max] ของแกน X ที่ต้องการให้เห็น
+            # y_lim: [min, max] ของแกน Y ที่ต้องการให้เห็น
             fig.update_layout(
                 height=height,
-                margin=dict(l=60, r=60, t=60, b=60), # เพิ่ม Margin เป็น 60px รอบด้าน
-                autosize=True,
-                title_font_size=14,
-                # ยืนยันสัดส่วน 1:1 และให้ Plotly คำนวณ Range ใหม่อัตโนมัติให้ครบทุก object
-                xaxis=dict(visible=False, scaleanchor="y", scaleratio=1), 
-                yaxis=dict(visible=False, automargin=True),
-                dragmode="pan" # ให้ user เลื่อนรูปไปมาได้ง่ายขึ้น
+                margin=dict(l=20, r=20, t=40, b=20),
+                xaxis=dict(range=x_lim, visible=False, scaleanchor="y", scaleratio=1),
+                yaxis=dict(range=y_lim, visible=False),
+                dragmode="pan"
             )
             return fig
+
+        # กำหนด Buffer (ขอบว่าง) รอบรูป (mm)
+        pad = 50 
 
         with tab1:
             try:
                 fig_front = drawing_utils.create_front_view(beam_dict, plate_dict, bolt_dict)
-                st.plotly_chart(fit_layout(fig_front, height=550), use_container_width=True)
+                # Front View: แกน Y คือความสูงคาน, แกน X คือความกว้างหน้าตัด (โดยประมาณ)
+                # เราบังคับให้มองที่ [-buffer, width+buffer] และ [-buffer, height+buffer]
+                st.plotly_chart(
+                    fit_layout_manual(
+                        fig_front, 
+                        x_lim=[-pad, beam_b_mm + pad], 
+                        y_lim=[-pad, beam_h_mm + pad],
+                        height=550
+                    ), 
+                    use_container_width=True
+                )
             except Exception as e:
-                st.error(f"Error drawing Front View: {e}")
+                st.error(f"Error: {e}")
 
         with tab2:
             try:
                 fig_plan = drawing_utils.create_plan_view(beam_dict, plate_dict, bolt_dict)
-                st.plotly_chart(fit_layout(fig_plan, height=450), use_container_width=True)
+                # Plan View: มองจากด้านบน (กว้าง x ยาว)
+                # สมมติความยาวช่วงต่อเชื่อมประมาณ 300mm
+                st.plotly_chart(
+                    fit_layout_manual(
+                        fig_plan,
+                        x_lim=[-pad, beam_b_mm + pad],
+                        y_lim=[-pad, 300 + pad], # Plan view ความลึกไม่เกิน 300-400mm
+                        height=400
+                    ),
+                    use_container_width=True
+                )
             except Exception as e:
-                st.error(f"Error drawing Plan View: {e}")
+                st.error(f"Error: {e}")
 
         with tab3:
             try:
                 fig_side = drawing_utils.create_side_view(beam_dict, plate_dict, bolt_dict)
-                st.plotly_chart(fit_layout(fig_side, height=550), use_container_width=True)
+                # Side View: มองด้านข้าง (ความสูงคาน x ความหนา/ความลึก)
+                st.plotly_chart(
+                    fit_layout_manual(
+                        fig_side,
+                        x_lim=[-pad, 250], # Side view มักจะไม่กว้างมาก
+                        y_lim=[-pad, beam_h_mm + pad],
+                        height=550
+                    ),
+                    use_container_width=True
+                )
             except Exception as e:
-                st.error(f"Error drawing Side View: {e}")
+                st.error(f"Error: {e}")
 
-        st.caption("Interactive Drawing powered by Plotly (Pan/Zoom enabled)")
+        st.caption("Interactive Drawing powered by Plotly")
