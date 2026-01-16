@@ -176,7 +176,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             'tf': section_data.get('tf', 13), 'tw': section_data.get('tw', 8)
         }
         
-        # Use Manual Inputs directly
         plate_dict = {
             'h': h_plate_input,      
             'w': w_plate_input,      
@@ -195,23 +194,24 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         # --- Helper Function: Inject Dimensions ---
         def add_manual_dims(fig, view_type, p_data, b_data):
             """
-            ฟังก์ชันเสริมสำหรับเพิ่มเส้นบอกระยะ (Dimension) ลงในกราฟ Plotly
-            โดยไม่ต้องแก้ไขไฟล์ drawing_utils.py
+            ฟังก์ชันเสริมสำหรับเพิ่มเส้นบอกระยะ โดยไม่ต้องแก้ไขไฟล์ drawing_utils.py
             """
             annot_color = "#0369a1" # Blue color for dims
             
-            # Helper: Add Dim Line
             def draw_dim_line(x0, y0, x1, y1, text, offset_x=0, offset_y=0):
                 # Main Line
                 fig.add_shape(type="line", x0=x0, y0=y0, x1=x1, y1=y1, line=dict(color=annot_color, width=1))
+                
                 # Ends (Ticks)
                 tick_len = 5
-                if x0 == x1: # Vertical Dim
+                if x0 == x1: # Vertical Dim Line
+                    # Ticks are horizontal
                     fig.add_shape(type="line", x0=x0-tick_len, y0=y0, x1=x0+tick_len, y1=y0, line=dict(color=annot_color, width=1))
                     fig.add_shape(type="line", x0=x1-tick_len, y0=y1, x1=x1+tick_len, y1=y1, line=dict(color=annot_color, width=1))
                     text_angle = -90
-                else: # Horizontal Dim
-                    fig.add_shape(type="line", x0=x0, y0=y0-tick_len, x1=x0, y0=y0+tick_len, line=dict(color=annot_color, width=1))
+                else: # Horizontal Dim Line
+                    # Ticks are vertical (FIXED HERE)
+                    fig.add_shape(type="line", x0=x0, y0=y0-tick_len, x1=x0, y1=y0+tick_len, line=dict(color=annot_color, width=1))
                     fig.add_shape(type="line", x0=x1, y0=y1-tick_len, x1=x1, y1=y1+tick_len, line=dict(color=annot_color, width=1))
                     text_angle = 0
                 
@@ -293,7 +293,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                 )
             except Exception as e: st.error(e)
 
-        # Capacity Check Bars
         with st.expander("📊 Check Details", expanded=True):
             for name, cap in capacities.items():
                 st.progress(min(V_design_from_tab1/cap, 1.0), f"{name}: {cap:,.0f} kg")
