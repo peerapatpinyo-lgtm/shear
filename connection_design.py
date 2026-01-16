@@ -2,7 +2,7 @@ import streamlit as st
 import math
 import plotly.graph_objects as go
 import drawing_utils        # Drawing Logic
-import calculation_report   # V13 File
+import calculation_report   # Report Logic
 
 def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
     
@@ -74,8 +74,8 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         
         st.caption("📍 Spacing & Edge Distance (mm)")
         v1, v2 = st.columns(2)
-        pitch_v_mm = v1.number_input("Pitch V", 30, 200, 75, step=5)
-        edge_v_mm = v2.number_input("Edge V", 20, 100, 40, step=5)
+        pitch_v_mm = v1.number_input("Pitch V (s)", 30, 200, 75, step=5)
+        edge_v_mm = v2.number_input("Edge V (lv)", 20, 100, 40, step=5)
         
         h1, h2 = st.columns(2)
         dist_weld_mm = h1.number_input("To Weld (e1)", 20, 100, 50, step=5)
@@ -99,58 +99,78 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         st.markdown(f"""
         <div style="font-size:13px; margin-top:5px;">
             <div>↕️ Height: <span class="dim-check {'dim-ok' if check_h else 'dim-err'}">{'OK' if check_h else 'Too Short'}</span></div>
-            <div style="margin-top:4px;">↔️ e2 (Side): <span class="dim-check {'dim-ok' if rem_edge_mm >= 20 else 'dim-err'}">{rem_edge_mm:.1f} mm</span></div>
+            <div style="margin-top:4px;">↔️ Side Edge (l_side): <span class="dim-check {'dim-ok' if rem_edge_mm >= 20 else 'dim-err'}">{rem_edge_mm:.1f} mm</span></div>
         </div>
         """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
         # ==========================================
-        # 3. PRE-CALCULATION (FOR LEFT SUMMARY)
+        # 3. PRE-CALCULATION (SYNCHRONIZED WITH REPORT)
         # ==========================================
-        # 3.1 Unit Conversion
+        # 3.1 Unit Conversion & Material
         conversion_factor = 101.97
         V_kN = V_design_from_tab1 / conversion_factor
         
+        # Standard Properties (Same as report)
         fy_ksc = 2500 if "A36" in default_mat_grade or "SS400" in default_mat_grade else 3500
-        Fy_MPa = 250 if fy_ksc == 2500 else 345
-        Fu_MPa = 400 if fy_ksc == 2500 else 490
-        Fnv_MPa = 372 if "A325" in b_grade else 457
+        Fy = 250 if fy_ksc == 2500 else 345 # MPa
+        Fu = 400 if fy_ksc == 2500 else 490 # MPa
+        Fnv = 372 if "A325" in b_grade else 457 # MPa
+        Fexx = 480 # MPa
         
-        # 3.2 Capacities (kN) - Using V13 Formulas exactly
-        # Bolt Shear
-        Ab_mm2 = math.pi * (d_bolt*10)**2 / 4
-        Rn_shear = Fnv_MPa * Ab_mm2 * (n_rows * n_cols) / 1000
-        cap_shear = (0.75 * Rn_shear) if is_lrfd else (Rn_shear / 2.00)
+        # Geometry for Calc
+        d = d_bolt * 10 # mm
+        h_hole = d + 2 # mm
+        n_total = n_rows * n_cols
         
-        # Bolt Bearing
-        Rn_br = 2.4 * (d_bolt*10) * pl_thick * Fu_MPa * (n_rows * n_cols) / 1000
-        cap_br = (0.75 * Rn_br) if is_lrfd else (Rn_br / 2.00)
+        # Factors (ASD/LRFD)
+        if is_lrfd:
+            phi_v, phi_y, phi_r, phi_w = 0.75, 1.00, 0.75, 0.75
+            def get_cap(Rn, type_f): return Rn * type_f
+        else:
+            om_v, om_y, om_r, om_w = 2.00, 1.50, 2.00, 2.00
+            def get_cap(Rn, type_f): return Rn / type_f
         
-        # Plate Yield
+        # --- 3.2 EXACT FORMULAS (AISC) ---
+        
+        # 1. Bolt Shear (AISC J3.6)
+        Ab = math.pi * d**2 / 4
+        Rn_shear = (Fnv * Ab * n_total) / 1000 # kN
+        cap_shear = get_cap(Rn_shear, phi_v if is_lrfd else om_v)
+        
+        # 2. Bolt Bearing (AISC J3.10) - Using conservative 2.4dtFu
+        Rn_bear = (2.4 * d * pl_thick * Fu * n_total) / 1000 # kN
+        cap_br = get_cap(Rn_bear, phi_v if is_lrfd else om_v)
+        
+        # 3. Plate Yield (Gross) (AISC J4.2)
         Ag = h_plate_input * pl_thick
-        Rn_y = 0.60 * Fy_MPa * Ag / 1000
-        cap_yld = (1.00 * Rn_y) if is_lrfd else (Rn_y / 1.50)
+        Rn_y = (0.60 * Fy * Ag) / 1000 # kN
+        cap_yld = get_cap(Rn_y, phi_y if is_lrfd else om_y)
         
-        # Plate Rupture
-        h_hole = (d_bolt*10) + 2
+        # 4. Plate Rupture (Net) (AISC J4.2)
         An = (h_plate_input - (n_rows * h_hole)) * pl_thick
-        Rn_r = 0.60 * Fu_MPa * An / 1000
-        cap_rup = (0.75 * Rn_r) if is_lrfd else (Rn_r / 2.00)
+        Rn_r = (0.60 * Fu * An) / 1000 # kN
+        cap_rup = get_cap(Rn_r, phi_r if is_lrfd else om_r)
         
-        # Block Shear
+        # 5. Block Shear (AISC J4.3) - Critical Check
+        # Areas
         l_gv = (n_rows - 1) * pitch_v_mm + edge_v_mm
         agv = l_gv * pl_thick
         anv = (l_gv - (n_rows - 0.5) * h_hole) * pl_thick
         ant = (rem_edge_mm - 0.5 * h_hole) * pl_thick
-        rn_blk = min(0.6*Fu_MPa*anv + 1.0*Fu_MPa*ant, 0.6*Fy_MPa*agv + 1.0*Fu_MPa*ant) / 1000
-        cap_blk = (0.75 * rn_blk) if is_lrfd else (rn_blk / 2.00)
         
-        # Weld
+        # Eq J4-5
+        term1 = 0.6 * Fu * anv + 1.0 * Fu * ant
+        term2 = 0.6 * Fy * agv + 1.0 * Fu * ant
+        rn_blk = min(term1, term2) / 1000 # kN
+        cap_blk = get_cap(rn_blk, phi_r if is_lrfd else om_r)
+        
+        # 6. Weld Strength (AISC J2.4)
         l_weld = h_plate_input * 2
-        rn_weld = 0.6 * 480 * 0.707 * weld_sz * l_weld / 1000
-        cap_weld = (0.75 * rn_weld) if is_lrfd else (rn_weld / 2.00)
+        rn_weld = (0.6 * Fexx * 0.707 * weld_sz * l_weld) / 1000 # kN
+        cap_weld = get_cap(rn_weld, phi_w if is_lrfd else om_w)
 
-        # 3.4 Summary Logic
+        # 3.3 Summary Logic
         caps = {
             "Bolt Shear": cap_shear, "Bolt Bearing": cap_br,
             "Plate Yield": cap_yld, "Plate Rupture": cap_rup,
@@ -176,8 +196,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         </div>
         """, unsafe_allow_html=True)
         
-        # Table HTML Construction
-        # Tooltip text for Load Source
+        # Table Construction
         load_tooltip = f"Source: User Input {V_design_from_tab1:,.0f} kg converted to kN"
         
         rows_html = ""
@@ -190,7 +209,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             text_class = "pass-text" if r <= 1.0 else "fail-text"
             icon = "⚠️" if r > 1.0 else ""
             
-            # Row Structure with Tooltip on Load
+            # HTML Row
             rows_html += f"""<tr class='{row_class}'>
                 <td>{k} {icon}</td>
                 <td style='text-align:center; color:#64748b; cursor:help;' title='{load_tooltip}'>{V_kN:.1f}</td>
@@ -203,8 +222,8 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             <thead>
                 <tr>
                     <th style='text-align:left'>Check List</th>
-                    <th style='text-align:center'>Load ($V_u$)</th>
-                    <th style='text-align:center'>Cap.</th>
+                    <th style='text-align:center'>Load (kN)</th>
+                    <th style='text-align:center'>Cap (kN)</th>
                     <th style='text-align:center'>Ratio</th>
                 </tr>
             </thead>
@@ -212,7 +231,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         </table>
         
         <div class="load-source">
-            * <b>Load Source:</b> Input <b>{V_design_from_tab1:,.0f} kg</b> (Tab 1) / {conversion_factor} = <b>{V_kN:.2f} kN</b>
+            * <b>Load Source:</b> {V_design_from_tab1:,.0f} kg / {conversion_factor} = <b>{V_kN:.2f} kN</b>
         </div>
         """, unsafe_allow_html=True)
 
@@ -292,11 +311,11 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             plate_data_rpt = {
                 't': pl_thick, 'h': h_plate_input, 'w': w_plate_input,
                 'lv': edge_v_mm, 'l_side': rem_edge_mm, 'weld_size': weld_sz,
-                'Fy': Fy_MPa, 'Fu': Fu_MPa
+                'Fy': Fy, 'Fu': Fu
             }
             bolt_data_rpt = {
-                'd': d_bolt * 10, 'rows': n_rows, 'cols': n_cols,
-                'Fnv': Fnv_MPa, 's_v': pitch_v_mm
+                'd': d, 'rows': n_rows, 'cols': n_cols,
+                'Fnv': Fnv, 's_v': pitch_v_mm
             }
             
             try:
