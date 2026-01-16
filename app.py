@@ -18,7 +18,7 @@ except ImportError as e:
 # ==========================================
 # 2. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V18 (Full Calculation)", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V18 (Full Calc Fixed)", layout="wide", page_icon="🏗️")
 
 if 'design_method' not in st.session_state:
     st.session_state.design_method = "LRFD (Limit State)"
@@ -44,13 +44,13 @@ with st.sidebar:
     st.divider()
     
     method_opts = ["ASD (Allowable Stress)", "LRFD (Limit State)"]
-    st.session_state.design_method = st.radio("Design Method", method_opts, index=1 if "LRFD" in st.session_state.design_method else 0)
+    st.session_state.design_method = st.radio("Method", method_opts, index=1 if "LRFD" in st.session_state.design_method else 0)
     is_lrfd = "LRFD" in st.session_state.design_method
 
     grade_opts = {"SS400 (Fy 2450)": 2450, "SM520 (Fy 3550)": 3550, "A36 (Fy 2500)": 2500}
     grade_choice = st.selectbox("Steel Grade", list(grade_opts.keys()))
     Fy = grade_opts[grade_choice]
-    E_mod = 2.04e6 
+    E_mod = 2.04e6 # kg/cm2
     
     st.subheader("📦 Section Selection")
     input_mode = st.radio("Source", ["📚 Standard Database", "✏️ Custom Input"], horizontal=True)
@@ -67,11 +67,14 @@ with st.sidebar:
         tf = st.number_input("Flange t (mm)", 3.0, 50.0, 13.0)
         sec_name = f"Custom H-{int(h)}x{int(b)}"
 
-    Ix = (b * h**3 - (b - tw) * (h - 2*tf)**3) / 120000 
-    Zx = ((b * h**2) / 6000) 
+    # --- หน่วยเป็น cm ทั้งหมดเพื่อความแม่นยำ ---
+    h_c, b_c, tw_c, tf_c = h/10, b/10, tw/10, tf/10
+    Ix = (b_c * h_c**3 - (b_c - tw_c) * (h_c - 2*tf_c)**3) / 12
+    Zx = (b_c * tf_c * (h_c - tf_c)) + (tw_c * (h_c - 2*tf_c)**2 / 4)
+    Aw = h_c * tw_c
     
     st.divider()
-    user_span = st.number_input("Span Length (m)", 1.0, 30.0, 6.0, step=0.5)
+    user_span = st.number_input("Span Length (m)", 0.5, 30.0, 6.0, step=0.5)
     defl_denom = int(st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1).split("/")[1])
     
     st.subheader("🔩 Connection Scope")
@@ -79,29 +82,30 @@ with st.sidebar:
     target_pct = st.slider("% of Shear Capacity", 50, 100, 75) if "Fixed" in design_mode else 0
 
 # ==========================================
-# 4. CALCULATION LOGIC (ASD vs LRFD)
+# 4. CALCULATION LOGIC (REFIXED UNITS)
 # ==========================================
-Aw = (h/10) * (tw/10) # cm2
 L_cm = user_span * 100
 
 if is_lrfd:
     phi_v, phi_b = 1.00, 0.90
-    V_cap = phi_v * 0.60 * Fy * Aw
-    M_cap = phi_b * Fy * Zx
+    V_cap = phi_v * 0.60 * Fy * Aw      # kg
+    M_cap = (phi_b * Fy * Zx) / 100    # kg-m
     label_load = "Factored Load (Wu)"
 else:
     omg_v, omg_b = 1.50, 1.67
-    V_cap = (0.60 * Fy * Aw) / omg_v
-    M_cap = (Fy * Zx) / omg_b
+    V_cap = (0.60 * Fy * Aw) / omg_v    # kg
+    M_cap = (Fy * Zx) / (omg_b * 100)  # kg-m
     label_load = "Allowable Load (Wa)"
 
-w_shear = (2 * V_cap / L_cm) * 100 
-w_moment = (8 * M_cap / (L_cm**2)) * 100
+# Back-solve Loads (kg/m)
+w_shear = (2 * V_cap / user_span)
+w_moment = (8 * M_cap / (user_span**2))
 w_defl = ((L_cm/defl_denom) * 384 * E_mod * Ix) / (5 * (L_cm**4)) * 100
 
 w_safe = min(w_shear, w_moment, w_defl)
 gov_cause = "Shear" if w_safe == w_shear else ("Moment" if w_safe == w_moment else "Deflection")
 
+# Actual check values
 v_act = w_safe * user_span / 2
 m_act = w_safe * user_span**2 / 8
 d_act = (5 * (w_safe/100) * (L_cm**4)) / (384 * E_mod * Ix)
@@ -121,7 +125,7 @@ st.session_state.cal_success = True
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "📋 Load Table", "📝 Report"])
 
 with tab1:
-    st.subheader(f"Engineering Analysis: {sec_name} ({st.session_state.design_method})")
+    st.subheader(f"Engineering Analysis: {sec_name}")
     cause_color = "#dc2626" if gov_cause == "Shear" else ("#d97706" if gov_cause == "Moment" else "#059669")
     
     st.markdown(f"""
@@ -139,48 +143,42 @@ with tab1:
     
     with c1:
         ratio_v = v_act/V_cap
-        st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_v<=1.01 else '#ef4444'}">
+        st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_v<=1.001 else '#ef4444'}">
             <h4 style="margin:0;">Shear Ratio</h4><div style="font-size:24px; font-weight:700;">{ratio_v:.3f}</div>
-            <small>V_act: {v_act:,.0f} / V_cap: {V_cap:,.0f} kg</small></div>""", unsafe_allow_html=True)
-        with st.expander("🔍 View Detailed Shear Calc"):
-            st.latex(r"V_n = 0.6 F_y A_w")
-            if is_lrfd:
-                st.latex(fr"V_u = \phi_v V_n = 1.0 \times {V_cap:,.0f} = {V_cap:,.0f} \text{{ kg}}")
-            else:
-                st.latex(fr"V_a = V_n / \Omega_v = {V_cap*omg_v:,.0f} / 1.5 = {V_cap:,.0f} \text{{ kg}}")
+            <small>V_cap: {V_cap:,.0f} kg</small></div>""", unsafe_allow_html=True)
+        with st.expander("🔍 View Shear Calc"):
+            st.latex(fr"V_{{cap}} = {V_cap:,.0f} \text{{ kg}}")
             st.latex(fr"w_{{limit}} = \frac{{2 V_{{cap}}}}{{L}} = \frac{{2 \times {V_cap:,.0f}}}{{{user_span}}} = {w_shear:,.0f} \text{{ kg/m}}")
-            st.latex(fr"\text{{Ratio}} = \frac{{w_{{safe}}}}{{w_{{limit}}}} = \frac{{{w_safe:,.0f}}}{{{w_shear:,.0f}}} = \mathbf{{{w_safe/w_shear:.3f}}}")
+            st.latex(fr"Ratio = \frac{{{w_safe:,.0f}}}{{{w_shear:,.0f}}} = \mathbf{{{w_safe/w_shear:.3f}}}")
 
     with c2:
         ratio_m = m_act/M_cap
-        st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_m<=1.01 else '#ef4444'}">
+        st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_m<=1.001 else '#ef4444'}">
             <h4 style="margin:0;">Moment Ratio</h4><div style="font-size:24px; font-weight:700;">{ratio_m:.3f}</div>
-            <small>M_act: {m_act:,.0f} / M_cap: {M_cap:,.0f} kg-m</small></div>""", unsafe_allow_html=True)
-        with st.expander("🔍 View Detailed Moment Calc"):
-            st.latex(r"M_n = F_y Z_x")
-            if is_lrfd:
-                st.latex(fr"M_u = \phi_b M_n = 0.9 \times {M_cap/0.9:,.0f} = {M_cap:,.0f} \text{{ kg-m}}")
-            else:
-                st.latex(fr"M_a = M_n / \Omega_b = {M_cap*omg_b:,.0f} / 1.67 = {M_cap:,.0f} \text{{ kg-m}}")
+            <small>M_cap: {M_cap:,.0f} kg-m</small></div>""", unsafe_allow_html=True)
+        with st.expander("🔍 View Moment Calc"):
+            st.latex(fr"M_{{cap}} = {M_cap:,.0f} \text{{ kg-m}}")
             st.latex(fr"w_{{limit}} = \frac{{8 M_{{cap}}}}{{L^2}} = \frac{{8 \times {M_cap:,.0f}}}{{{user_span}^2}} = {w_moment:,.0f} \text{{ kg/m}}")
-            st.latex(fr"\text{{Ratio}} = \frac{{w_{{safe}}}}{{w_{{limit}}}} = \frac{{{w_safe:,.0f}}}{{{w_moment:,.0f}}} = \mathbf{{{w_safe/w_moment:.3f}}}")
+            st.latex(fr"Ratio = \frac{{{w_safe:,.0f}}}{{{w_moment:,.0f}}} = \mathbf{{{w_safe/w_moment:.3f}}}")
 
     with c3:
         ratio_d = d_act/d_allow
-        st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_d<=1.01 else '#ef4444'}">
+        st.markdown(f"""<div class="detail-card" style="border-top-color:{'#10b981' if ratio_d<=1.001 else '#ef4444'}">
             <h4 style="margin:0;">Deflection Ratio</h4><div style="font-size:24px; font-weight:700;">{ratio_d:.3f}</div>
-            <small>Actual: {d_act:.2f} / Limit: {d_allow:.2f} cm</small></div>""", unsafe_allow_html=True)
-        with st.expander("🔍 View Detailed Defl Calc"):
+            <small>Allow: {d_allow:.2f} cm</small></div>""", unsafe_allow_html=True)
+        with st.expander("🔍 View Defl Calc"):
             st.latex(fr"\Delta_{{all}} = L / {defl_denom} = {d_allow:.2f} \text{{ cm}}")
-            st.latex(fr"w_{{limit}} = \frac{{384 E I \Delta_{{all}}}}{{5 L^4}} = {w_defl:,.0f} \text{{ kg/m}}")
-            st.latex(fr"\text{{Ratio}} = \frac{{w_{{safe}}}}{{w_{{limit}}}} = \frac{{{w_safe:,.0f}}}{{{w_defl:,.0f}}} = \mathbf{{{w_safe/w_defl:.3f}}}")
+            st.latex(fr"w_{{limit}} = {w_defl:,.0f} \text{{ kg/m}}")
+            st.latex(fr"Ratio = \frac{{{w_safe:,.0f}}}{{{w_defl:,.0f}}} = \mathbf{{{w_safe/w_defl:.3f}}}")
 
+    # --- กราฟ Capacity Envelope ---
     st.markdown("### 📈 Capacity Envelope")
-    spans = np.linspace(2, 12, 60)
-    y_sh = [(2*V_cap/(s*100))*100 for s in spans]
-    y_mo = [(8*M_cap/((s*100)**2))*100 for s in spans]
-    y_df = [((s*100/defl_denom)*384*E_mod*Ix)/(5*((s*100)**4))*100 for s in spans]
-    y_safe_env = [min(s, m, d) for s,m,d in zip(y_sh, y_mo, y_df)]
+    spans = np.linspace(0.5, 12, 100)
+    # Re-calculate points for graph
+    y_sh = [(2*V_cap/s) for s in spans]
+    y_mo = [(8*M_cap/(s**2)) for s in spans]
+    y_df = [(((s*100)/defl_denom)*384*E_mod*Ix)/(5*((s*100)**4))*100 for s in spans]
+    y_safe_env = [min(s_v, m_v, d_v) for s_v,m_v,d_v in zip(y_sh, y_mo, y_df)]
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=spans, y=y_sh, name='Shear Limit', line=dict(color='#ef4444', dash='dash')))
@@ -188,7 +186,7 @@ with tab1:
     fig.add_trace(go.Scatter(x=spans, y=y_df, name='Deflection Limit', line=dict(color='#3b82f6', dash='dash')))
     fig.add_trace(go.Scatter(x=spans, y=y_safe_env, name='Safe Envelope', fill='tozeroy', fillcolor='rgba(37, 99, 235, 0.1)', line=dict(color='#1e40af', width=4)))
     fig.add_trace(go.Scatter(x=[user_span], y=[w_safe], mode='markers+text', text=[f" {w_safe:,.0f}"], textposition="top right", marker=dict(color='red', size=12, symbol='diamond')))
-    fig.update_layout(height=450, margin=dict(t=20, b=20, l=20, r=20), hovermode="x unified", legend=dict(orientation="h", y=1.1))
+    fig.update_layout(height=450, xaxis_title="Span (m)", yaxis_title="Load (kg/m)", margin=dict(t=20, b=20, l=20, r=20), hovermode="x unified", legend=dict(orientation="h", y=1.1))
     st.plotly_chart(fig, use_container_width=True)
 
 with tab2:
@@ -207,17 +205,18 @@ with tab2:
         )
 
 with tab3:
-    st.subheader("📋 Span vs Capacity")
-    t_spans = np.arange(2.0, 15.0, 1.0)
+    st.subheader("📋 Span vs Capacity Table")
+    t_spans = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0]
     data_list = []
     for s in t_spans:
         lc = s*100
-        wv = (2*V_cap/lc)*100
-        wm = (8*M_cap/(lc**2))*100
+        wv = (2*V_cap/s)
+        wm = (8*M_cap/(s**2))
         wd = ((lc/defl_denom)*384*E_mod*Ix)/(5*(lc**4))*100
         safe = min(wv, wm, wd)
-        data_list.append([s, safe, "Shear" if safe == wv else ("Moment" if safe == wm else "Deflection")])
-    st.dataframe(pd.DataFrame(data_list, columns=["Span (m)", f"Max {label_load} (kg/m)", "Control"]), use_container_width=True)
+        ctrl = "Shear" if safe == wv else ("Moment" if safe == wm else "Deflection")
+        data_list.append([s, f"{safe:,.0f}", ctrl])
+    st.table(pd.DataFrame(data_list, columns=["Span (m)", f"Max {label_load} (kg/m)", "Governing Limit"]))
 
 with tab4:
     report_generator.render_report_tab(
