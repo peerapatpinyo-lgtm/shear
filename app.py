@@ -1,4 +1,4 @@
-# app.py (V16 - Restore % Load Feature)
+# app.py (V17 - Clean Sidebar, Consolidated Inputs in Tab 2)
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -27,7 +27,7 @@ except ImportError as e:
 # ==========================================
 # 2. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V16", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V17", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
@@ -46,12 +46,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. SIDEBAR & INPUTS
+# 3. SIDEBAR & INPUTS (Cleaned Up)
 # ==========================================
 steel_db = STEEL_DB 
 
 with st.sidebar:
-    st.title("🏗️ Beam Insight V16")
+    st.title("🏗️ Beam Insight V17")
     st.divider()
     
     # --- GLOBAL SETTINGS ---
@@ -78,22 +78,21 @@ with st.sidebar:
     defl_lim_val = int(defl_ratio.split("/")[1])
     
     st.divider()
-    st.subheader("🔩 Connection Settings")
+    st.subheader("🔩 Connection Scope")
     
-    # [RESTORED FEATURE] ปุ่มเลือกโหมดแรง Load
+    # Load Mode Selection
     design_mode = st.radio("Load for Connection:", ["Actual Load (แรงจริง)", "Fixed % Capacity (% กำลังหน้าตัด)"])
     
     if design_mode == "Fixed % Capacity (% กำลังหน้าตัด)":
         target_pct = st.slider("Select % of Shear Capacity", 50, 100, 75, help="ออกแบบจุดต่อให้รับแรงได้ตาม % ของความสามารถรับแรงเฉือนสูงสุดของหน้าตัด")
     else:
-        target_pct = 0 # ไม่ได้ใช้
+        target_pct = 0 
         
     conn_type_options = ["Fin Plate (Single Shear) - Beam to Col", "End Plate", "Double Angle"]
     conn_type = st.selectbox("Connection Type", conn_type_options)
     
-    bolt_grade_opts = ["A325 (High Strength)", "Grade 8.8 (Standard)", "A490 (Premium)"]
-    bolt_grade = st.selectbox("Bolt Grade", bolt_grade_opts)
-    bolt_size = st.selectbox("Bolt Size", ["M12", "M16", "M20", "M22", "M24", "M27"], index=2)
+    # [REMOVED] Bolt Grade & Bolt Size from Sidebar
+    # ย้ายไป Tab 2 ทั้งหมดตามคำขอ
     
     E_mod = 2.04e6 
 
@@ -124,17 +123,16 @@ def get_capacity(L_m):
 
 w_shear, w_moment, w_defl, user_safe_load, user_cause = get_capacity(user_span)
 
-# Actual Forces based on Safe Load
+# Actual Forces
 v_act = user_safe_load * user_span / 2
 m_act = user_safe_load * user_span**2 / 8
 d_act = (5 * (user_safe_load/100) * ((user_span*100)**4)) / (384 * E_mod * Ix)
 d_all = (user_span*100) / defl_lim_val
 
-# [CALCULATION FOR CONNECTION LOAD]
+# Connection Load Logic
 if design_mode == "Actual Load (แรงจริง)":
     v_for_connection = v_act
 else:
-    # คำนวณตาม % Capacity
     v_for_connection = V_cap * (target_pct / 100.0)
 
 # Update Session State
@@ -144,7 +142,7 @@ st.session_state.res_dict = {
     'v_cap': V_cap, 'v_act': v_act,
     'm_cap': M_cap, 'm_act': m_act,
     'd_all': d_all, 'd_act': d_act,
-    'v_conn_design': v_for_connection # เก็บค่า Load ที่เลือกไว้ส่งต่อ
+    'v_conn_design': v_for_connection
 }
 
 # ==========================================
@@ -232,23 +230,24 @@ with tab1:
 # --- TAB 2: CONNECTION DETAIL ---
 with tab2:
     if st.session_state.cal_success:
-        # [NEW LOGIC] ส่งค่า v_conn_design ที่คำนวณไว้ (ตาม Actual หรือ % Cap)
         load_to_send = st.session_state.res_dict.get('v_conn_design', 0)
         
-        # Display Header to confirm what load is being used
+        # Header Info
         if design_mode == "Fixed % Capacity (% กำลังหน้าตัด)":
             st.info(f"ℹ️ Designing Connection for **{target_pct}% of Shear Capacity** = **{load_to_send:,.0f} kg**")
         else:
             st.success(f"ℹ️ Designing Connection for **Actual Load** = **{load_to_send:,.0f} kg**")
             
         conn.render_connection_tab(
-            V_design_from_tab1=load_to_send,    # ใช้ค่าที่คำนวณใหม่ตามเงื่อนไข
-            default_bolt_size=bolt_size,
+            V_design_from_tab1=load_to_send,
+            # [FIX] ใส่ค่า Hardcode Default ไปก่อน เพราะลบ Input ออกจาก Sidebar แล้ว
+            # ผู้ใช้สามารถเปลี่ยนค่าเหล่านี้ได้ทันทีใน Tab 2 (เพราะ connection_design.py สร้าง UI รับค่าเองแล้ว)
+            default_bolt_size="M20",
             method=method,
             is_lrfd=is_lrfd,
             section_data=p,
             conn_type="Fin Plate",
-            default_bolt_grade=bolt_grade,
+            default_bolt_grade="A325 (High Strength)", 
             default_mat_grade=grade_choice
         )
     else:
@@ -264,12 +263,13 @@ with tab3:
 
 # --- TAB 4: SUMMARY REPORT ---
 with tab4:
+    # [FIX] ปรับ Bolt Data ให้เป็น Generic เพราะค่าจริงอยู่ที่ Tab 2
     bolt_data_report = {
-        'size': bolt_size, 
+        'size': 'Defined in Tab 2', 
         'qty': 'See Tab 2', 
         'cap': 'See Tab 2', 
         'type': conn_type, 
-        'grade': bolt_grade
+        'grade': 'See Tab 2'
     }
     
     if 'rep' in locals():
