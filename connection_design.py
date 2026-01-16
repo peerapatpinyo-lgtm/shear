@@ -21,6 +21,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         .pass-text { color: #166534; font-weight: bold; }
         .fail-text { color: #991b1b; font-weight: bold; }
         .hl-row { background-color: #fff7ed; } /* Warning highlight for governing case */
+        .load-source { font-size: 11px; color: #64748b; font-style: italic; margin-top: 4px; display: block; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -107,7 +108,9 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         # 3. PRE-CALCULATION (FOR LEFT SUMMARY)
         # ==========================================
         # 3.1 Unit Conversion
-        V_kN = V_design_from_tab1 / 101.97 
+        conversion_factor = 101.97
+        V_kN = V_design_from_tab1 / conversion_factor
+        
         fy_ksc = 2500 if "A36" in default_mat_grade or "SS400" in default_mat_grade else 3500
         Fy_MPa = 250 if fy_ksc == 2500 else 345
         Fu_MPa = 400 if fy_ksc == 2500 else 490
@@ -173,7 +176,10 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         </div>
         """, unsafe_allow_html=True)
         
-        # Table HTML Construction (Fixed Indentation)
+        # Table HTML Construction
+        # Tooltip text for Load Source
+        load_tooltip = f"Source: User Input {V_design_from_tab1:,.0f} kg converted to kN"
+        
         rows_html = ""
         for k, v in caps.items():
             r = V_kN / v if v > 0 else 0
@@ -184,22 +190,30 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             text_class = "pass-text" if r <= 1.0 else "fail-text"
             icon = "⚠️" if r > 1.0 else ""
             
-            # Formatted in one line to prevent markdown issues
-            rows_html += f"<tr class='{row_class}'><td>{k} {icon}</td><td style='text-align:center; color:#64748b;'>{V_kN:.1f}</td><td style='text-align:center;'>{v:.1f}</td><td style='text-align:center;' class='{text_class}'>{r:.2f}</td></tr>"
+            # Row Structure with Tooltip on Load
+            rows_html += f"""<tr class='{row_class}'>
+                <td>{k} {icon}</td>
+                <td style='text-align:center; color:#64748b; cursor:help;' title='{load_tooltip}'>{V_kN:.1f}</td>
+                <td style='text-align:center;'>{v:.1f}</td>
+                <td style='text-align:center;' class='{text_class}'>{r:.2f}</td>
+            </tr>"""
 
         st.markdown(f"""
         <table class="summary-table">
             <thead>
                 <tr>
                     <th style='text-align:left'>Check List</th>
-                    <th style='text-align:center'>Load</th>
+                    <th style='text-align:center'>Load ($V_u$)</th>
                     <th style='text-align:center'>Cap.</th>
                     <th style='text-align:center'>Ratio</th>
                 </tr>
             </thead>
             <tbody>{rows_html}</tbody>
         </table>
-        <div style="font-size:11px; color:gray; text-align:right; margin-top:5px;">*Load Unit: kN</div>
+        
+        <div class="load-source">
+            * <b>Load Source:</b> Input <b>{V_design_from_tab1:,.0f} kg</b> (Tab 1) / {conversion_factor} = <b>{V_kN:.2f} kN</b>
+        </div>
         """, unsafe_allow_html=True)
 
     # ==========================
