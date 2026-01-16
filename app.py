@@ -1,13 +1,12 @@
-# app.py (V15 - Final Integrated Version)
+# app.py (V16 - Restore % Load Feature)
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
 # ==========================================
-# 0. SESSION STATE INITIALIZATION (FIX ERROR)
+# 0. SESSION STATE INITIALIZATION
 # ==========================================
-# ต้องประกาศก่อนเรียกใช้ เพื่อป้องกัน AttributeError
 if 'cal_success' not in st.session_state:
     st.session_state.cal_success = False
 
@@ -23,39 +22,24 @@ try:
     from data_utils import STEEL_DB
 except ImportError as e:
     st.error(f"Error loading modules: {e}")
-    st.warning("Please ensure connection_design.py, report_generator.py, and data_utils.py are in the same directory.")
     STEEL_DB = {} # Fallback
 
 # ==========================================
 # 2. SETUP & STYLE
 # ==========================================
-st.set_page_config(page_title="Beam Insight V15", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Beam Insight V16", layout="wide", page_icon="🏗️")
 
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
-    
     html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
-
-    /* --- Metric Card --- */
-    .detail-card {
-        background: white; border-radius: 12px; padding: 20px;
-        border: 1px solid #e5e7eb; border-top: 6px solid #2563eb;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px;
-    }
-    .status-badge {
-        padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 12px;
-        float: right; text-transform: uppercase;
-    }
+    
+    /* Custom Card Styles */
+    .detail-card { background: white; border-radius: 12px; padding: 20px; border: 1px solid #e5e7eb; border-top: 6px solid #2563eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    .status-badge { padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 12px; float: right; text-transform: uppercase; }
     .pass { background-color: #dcfce7; color: #166534; }
     .fail { background-color: #fee2e2; color: #991b1b; }
-
-    /* --- Highlight Card --- */
-    .highlight-card { 
-        background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
-        padding: 25px; border-radius: 20px; border-left: 8px solid #2563eb; 
-        box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08); margin-bottom: 25px; border: 1px solid #e5e7eb;
-    }
+    .highlight-card { background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); padding: 25px; border-radius: 20px; border-left: 8px solid #2563eb; box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08); margin-bottom: 25px; border: 1px solid #e5e7eb; }
     .big-num { color: #1e40af; font-size: 42px; font-weight: 800; font-family: 'Roboto Mono', monospace; }
     .sub-text { color: #6b7280; font-size: 14px; font-weight: 600; text-transform: uppercase; }
 </style>
@@ -67,7 +51,7 @@ st.markdown("""
 steel_db = STEEL_DB 
 
 with st.sidebar:
-    st.title("🏗️ Beam Insight V15")
+    st.title("🏗️ Beam Insight V16")
     st.divider()
     
     # --- GLOBAL SETTINGS ---
@@ -94,18 +78,21 @@ with st.sidebar:
     defl_lim_val = int(defl_ratio.split("/")[1])
     
     st.divider()
-    st.subheader("🔩 Connection Defaults")
-    # ค่าเหล่านี้จะถูกส่งไปเป็น Default ใน Tab 2
-    conn_type_options = [
-        "Fin Plate (Single Shear) - Beam to Col",
-        "End Plate (Single Shear) - Beam to Col",
-        "Double Angle (Double Shear) - Beam to Col"
-    ]
+    st.subheader("🔩 Connection Settings")
+    
+    # [RESTORED FEATURE] ปุ่มเลือกโหมดแรง Load
+    design_mode = st.radio("Load for Connection:", ["Actual Load (แรงจริง)", "Fixed % Capacity (% กำลังหน้าตัด)"])
+    
+    if design_mode == "Fixed % Capacity (% กำลังหน้าตัด)":
+        target_pct = st.slider("Select % of Shear Capacity", 50, 100, 75, help="ออกแบบจุดต่อให้รับแรงได้ตาม % ของความสามารถรับแรงเฉือนสูงสุดของหน้าตัด")
+    else:
+        target_pct = 0 # ไม่ได้ใช้
+        
+    conn_type_options = ["Fin Plate (Single Shear) - Beam to Col", "End Plate", "Double Angle"]
     conn_type = st.selectbox("Connection Type", conn_type_options)
     
     bolt_grade_opts = ["A325 (High Strength)", "Grade 8.8 (Standard)", "A490 (Premium)"]
     bolt_grade = st.selectbox("Bolt Grade", bolt_grade_opts)
-    
     bolt_size = st.selectbox("Bolt Size", ["M12", "M16", "M20", "M22", "M24", "M27"], index=2)
     
     E_mod = 2.04e6 
@@ -113,11 +100,10 @@ with st.sidebar:
 # ==========================================
 # 4. CORE CALCULATIONS (BEAM)
 # ==========================================
-# คำนวณ Properties
 Aw = (p['h']/10) * (p['tw']/10) 
 Ix, Zx = p['Ix'], p['Zx']
 
-# Determine Capacity (ASD/LRFD)
+# Determine Capacity
 if is_lrfd:
     M_cap = 0.90 * fy * Zx  
     V_cap = 1.00 * 0.6 * fy * Aw
@@ -136,7 +122,6 @@ def get_capacity(L_m):
     cause = "Shear" if w_gov == w_v else ("Moment" if w_gov == w_m else "Deflection")
     return w_v, w_m, w_d, w_gov, cause
 
-# Perform Calculation for Current Input
 w_shear, w_moment, w_defl, user_safe_load, user_cause = get_capacity(user_span)
 
 # Actual Forces based on Safe Load
@@ -145,21 +130,25 @@ m_act = user_safe_load * user_span**2 / 8
 d_act = (5 * (user_safe_load/100) * ((user_span*100)**4)) / (384 * E_mod * Ix)
 d_all = (user_span*100) / defl_lim_val
 
-# ✅ UPDATE SESSION STATE (Fix for Tab 2 Access)
+# [CALCULATION FOR CONNECTION LOAD]
+if design_mode == "Actual Load (แรงจริง)":
+    v_for_connection = v_act
+else:
+    # คำนวณตาม % Capacity
+    v_for_connection = V_cap * (target_pct / 100.0)
+
+# Update Session State
 st.session_state.cal_success = True
 st.session_state.res_dict = {
-    'w_safe': user_safe_load,
-    'cause': user_cause,
-    'v_cap': V_cap,
-    'v_act': v_act,
-    'm_cap': M_cap,
-    'm_act': m_act,
-    'd_all': d_all,
-    'd_act': d_act
+    'w_safe': user_safe_load, 'cause': user_cause,
+    'v_cap': V_cap, 'v_act': v_act,
+    'm_cap': M_cap, 'm_act': m_act,
+    'd_all': d_all, 'd_act': d_act,
+    'v_conn_design': v_for_connection # เก็บค่า Load ที่เลือกไว้ส่งต่อ
 }
 
 # ==========================================
-# 5. UI RENDERING (TABS)
+# 5. UI RENDERING
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Beam Analysis", "🔩 Connection Detail", "💾 Load Table", "📝 Report"])
 
@@ -243,20 +232,24 @@ with tab1:
 # --- TAB 2: CONNECTION DETAIL ---
 with tab2:
     if st.session_state.cal_success:
-        # เตรียมข้อมูลสำหรับส่งไป Tab 2
-        # ดึงค่าแรงเฉือนที่คำนวณได้จาก Tab 1 (หรือ Session State)
-        max_shear = st.session_state.res_dict.get('v_act', 0) 
+        # [NEW LOGIC] ส่งค่า v_conn_design ที่คำนวณไว้ (ตาม Actual หรือ % Cap)
+        load_to_send = st.session_state.res_dict.get('v_conn_design', 0)
         
-        # เรียกฟังก์ชันจาก connection_design.py ด้วยชื่อ Parameter ใหม่ (V15 Compatible)
+        # Display Header to confirm what load is being used
+        if design_mode == "Fixed % Capacity (% กำลังหน้าตัด)":
+            st.info(f"ℹ️ Designing Connection for **{target_pct}% of Shear Capacity** = **{load_to_send:,.0f} kg**")
+        else:
+            st.success(f"ℹ️ Designing Connection for **Actual Load** = **{load_to_send:,.0f} kg**")
+            
         conn.render_connection_tab(
-            V_design_from_tab1=max_shear,        # ส่งค่าแรงเฉือนจริง
-            default_bolt_size=bolt_size,         # ส่งค่าจาก Sidebar
+            V_design_from_tab1=load_to_send,    # ใช้ค่าที่คำนวณใหม่ตามเงื่อนไข
+            default_bolt_size=bolt_size,
             method=method,
             is_lrfd=is_lrfd,
             section_data=p,
             conn_type="Fin Plate",
-            default_bolt_grade=bolt_grade,       # ส่งค่าจาก Sidebar
-            default_mat_grade=grade_choice       # ส่งค่าจาก Sidebar
+            default_bolt_grade=bolt_grade,
+            default_mat_grade=grade_choice
         )
     else:
         st.warning("⚠️ Calculating... Please wait.")
@@ -271,8 +264,6 @@ with tab3:
 
 # --- TAB 4: SUMMARY REPORT ---
 with tab4:
-    # รวบรวมข้อมูลทั้งหมดส่งไปยัง report_generator
-    # ข้อมูล Bolt เบื้องต้น (จะถูก Update หากมีการแก้ใน Tab 2 แต่นี่คือค่าตั้งต้น)
     bolt_data_report = {
         'size': bolt_size, 
         'qty': 'See Tab 2', 
