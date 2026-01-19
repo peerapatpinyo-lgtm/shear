@@ -42,6 +42,7 @@ st.markdown("""
     .highlight-card { background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); padding: 25px; border-radius: 20px; border-left: 8px solid #2563eb; box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08); margin-bottom: 25px; border: 1px solid #e5e7eb; }
     .big-num { color: #1e40af; font-size: 42px; font-weight: 800; font-family: 'Roboto Mono', monospace; }
     .sub-text { color: #6b7280; font-size: 14px; font-weight: 600; text-transform: uppercase; }
+    .calc-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; font-family: 'Roboto Mono', monospace; font-size: 14px; color: #334155; margin-bottom: 10px; }
     .status-pass { color: #10b981; font-weight: bold; }
     .status-fail { color: #ef4444; font-weight: bold; }
 </style>
@@ -115,9 +116,14 @@ with st.sidebar:
     
     defl_denom = int(st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1).split("/")[1])
     
+    # [ADDED BACK] Connection Design Percentage
+    st.caption("Connection Design Load")
+    conn_shear_pct = st.slider("% of Shear Capacity", 10, 100, 50, step=5, help="เลือก % ของกำลังรับแรงเฉือนสูงสุดเพื่อนำไปออกแบบจุดต่อ")
+
     # Show Loads ONLY if in Check Mode
     w_load, p_load = 0.0, 0.0
     if is_check_mode:
+        st.divider()
         st.caption("Service Loads (ยังไม่คูณ Factor)")
         c_l1, c_l2 = st.columns(2)
         with c_l1: w_load = st.number_input("Uniform Load (kg/m)", 0.0, 20000.0, 1000.0)
@@ -174,6 +180,9 @@ else:
 # --- 4.4 Result Processing based on Mode ---
 d_allow = L_cm / defl_denom
 
+# [ADDED BACK] Connection Design Load Logic
+v_conn_design = V_cap * (conn_shear_pct / 100.0)
+
 if is_check_mode:
     # Check Design Mode
     v_act = (fact_w * user_span / 2) + (fact_p / 2)
@@ -195,7 +204,6 @@ if is_check_mode:
     
 else:
     # Find Capacity Mode (Back-Calculate)
-    # Assume Uniform Load Dominant for "Safe Load" display
     w_safe_shear = (2 * V_cap) / user_span
     w_safe_moment = (8 * M_cap) / (user_span**2)
     
@@ -205,17 +213,17 @@ else:
     
     w_safe = min(w_safe_shear, w_safe_moment, w_safe_defl)
     
-    # Set dummy actuals for graph/report
-    v_act = V_cap * 0.1
-    m_act = M_cap * 0.1
-    d_act = d_allow * 0.1
-    gov_ratio = 0.0 # Always PASS in capacity mode
+    # Dummy values for display to prevent errors
+    v_act = 0.0
+    m_act = 0.0
+    d_act = 0.0
+    gov_ratio = 0.0
     gov_cause = "Capacity Mode"
     
-    # [FIXED] Define ratios here too (dummy values) to prevent NameError
-    ratio_v = 0.1
-    ratio_m = 0.1
-    ratio_d = 0.1
+    # Dummy ratios
+    ratio_v = 0.0
+    ratio_m = 0.0
+    ratio_d = 0.0
     
     if w_safe == w_safe_shear: gov_cause = "Shear Control"
     elif w_safe == w_safe_moment: gov_cause = "Moment Control"
@@ -228,7 +236,7 @@ st.session_state.res_dict = {
     'v_cap': V_cap, 'v_act': v_act,
     'm_cap': M_cap, 'm_act': m_act, 'mn_raw': Mn,
     'd_all': d_allow, 'd_act': d_act,
-    'v_conn_design': V_cap * 0.75, # Default 75% for connection tab
+    'v_conn_design': v_conn_design, # Uses the slider value now
     'ltb_info': {'Lp': Lp_cm, 'Lr': Lr_cm, 'Lb': Lb_cm, 'Zone': ltb_zone, 'Cb': Cb}
 }
 st.session_state.cal_success = True
@@ -263,7 +271,7 @@ with tab1:
         """, unsafe_allow_html=True)
     else:
         # Show Capacity
-        safe_val_show = w_safe / 1.4 if is_lrfd else w_safe # Show Service Load usually preferred
+        safe_val_show = w_safe / 1.4 if is_lrfd else w_safe 
         st.markdown(f"""
         <div class="highlight-card">
             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -303,7 +311,6 @@ with tab1:
                 <div>Act: <b>{m_act:,.0f}</b> kg-m</div>
                 <div>Cap: <b>{M_cap:,.0f}</b> kg-m</div>
             </div>
-            <span style="background:#dbeafe; color:#1e40af; padding:2px 6px; border-radius:4px; font-size:11px;">{ltb_zone.split('(')[0]}</span>
         </div>""", unsafe_allow_html=True)
 
     with c3:
@@ -318,7 +325,47 @@ with tab1:
             </div>
         </div>""", unsafe_allow_html=True)
 
-    # --- GRAPH (THE CLASSIC ONE + LTB) ---
+    # --- [ADDED BACK] DETAILED CALCULATION CHECKS ---
+    st.subheader("🧮 Detailed Calculation Checks")
+    with st.expander("Show/Hide Calculation Steps", expanded=True):
+        if is_check_mode:
+            # Check Mode: Show Actual / Capacity
+            st.markdown(f"""
+            **1. Shear Check (แรงเฉือน)**
+            $V_u$ (Required) = {v_act:,.2f} kg
+            $\phi V_n$ (Capacity) = {V_cap:,.2f} kg
+            $$Ratio = \\frac{{{v_act:,.0f}}}{{{V_cap:,.0f}}} = \\mathbf{{{ratio_v:.3f}}}$$
+            
+            **2. Moment Check (โมเมนต์ดัด)**
+            $M_u$ (Required) = {m_act:,.2f} kg-m
+            $\phi M_n$ (Capacity) = {M_cap:,.2f} kg-m (Control by: {ltb_zone})
+            $$Ratio = \\frac{{{m_act:,.0f}}}{{{M_cap:,.0f}}} = \\mathbf{{{ratio_m:.3f}}}$$
+            
+            **3. Deflection Check (การแอ่นตัว)**
+            $\Delta_{{act}}$ (Service) = {d_act:.4f} cm
+            $\Delta_{{allow}}$ (Limit L/{defl_denom}) = {d_allow:.4f} cm
+            $$Ratio = \\frac{{{d_act:.4f}}}{{{d_allow:.4f}}} = \\mathbf{{{ratio_d:.3f}}}$$
+            """)
+        else:
+            # Capacity Mode: Show Limits
+            st.markdown(f"""
+            **1. Shear Capacity Limit**
+            Max $V_{{n}}$ = {V_cap:,.0f} kg
+            Max Uniform Load ($w_v$) = {w_safe_shear/ (1.4 if is_lrfd else 1.0):,.0f} kg/m (Service)
+            
+            **2. Moment Capacity Limit**
+            Max $M_{{n}}$ = {M_cap:,.0f} kg-m ({ltb_zone})
+            Max Uniform Load ($w_m$) = {w_safe_moment/ (1.4 if is_lrfd else 1.0):,.0f} kg/m (Service)
+            
+            **3. Deflection Limit ({defl_denom})**
+            Max $\Delta$ = {d_allow:.2f} cm
+            Max Uniform Load ($w_d$) = {w_safe_defl/ (1.4 if is_lrfd else 1.0):,.0f} kg/m (Service)
+            
+            **GOVERNING LOAD:**
+            **{w_safe/ (1.4 if is_lrfd else 1.0):,.0f} kg/m** (Controlled by {gov_cause})
+            """)
+
+    # --- GRAPH ---
     st.markdown("### 📉 Span vs. Load Capacity Curve")
     
     # Create span range for graph
@@ -332,14 +379,12 @@ with tab1:
 
     for s in spans:
         l_cm_g = s * 100
-        # Assume Lb = Span for the graph curve (Conservative)
         lb_cm_g = l_cm_g 
         
-        # 1. Shear Limit (Constant V_cap, varies w)
-        # V = w*L/2 -> w = 2*V/L
+        # 1. Shear Limit
         w_v = (2 * V_cap) / s
         
-        # 2. Moment Limit (Calc Mn for this span as Lb)
+        # 2. Moment Limit
         if lb_cm_g <= Lp_cm: mn_g = Mp
         elif lb_cm_g <= Lr_cm:
             term_g = (Mp - 0.7*Fy*Sx) * ((lb_cm_g - Lp_cm)/(Lr_cm - Lp_cm))
@@ -350,16 +395,13 @@ with tab1:
             mn_g = min(fcr_g * Sx, Mp)
             
         m_cap_g = (phi_b * mn_g)/100 if is_lrfd else (mn_g/omg_b)/100
-        # M = w*L^2/8 -> w = 8*M/L^2
         w_m = (8 * m_cap_g) / (s**2)
         
         # 3. Deflection Limit
-        # d = 5wL^4/384EI -> w = d * 384EI / 5L^4
         d_all_g = l_cm_g / defl_denom
         w_d_serv = (d_all_g * 384 * E * Ix) / (5 * l_cm_g**4) * 100
-        w_d = w_d_serv * factor_load # Scale to factored for comparison logic
+        w_d = w_d_serv * factor_load 
         
-        # Convert all to Service Load for Display
         w_cap_moment.append(w_m / factor_load)
         w_cap_shear.append(w_v / factor_load)
         w_cap_defl.append(w_d / factor_load)
@@ -372,7 +414,7 @@ with tab1:
     
     # Add User Point (Only if Check Mode)
     if is_check_mode:
-        equiv_w_act = (fact_w + (2*fact_p/user_span)) / factor_load # Approx equivalent uniform
+        equiv_w_act = (fact_w + (2*fact_p/user_span)) / factor_load 
         fig.add_trace(go.Scatter(x=[user_span], y=[equiv_w_act], mode='markers', name='Your Load', marker=dict(color='red', size=12, symbol='x')))
     
     # Current Span Line
@@ -393,11 +435,9 @@ with tab2:
         c_type = st.selectbox("Connection Type", ["Fin Plate", "End Plate", "Double Angle"])
         section_data = {"name": sec_name, "h": h, "b": b, "tw": tw, "tf": tf}
         
-        # Use Fixed % if capacity mode, or Actual if check mode
-        v_for_conn = v_act if is_check_mode else (V_cap * 0.5) 
-        
+        # Use v_conn_design which now respects the slider
         connection_design.render_connection_tab(
-            V_design_from_tab1=v_for_conn,
+            V_design_from_tab1=v_conn_design,
             default_bolt_size=20,
             method=st.session_state.design_method,
             is_lrfd=is_lrfd,
@@ -424,7 +464,6 @@ with tab3:
         """, unsafe_allow_html=True)
         
     with c_ltb2:
-        # LTB Curve visualization code (same as before but preserved)
         lb_vals = np.linspace(0.1, max(Lr_cm*1.5, Lb_cm*1.2), 50)
         mn_vals = []
         for l_chk in lb_vals:
