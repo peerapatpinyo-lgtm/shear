@@ -20,20 +20,15 @@ def calculate_quick_check(inputs, plate_geom, V_load_kg, mat_grade, bolt_grade):
         phi_y, phi_r, phi_b, phi_w = 1/1.50, 1/2.00, 1/2.00, 1/2.00
 
     # 1. Plate Material Properties (Approx ksc -> kg/mm2)
-    # 1 MPa approx 0.102 kg/mm2, 1 ksc approx 0.01 kg/mm2 ? No.
-    # Use approximate kg/mm2 for Quick Check
     if "SS400" in mat_grade: Fy, Fu = 24.5, 41.0
     elif "SM520" in mat_grade: Fy, Fu = 36.0, 53.0
     else: Fy, Fu = 25.0, 41.0 # A36 Default
 
     # 2. Bolt Properties (Shear Strength Fnv)
-    # A325=372MPa(~38kg/mm2), A490=496MPa(~50kg/mm2), A307=188MPa(~19kg/mm2)
-    if "A490" in bolt_grade: 
-        Fnv = 50.0 
-    elif "A307" in bolt_grade: 
-        Fnv = 19.0
-    else: 
-        Fnv = 38.0 # A325 Default
+    # A325=372MPa, A490=496MPa, A307=188MPa
+    if "A490" in bolt_grade: Fnv = 50.0 
+    elif "A307" in bolt_grade: Fnv = 19.0
+    else: Fnv = 38.0 # A325 Default
 
     d = inputs['d']
     n_bolts = inputs['rows'] * inputs['cols']
@@ -110,56 +105,55 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             <div style="font-size:26px; font-weight:800; color:#1e3a8a;">{V_design_kg:,.0f} kg</div>
         </div>
         """, unsafe_allow_html=True)
-        
-        in_tab1, in_tab2 = st.tabs(["🔩 1. Bolt Config", "🛡️ 2. Plate & Load"])
 
-        # --- TAB 1: Bolt Configuration ---
+        # [NEW] ย้าย Grade มาไว้ตรงนี้ (นอก Tab) เพื่อให้เห็นชัดเจน!
+        st.markdown("##### 🛠️ Material & Specs")
+        row_mat = st.columns(2)
+        
+        # 1. Bolt Grade Selector
+        sel_bolt_grade = row_mat[0].selectbox("🔩 Bolt Grade", ["A325", "A490", "A307"], index=0)
+        
+        # 2. Plate Material Selector
+        mat_options = ["SS400 (Fy 2450)", "SM520 (Fy 3550)", "A36 (Fy 2500)"]
+        def_idx = 0
+        if "SM520" in default_mat_grade: def_idx = 1
+        elif "A36" in default_mat_grade: def_idx = 2
+        sel_mat_grade = row_mat[1].selectbox("🛡️ Plate Grade", mat_options, index=def_idx)
+        
+        # UI Tabs แยกหมวดหมู่ Dimension
+        in_tab1, in_tab2 = st.tabs(["📏 1. Geometry", "📐 2. Detailing"])
+
+        # --- TAB 1: Geometry (Bolt Layout) ---
         with in_tab1:
-            # [NEW] เพิ่มตัวเลือก Bolt Grade
-            c_grade, c_size = st.columns(2)
-            sel_bolt_grade = c_grade.selectbox("Bolt Grade", ["A325", "A490", "A307"], index=0)
-            d_bolt = c_size.selectbox("Size (mm)", [12, 16, 20, 22, 24, 27, 30], index=2)
-            
             c1, c2 = st.columns(2)
-            rows = c1.number_input("Rows", 2, 20, 3)
+            d_bolt = c1.selectbox("Bolt Size (mm)", [12, 16, 20, 22, 24, 27, 30], index=2)
+            t_plate = c2.number_input("Plate Thk (t)", 4, 50, 9)
+            
+            c3, c4 = st.columns(2)
+            rows = c3.number_input("Rows", 2, 20, 3)
             if "End" in conn_type:
                 cols = 2
                 st.info("Cols: 2 (End Plate)")
             else:
-                cols = c2.number_input("Cols", 1, 4, 1)
+                cols = c4.number_input("Cols", 1, 4, 1)
 
-            c3, c4 = st.columns(2)
-            s_v = c3.number_input("Pitch (sv)", 30, 200, 70)
-            s_h = c4.number_input("Gauge (sh)", 0, 200, 0 if cols==1 else 70, disabled=(cols==1))
-
-        # --- TAB 2: Plate & Load Position ---
+        # --- TAB 2: Detailing (Spacing & Edges) ---
         with in_tab2:
-            # [NEW] เพิ่มตัวเลือก Plate Material Grade (แยกจากคานหลัก)
-            mat_options = ["SS400 (Fy 2450)", "SM520 (Fy 3550)", "A36 (Fy 2500)"]
-            # หา index เริ่มต้นจาก default_mat_grade ที่ส่งมาจาก App หลัก
-            def_idx = 0
-            if "SM520" in default_mat_grade: def_idx = 1
-            elif "A36" in default_mat_grade: def_idx = 2
-            
-            sel_mat_grade = st.selectbox("Plate Material", mat_options, index=def_idx)
-
+            st.caption("Spacing & Edge Distances")
             c1, c2 = st.columns(2)
-            t_plate = c1.number_input("Thickness (t)", 4, 50, 9)
-            weld_sz = c2.number_input("Weld Size", 3, 20, 6)
+            s_v = c1.number_input("Pitch (sv)", 30, 200, 70)
+            s_h = c2.number_input("Gauge (sh)", 0, 200, 0 if cols==1 else 70, disabled=(cols==1))
+            
+            c3, c4 = st.columns(2)
+            lv = c3.number_input("Edge V (lv)", 20, 150, 35)
+            leh = c4.number_input("Edge H (leh)", 20, 150, 35)
             
             st.divider()
             k1, k2 = st.columns(2)
-            lv = k1.number_input("Edge V (lv)", 20, 150, 35)
-            leh = k2.number_input("Edge H (leh)", 20, 150, 35)
-
-            st.divider()
-            st.markdown("##### 📐 Load Position")
-            st.caption(f"Determines Eccentricity ($e = e1 + x_{{bar}}$)")
-            
-            k3, k4 = st.columns(2)
+            weld_sz = k1.number_input("Weld Size", 3, 20, 6)
             is_end = "End" in conn_type
-            e1 = k3.number_input("e1 (Bolt-to-Support)", 30, 150, 40, disabled=is_end)
-            setback = k4.number_input("Setback (Gap)", 0, 50, 10, disabled=is_end)
+            e1 = k2.number_input("e1 (Eccentricity)", 30, 150, 40, disabled=is_end)
+            setback = st.number_input("Setback (Gap)", 0, 50, 10, disabled=is_end) if not is_end else 0
 
         # 2. Gather Inputs
         user_inputs = {
@@ -169,7 +163,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         }
         plate_geom = calculate_plate_geometry(conn_type, user_inputs)
         
-        # 3. Quick Check (ใช้เกรดใหม่ที่เลือกจาก Tab)
+        # 3. Quick Check (Using Selected Grades)
         check_res = calculate_quick_check(user_inputs, plate_geom, V_design_kg, sel_mat_grade, sel_bolt_grade)
         
         st.divider()
@@ -197,41 +191,27 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         # 1. Prepare Data
         V_kN = V_design_kg * 9.81 / 1000.0
         
-        # Determine Plate Properties from Selection (Override default)
+        # Plate & Bolt Properties from SELECTION
         is_sm520 = "SM520" in sel_mat_grade
-        Fy_val = 355 if is_sm520 else 245  # MPa
-        Fu_val = 520 if is_sm520 else 400  # MPa
+        Fy_val = 355 if is_sm520 else 245
+        Fu_val = 520 if is_sm520 else 400
         
-        # Beam Data (Uses default/main beam grade)
-        # Assuming main beam uses what was passed in default_mat_grade
-        # or we can assume beam grade is same as selected plate if we want simple logic
-        # For robustness, let's keep beam Fu from 'default_mat_grade' to separate beam/plate logic
+        if "A490" in sel_bolt_grade: fnv_val = 496 
+        elif "A307" in sel_bolt_grade: fnv_val = 188 
+        else: fnv_val = 372 
+
+        # Beam Properties
         is_beam_sm520 = "SM520" in default_mat_grade
         Fu_beam = 520 if is_beam_sm520 else 400
 
-        beam_dict = {
-            'tw': section_data.get('tw', 6),
-            'Fu': Fu_beam 
-        }
+        beam_dict = { 'tw': section_data.get('tw', 6), 'Fu': Fu_beam }
         
         plate_dict = {
-            't': t_plate,
-            'h': plate_geom['h'],
-            'w': plate_geom['w'],
-            'Fy': Fy_val,
-            'Fu': Fu_val,
-            'weld_size': weld_sz,
+            't': t_plate, 'h': plate_geom['h'], 'w': plate_geom['w'],
+            'Fy': Fy_val, 'Fu': Fu_val, 'weld_size': weld_sz,
             'e1': e1, 'lv': lv, 'l_side': leh
         }
         
-        # Determine Bolt Shear Strength from Selection
-        if "A490" in sel_bolt_grade:
-            fnv_val = 496 # MPa
-        elif "A307" in sel_bolt_grade:
-            fnv_val = 188 # MPa
-        else:
-            fnv_val = 372 # A325 MPa
-
         bolt_dict = {
             'd': d_bolt, 'rows': rows, 'cols': cols, 
             's_v': s_v, 's_h': s_h, 'Fnv': fnv_val 
@@ -245,8 +225,8 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                 plate=plate_dict,
                 bolts=bolt_dict,
                 is_lrfd=is_lrfd,
-                material_grade=sel_mat_grade, # Use Selected Grade Name
-                bolt_grade=sel_bolt_grade     # Use Selected Bolt Name
+                material_grade=sel_mat_grade, 
+                bolt_grade=sel_bolt_grade     
             )
             
             with st.container():
