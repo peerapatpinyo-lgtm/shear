@@ -285,10 +285,12 @@ def run_optimization(V_target_kN, T_target_kN, mat_grade, bolt_grade_name, conn_
 # 🖥️ 3. UI RENDERING
 # ==========================================
 
-def render_connection_tab(V_design_kg, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
+def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
     
-    # 🔴 CRITICAL: Convert Input kg to kN immediately for all calculations
-    # This ensures consistency with the report which uses kN
+    # 🔴 FIX: Map input argument back to variable used in this file
+    V_design_kg = V_design_from_tab1
+    
+    # CRITICAL: Convert Input kg to kN immediately for all calculations
     V_design_kN = V_design_kg * 9.81 / 1000.0
     
     current_method = st.session_state.get('design_method', method)
