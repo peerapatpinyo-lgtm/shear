@@ -1,9 +1,10 @@
+# calculation_report.py
 import math
 
 def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A36", bolt_grade="A325"):
     
     # ==========================================
-    # 1. Helper Functions (ตัวช่วยจัด Format)
+    # 1. Helper Functions
     # ==========================================
     lines = []
 
@@ -13,28 +14,30 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
     def add_sub_header(text):
         lines.append(f"\n#### {text}\n")
 
-    # ฟังก์ชันสร้างสมการ LaTeX แบบปลอดภัย (ป้องกันการเพี้ยนของบรรทัด)
+    # [FIX] ปรับแก้ฟังก์ชันนี้ให้รองรับ sub_text=None เพื่อไม่ให้โชว์บรรทัดซ้ำ
     def add_latex(symbol, eq_text, sub_text, result, unit):
         lines.append(f"**{symbol}**")
-        lines.append("")      # เว้นบรรทัดให้ Markdown ทำงาน
-        lines.append("$$")    # เปิด LaTeX Block
+        lines.append("")      
+        lines.append("$$")    
         lines.append("\\begin{aligned}")
         lines.append(f"{symbol} &= {eq_text} \\\\")
-        lines.append(f"&= {sub_text} \\\\")
+        
+        # ถ้ามีข้อความบรรทัดกลาง ให้แสดง (เช่น การแทนค่าตัวเลข)
+        if sub_text:
+            lines.append(f"&= {sub_text} \\\\")
+            
         lines.append(f"&= \\mathbf{{{result:,.2f}}} \\text{{ {unit} }}")
         lines.append("\\end{aligned}")
-        lines.append("$$")    # ปิด LaTeX Block
-        lines.append("")      # เว้นบรรทัด
+        lines.append("$$")    
+        lines.append("")      
 
-    # ฟังก์ชันสร้างแถบสี HTML
     def add_html_bar(label, demand, capacity):
         if capacity == 0: ratio = 999.0
         else: ratio = demand / capacity
         
-        color = "#15803d" if ratio <= 1.0 else "#b91c1c" # เขียว/แดง
+        color = "#15803d" if ratio <= 1.0 else "#b91c1c" 
         icon = "✅ PASS" if ratio <= 1.0 else "❌ FAIL"
         
-        # เขียน HTML บรรทัดเดียว เพื่อไม่ให้ Streamlit งง
         html_code = f"<div style='margin:10px 0px; padding:10px; background-color:#f0f2f6; border-radius:5px; border-left:5px solid {color};'><strong>Check {label}:</strong> {demand:.2f} / {capacity:.2f} = <strong>{ratio:.2f}</strong> &nbsp; <span style='color:{color}; font-weight:bold'>[{icon}]</span></div>"
         lines.append(html_code)
         lines.append("")
@@ -44,7 +47,6 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
     # ==========================================
     if is_lrfd:
         method_str = "LRFD"
-        # Factors
         f_v, f_y, f_r, f_w = 0.75, 0.90, 0.75, 0.75
         kv_sym = "\\phi R_n"
         fmt_phi = lambda t: "0.75" if t in ['v','r','w'] else "0.90"
@@ -96,7 +98,8 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
             sum_r2 += r_sq
             if r_sq >= (crit_x**2 + crit_y**2): crit_x, crit_y = abs(dx), abs(dy)
 
-    add_latex("J", "\\sum (x^2 + y^2)", f"{sum_r2:,.0f}", sum_r2, "mm^2")
+    # [FIX] ตรงนี้ส่ง None ไปที่ช่องกลาง เพื่อไม่ให้โชว์ตัวเลขซ้ำ
+    add_latex("J", "\\sum (x^2 + y^2)", None, sum_r2, "mm^2")
 
     # Force Demand
     Rv_direct = V_load / (n_rows * n_cols)
@@ -107,7 +110,6 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
     add_sub_header("Force Demand on Critical Bolt")
     lines.append(f"Critical Bolt at: $(x,y) = ({crit_x:.1f}, {crit_y:.1f})$")
     
-    # Manual LaTeX Build for Complex Force
     lines.append("$$")
     lines.append("\\begin{aligned}")
     lines.append(f"R_{{vx}} &= {Rh_moment:.2f} \\text{{ kN}} \\\\")
@@ -127,7 +129,7 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
     add_latex(kv_sym, f"{fmt_phi('v')} F_{{nv}} A_b", f"{fmt_phi('v')} ({Fnv}) ({Ab:.1f})/1000", cap_bolt, "kN")
     add_html_bar("Bolt Shear", V_res, cap_bolt)
 
-    # 2.2 Bearing (Plate & Web) - คืนส่วนนี้กลับมาแล้วครับ
+    # 2.2 Bearing (Plate & Web)
     add_sub_header("2.2 Bearing Strength")
     Rn_br_pl = (2.4 * d * t_pl * Fu_pl) / 1000.0; cap_br_pl = Rn_br_pl * f_v
     Rn_br_wb = (2.4 * d * t_web * Fu_beam) / 1000.0; cap_br_wb = Rn_br_wb * f_v
@@ -138,21 +140,21 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
     lines.append(f"**Governing Capacity:** $\\mathbf{{{cap_br_min:.2f}}}$ **kN**")
     add_html_bar("Bearing", V_res, cap_br_min)
 
-    # 2.3 Yielding - คืนส่วนนี้กลับมาครับ
+    # 2.3 Yielding
     add_sub_header("2.3 Plate Shear Yielding (Gross)")
     Ag = h_pl * t_pl
     cap_yld = (0.6 * Fy_pl * Ag / 1000.0) * f_y
     add_latex(kv_sym, f"{fmt_phi('y')} 0.6 F_y A_g", f"{fmt_phi('y')} (0.6) ({Fy_pl}) ({Ag:.0f})/1000", cap_yld, "kN")
     add_html_bar("Yielding", V_load, cap_yld)
 
-    # 2.4 Rupture - คืนส่วนนี้กลับมาครับ
+    # 2.4 Rupture
     add_sub_header("2.4 Plate Shear Rupture (Net)")
     An = (h_pl - (n_rows * h_hole)) * t_pl
     cap_rup = (0.6 * Fu_pl * An / 1000.0) * f_r
     add_latex(kv_sym, f"{fmt_phi('r')} 0.6 F_u A_n", f"{fmt_phi('r')} (0.6) ({Fu_pl}) ({An:.0f})/1000", cap_rup, "kN")
     add_html_bar("Rupture", V_load, cap_rup)
 
-    # 2.5 Block Shear - คืนส่วนนี้กลับมาครับ
+    # 2.5 Block Shear
     add_sub_header("2.5 Block Shear Strength")
     lv, l_side = plate['lv'], plate['l_side']
     Agv = (lv + (n_rows - 1) * s_v) * t_pl
