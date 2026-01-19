@@ -51,9 +51,12 @@ st.markdown("""
     .calc-val { font-family: 'Roboto Mono', monospace; color: #0f172a; font-weight: 500; }
     .calc-formula { background: #f1f5f9; padding: 8px; border-radius: 4px; font-family: 'Roboto Mono', monospace; font-size: 0.9em; color: #334155; margin: 5px 0; }
     
-    /* Sidebar Info Box */
+    /* Sidebar Specific */
     .sidebar-info { background: #f8fafc; padding: 12px; border-radius: 8px; font-size: 0.9em; margin-bottom: 15px; border: 1px solid #cbd5e1; }
-    .sidebar-note { font-size: 0.8em; color: #64748b; margin-top: 5px; line-height: 1.4; }
+    .sidebar-note { font-size: 0.85em; color: #475569; margin-top: 5px; line-height: 1.4; background: #fff; padding:8px; border-radius:4px; border:1px solid #e2e8f0; }
+    .metric-box { background: #eff6ff; padding: 10px; border-radius: 6px; border: 1px solid #bfdbfe; text-align: center; margin-bottom: 8px; }
+    .metric-val { font-size: 1.2em; font-weight: bold; color: #1e3a8a; }
+    .metric-lbl { font-size: 0.8em; color: #60a5fa; text-transform: uppercase; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -139,40 +142,57 @@ with st.sidebar:
     st.divider()
     st.subheader("🔩 Connection Design")
     
-    # 1. Info Box
+    # Info
     st.markdown(f"""
     <div class="sidebar-info">
         <div><b>Max Shear Capacity ({v_label}):</b> <br><span style="font-size:1.2em; color:#1e40af;">{V_cap_disp:,.0f} kg</span></div>
-        <div style="margin-top:5px; border-top:1px dashed #cbd5e1; padding-top:5px;">
-            <small>Current Span: {user_span} m</small>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Inputs
+    link_conn = st.checkbox("🔗 Link with Beam Capacity", value=True)
+    if link_conn:
+        conn_shear_pct = st.slider("% of Shear Capacity", 10, 100, 50, step=5)
+        v_support_design = V_cap_disp * (conn_shear_pct / 100.0)
+    else:
+        v_support_design = st.number_input("Design Shear @ Support (kg)", value=float(int(V_cap_disp*0.5)), step=100.0)
+
+    # --- ECCENTRICITY CALCULATION ---
+    st.markdown("---")
+    st.write("📐 **Load Position & Reductions**")
+    
+    ecc_e = st.number_input("Eccentricity 'e' (mm)", value=50, step=5, help="ระยะจากขอบ Support ถึงกึ่งกลางกลุ่มน็อต")
+    
+    # Calculate Reduction
+    # w = 2*V/L (Assuming Uniform Load dominance for reduction logic)
+    w_equiv_load = (2 * v_support_design) / user_span # kg/m
+    v_reduction = w_equiv_load * (ecc_e / 1000.0)     # kg
+    v_at_bolt = v_support_design - v_reduction
+
+    # Display Logic
+    st.markdown(f"""
+    <div style="background:#fff; border:1px solid #ddd; border-radius:6px; padding:10px; margin-top:5px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+            <span style="color:#64748b;">V @ Support:</span>
+            <span style="font-weight:bold;">{v_support_design:,.0f} kg</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:5px;">
+             <span style="color:#ef4444; font-size:0.9em;">- Reduction (w&times;e):</span>
+             <span style="color:#ef4444; font-size:0.9em;">{v_reduction:,.0f} kg</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:#1e3a8a; font-weight:bold;">V @ Bolt Group:</span>
+            <span style="background:#dbeafe; color:#1e40af; padding:2px 6px; border-radius:4px; font-weight:bold;">{v_at_bolt:,.0f} kg</span>
+        </div>
+        <div style="font-size:0.8em; color:#94a3b8; margin-top:5px; text-align:right;">
+            (Assumes Uniform Load Distribution)
         </div>
     </div>
     """, unsafe_allow_html=True)
     
-    # 2. Toggle Linkage
-    link_conn = st.checkbox("🔗 Link with Beam Capacity", value=True)
-
-    if link_conn:
-        conn_shear_pct = st.slider("% of Shear Capacity", 10, 100, 50, step=5)
-        v_conn_design = V_cap_disp * (conn_shear_pct / 100.0)
-        
-        # --- NEW: Equivalent Load Calculation ---
-        # Shear V = w * L / 2  -->  w = 2 * V / L
-        w_equiv = (2 * v_conn_design) / user_span
-        
-        st.markdown(f"""
-        <div class="sidebar-note">
-            👉 <b>Design Force:</b> {v_conn_design:,.0f} kg<br>
-            💡 <b>Interpretation:</b> เทียบเท่ากับคานยาว {user_span}m รับ Uniform Load <b>{w_equiv:,.0f} kg/m</b>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    else:
-        v_conn_design = st.number_input("Design Shear Force (kg)", value=float(int(V_cap_disp*0.5)), step=100.0)
-        conn_shear_pct = (v_conn_design / V_cap_disp) * 100 if V_cap_disp > 0 else 0
-        w_equiv = (2 * v_conn_design) / user_span
-        st.caption(f"(Equivalent to {conn_shear_pct:.1f}% of Capacity)")
-        st.caption(f"Same as Uniform Load: {w_equiv:,.0f} kg/m on this span")
+    # Final Decision for Calc
+    use_reduced = st.checkbox("Use Reduced Force for Design?", value=False, help="ถ้าเลือก จะใช้ค่า V @ Bolt ไปคำนวณ ถ้าไม่เลือก จะใช้ค่า V @ Support (Conservative)")
+    v_conn_final = v_at_bolt if use_reduced else v_support_design
 
     # --- Loads (Check Mode Only) ---
     w_load, p_load = 0.0, 0.0
@@ -285,7 +305,7 @@ st.session_state.res_dict = {
     'v_cap': V_cap, 'v_act': v_act,
     'm_cap': M_cap, 'm_act': m_act, 'mn_raw': Mn,
     'd_all': d_allow, 'd_act': d_act,
-    'v_conn_design': v_conn_design, 
+    'v_conn_design': v_conn_final, 
     'ltb_info': {'Lp': Lp_cm, 'Lr': Lr_cm, 'Lb': Lb_cm, 'Zone': ltb_zone, 'Cb': Cb}
 }
 st.session_state.cal_success = True
@@ -511,13 +531,15 @@ with tab1:
 
 with tab2:
     if st.session_state.cal_success:
-        st.info(f"⚡ **Designing for Shear Force:** {v_conn_design:,.0f} kg")
+        st.info(f"⚡ **Designing for Shear Force:** {v_conn_final:,.0f} kg")
         
         c_type = st.selectbox("Connection Type", ["Fin Plate", "End Plate", "Double Angle"])
         section_data = {"name": sec_name, "h": h, "b": b, "tw": tw, "tf": tf}
         
+        
+
         connection_design.render_connection_tab(
-            V_design_from_tab1=v_conn_design,
+            V_design_from_tab1=v_conn_final,
             default_bolt_size=20,
             method=st.session_state.design_method,
             is_lrfd=is_lrfd,
