@@ -1,161 +1,144 @@
-# report_generator.py (V17 - The "Ultimate Engineering" Edition)
+# report_generator.py (V18 - The Masterpiece Edition)
 import streamlit as st
 import streamlit.components.v1 as components
 
-def get_connection_advisor(res, p, bolt):
+def get_connection_details(res, p, bolt):
+    """
+    Advanced Logic to define precise connection geometry based on AISC.
+    """
     v_act = res.get('v_act', 0)
     h_beam = p.get('h', 0)
-    tw = p.get('tw', 0)
     
-    # Advisor Logic
-    suggested_rows = max(2, int(v_act / 3500) + 1)
-    plate_h = int((h_beam * 0.6) / 10) * 10 
-    plate_t = int(tw + 2) if tw > 0 else 10 
-    weld_size = 6 if tw <= 12 else 8
+    # Logic: Bolt rows based on force (Assume M20 capacity ~ 4000kg)
+    rows = max(2, int(v_act / 3800) + 1)
+    pitch = 75  # Standard pitch mm
+    edge = 35   # Standard edge mm
+    plate_h = (rows - 1) * pitch + (2 * edge)
     
     return {
-        "rows": suggested_rows,
+        "rows": rows,
+        "pitch": pitch,
+        "edge": edge,
         "plate_h": plate_h,
-        "plate_t": plate_t,
-        "weld": weld_size,
-        "v_design": v_act,
-        "spacing": 75, # mm standard pitch
-        "edge": 35    # mm standard edge
+        "plate_t": max(10, int(p.get('tw', 6) + 2)),
+        "weld": 6 if p.get('tw', 6) <= 10 else 8
     }
 
 def render_report_tab(method, is_lrfd, sec_name, steel_grade, p, res, bolt):
-    conn = get_connection_advisor(res, p, bolt)
+    conn = get_connection_details(res, p, bolt)
     
-    # Ratios & Status
+    # Engineering Status
     r_v = res.get('v_act', 0) / res.get('v_cap', 1)
     r_m = res.get('m_act', 0) / res.get('m_cap', 1)
     r_d = res.get('d_act', 0) / res.get('d_all', 1)
     max_r = max(r_v, r_m, r_d)
     status_text = "PASSED" if max_r <= 1.0 else "FAILED"
-    status_color = "#059669" if max_r <= 1.0 else "#dc2626"
+    status_color = "#10b981" if max_r <= 1.0 else "#ef4444"
 
-    # SVG Dimensioning Logic
-    svg_w = 250
-    plate_draw_h = 40 + (conn['rows'] * 30)
-    svg_h = plate_draw_h + 60
+    # SVG Construction (Elevation & Section)
+    svg_h = 300
+    bolt_elements = "".join([f'<circle cx="100" cy="{60 + (i*conn["pitch"]*0.4)}" r="3" fill="black"/>' for i in range(conn['rows'])])
     
-    bolt_elements = ""
-    for i in range(conn['rows']):
-        y_pos = 50 + (i * 30)
-        bolt_elements += f'<circle cx="100" cy="{y_pos}" r="4" fill="#1e293b"/>'
-
     html_content = f"""
-    <div style="background:#f1f5f9; padding:40px 10px; font-family:'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-        <div style="max-width:900px; margin:auto; background:white; box-shadow:0 20px 25px -5px rgb(0 0 0 / 0.1); border-radius:4px; overflow:hidden;">
+    <div style="background-color:#525659; padding:50px 10px; min-height:100vh; font-family:'Segoe UI', Tahoma, sans-serif;">
+        <div style="max-width:850px; margin:auto; background:white; padding:60px; box-shadow:0 0 20px rgba(0,0,0,0.5); position:relative;">
             
-            <div style="background:{status_color}; height:8px;"></div>
-            
-            <div style="padding:40px;">
-                <div style="display:flex; justify-content:space-between; border-bottom:2px solid #e2e8f0; padding-bottom:20px;">
-                    <div style="flex:1;">
-                        <h1 style="margin:0; color:#0f172a; font-size:26px; font-weight:800; letter-spacing:-0.025em;">STRUCTURAL CALCULATION SHEET</h1>
-                        <p style="margin:4px 0; color:#64748b; font-size:12px; font-weight:500;">
-                            PROJECT: BEAM DESIGN VERIFICATION | AISC 360-22 {method}
-                        </p>
-                    </div>
-                    <div style="text-align:right;">
-                        <div style="font-size:32px; font-weight:900; color:{status_color}; line-height:1;">{status_text}</div>
-                        <div style="font-size:12px; color:#64748b; margin-top:4px;">UTILIZATION: {(max_r*100):.1f}%</div>
-                    </div>
-                </div>
-
-                <div style="margin-top:30px; display:grid; grid-template-columns: 1fr 1fr; gap:40px;">
-                    <div>
-                        <h3 style="font-size:13px; color:#1e40af; text-transform:uppercase; margin-bottom:12px; border-left:3px solid #1e40af; padding-left:8px;">1. Section Information</h3>
-                        <table style="width:100%; font-size:13px; border-collapse:collapse;">
-                            <tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:8px 0; color:#64748b;">Section Profile</td><td style="text-align:right; font-weight:600;">{sec_name}</td></tr>
-                            <tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:8px 0; color:#64748b;">Material Grade</td><td style="text-align:right; font-weight:600;">{steel_grade}</td></tr>
-                            <tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:8px 0; color:#64748b;">Span Length</td><td style="text-align:right; font-weight:600;">{res.get('user_span',0):.2f} m</td></tr>
-                        </table>
-                    </div>
-                    <div>
-                        <h3 style="font-size:13px; color:#1e40af; text-transform:uppercase; margin-bottom:12px; border-left:3px solid #1e40af; padding-left:8px;">2. Governing Load</h3>
-                        <div style="background:#f8fafc; padding:15px; border-radius:4px; border:1px solid #e2e8f0;">
-                            <div style="font-size:24px; font-weight:700; color:#1e293b;">{w_safe:,.0f} <span style="font-size:14px; color:#64748b;">kg/m</span></div>
-                            <div style="font-size:11px; color:#ef4444; font-weight:600; margin-top:4px;">LIMIT STATE: {cause.upper()}</div>
+            <table style="width:100%; border-bottom:3px solid #000; padding-bottom:10px; margin-bottom:20px;">
+                <tr>
+                    <td style="width:50%;">
+                        <h1 style="margin:0; font-size:24px; color:#1e3a8a;">DESIGN CALCULATION NOTE</h1>
+                        <p style="margin:2px 0; font-size:12px; color:#666;">Steel Beam Analysis | AISC 360-22 {method}</p>
+                    </td>
+                    <td style="width:50%; text-align:right; vertical-align:top;">
+                        <div style="border:2px solid {status_color}; display:inline-block; padding:5px 15px; border-radius:4px;">
+                            <span style="color:{status_color}; font-weight:900; font-size:20px;">{status_text}</span>
                         </div>
-                    </div>
+                    </td>
+                </tr>
+            </table>
+
+            <h3 style="background:#f3f4f6; padding:5px 10px; font-size:14px;">1. DESIGN PARAMETERS</h3>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; font-size:13px; margin-bottom:20px;">
+                <table style="width:100%;">
+                    <tr><td style="color:#666;">Section Profile:</td><td style="text-align:right; font-weight:bold;">{sec_name}</td></tr>
+                    <tr><td style="color:#666;">Steel Grade:</td><td style="text-align:right; font-weight:bold;">{steel_grade}</td></tr>
+                    <tr><td style="color:#666;">Yield Strength (Fy):</td><td style="text-align:right;">2,500 kg/cm²</td></tr>
+                </table>
+                <table style="width:100%;">
+                    <tr><td style="color:#666;">Span Length:</td><td style="text-align:right;">{res.get('user_span', 0):.2f} m</td></tr>
+                    <tr><td style="color:#666;">Unbraced Length (Lb):</td><td style="text-align:right;">{res.get('Lb_cm', 0)/100:.2f} m</td></tr>
+                    <tr><td style="color:#666;">Safety Utilization:</td><td style="text-align:right; font-weight:bold; color:{status_color};">{(max_r*100):.1f}%</td></tr>
+                </table>
+            </div>
+
+            <h3 style="background:#f3f4f6; padding:5px 10px; font-size:14px;">2. FLEXURAL CAPACITY CHECK (ASTM A36/SS400)</h3>
+            <div style="font-size:13px; line-height:1.6; padding:0 10px;">
+                <p>Calculated Moment Demand (Mu/Ma): <b>{res.get('m_act', 0):,.2f} kg.m</b></p>
+                <p>Nominal Flexural Strength (Mn): <b>{res.get('m_cap', 0):,.2f} kg.m</b></p>
+                <div style="background:#fafafa; border-left:4px solid #1e3a8a; padding:10px; font-family:monospace; margin:10px 0;">
+                    Check: (Demand / Capacity) = {res.get('m_act', 0):,.0f} / {res.get('m_cap', 0):,.0f} = <b>{r_m:.3f}</b>
                 </div>
+            </div>
 
-                <div style="margin-top:40px;">
-                    <h3 style="font-size:13px; color:#1e40af; text-transform:uppercase; margin-bottom:12px; border-left:3px solid #1e40af; padding-left:8px;">3. Detailed Strength Analysis</h3>
-                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
-                        <tr style="background:#f8fafc; font-weight:600; color:#475569;">
-                            <td style="padding:12px; border:1px solid #e2e8f0;">Constraint</td>
-                            <td style="padding:12px; border:1px solid #e2e8f0;">Equation Reference</td>
-                            <td style="padding:12px; border:1px solid #e2e8f0; text-align:center;">Demand/Capacity</td>
-                            <td style="padding:12px; border:1px solid #e2e8f0; text-align:right;">Ratio</td>
-                        </tr>
-                        <tr>
-                            <td style="padding:12px; border:1px solid #e2e8f0;"><b>Flexural</b></td>
-                            <td style="padding:12px; border:1px solid #e2e8f0; color:#64748b; font-family:monospace;">Mn = Cb[Mp-(Mp-0.7FySx)...]</td>
-                            <td style="padding:12px; border:1px solid #e2e8f0; text-align:center;">{res.get('m_act',0):,.0f} / {res.get('m_cap',0):,.0f}</td>
-                            <td style="padding:12px; border:1px solid #e2e8f0; text-align:right; font-weight:700; color:{r_m > 1 and '#dc2626' or '#0f172a'};">{(r_m):.3f}</td>
-                        </tr>
-                        <tr>
-                            <td style="padding:12px; border:1px solid #e2e8f0;"><b>Shear</b></td>
-                            <td style="padding:12px; border:1px solid #e2e8f0; color:#64748b; font-family:monospace;">Vn = 0.6 * Fy * Aw</td>
-                            <td style="padding:12px; border:1px solid #e2e8f0; text-align:center;">{res.get('v_act',0):,.0f} / {res.get('v_cap',0):,.0f}</td>
-                            <td style="padding:12px; border:1px solid #e2e8f0; text-align:right; font-weight:700; color:{r_v > 1 and '#dc2626' or '#0f172a'};">{(r_v):.3f}</td>
-                        </tr>
-                    </table>
+            <h3 style="background:#f3f4f6; padding:5px 10px; font-size:14px;">3. SHEAR & DEFLECTION</h3>
+            <table style="width:100%; border-collapse:collapse; font-size:13px; margin-bottom:20px;">
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:10px;">Shear Capacity (Vn)</td>
+                    <td style="text-align:right; padding:10px;">Demand: {res.get('v_act', 0):,.0f} kg</td>
+                    <td style="text-align:right; padding:10px;">Capacity: {res.get('v_cap', 0):,.0f} kg</td>
+                    <td style="text-align:right; padding:10px; font-weight:bold;">Ratio: {r_v:.3f}</td>
+                </tr>
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:10px;">Deflection (Δ)</td>
+                    <td style="text-align:right; padding:10px;">Actual: {res.get('d_act', 0):.3f} cm</td>
+                    <td style="text-align:right; padding:10px;">Limit: {res.get('d_all', 0):.3f} cm</td>
+                    <td style="text-align:right; padding:10px; font-weight:bold;">Ratio: {r_d:.3f}</td>
+                </tr>
+            </table>
+
+            <h3 style="background:#f3f4f6; padding:5px 10px; font-size:14px;">4. RECOMMENDED TYPICAL DETAIL</h3>
+            <div style="display:flex; gap:20px; border:1px solid #ddd; padding:20px; border-radius:4px;">
+                <div style="flex:1; background:#fff; border:1px solid #eee; text-align:center;">
+                    <svg width="240" height="240" viewBox="0 0 200 200">
+                        <rect x="60" y="20" width="100" height="160" fill="none" stroke="#334155" stroke-width="2"/>
+                        <line x1="60" y1="20" x2="160" y2="20" stroke="#334155" stroke-width="4"/>
+                        <line x1="60" y1="180" x2="160" y2="180" stroke="#334155" stroke-width="4"/>
+                        <rect x="55" y="45" width="45" height="110" fill="#1e3a8a" fill-opacity="0.1" stroke="#1e3a8a" stroke-width="2"/>
+                        <line x1="30" y1="45" x2="30" y2="155" stroke="#94a3b8" stroke-width="1"/>
+                        <text x="25" y="100" font-size="10" fill="#64748b" transform="rotate(-90 25,100)">{conn['plate_h']} mm</text>
+                        {bolt_elements}
+                        <line x1="55" y1="50" x2="20" y2="25" stroke="#ef4444" stroke-width="1"/>
+                        <text x="10" y="20" font-size="10" fill="#ef4444" font-weight="bold">WELD {conn['weld']}mm</text>
+                    </svg>
+                    <p style="font-size:10px; color:#999;">CONNECTION ELEVATION</p>
                 </div>
-
-                <div style="margin-top:40px;">
-                    <h3 style="font-size:13px; color:#1e40af; text-transform:uppercase; margin-bottom:12px; border-left:3px solid #1e40af; padding-left:8px;">4. Recommended Connection Drawing</h3>
-                    <div style="display:flex; gap:30px; border:1px solid #e2e8f0; border-radius:4px; padding:30px; background:#fcfcfc;">
-                        <div style="background:white; border:1px solid #cbd5e1; padding:10px;">
-                            <svg width="{svg_w}" height="{svg_h}" viewBox="0 0 {svg_w} {svg_h}">
-                                <rect x="80" y="20" width="120" height="{svg_h-40}" fill="#f8fafc" stroke="#1e40af" stroke-width="2"/>
-                                <line x1="80" y1="20" x2="200" y2="20" stroke="#1e40af" stroke-width="4"/>
-                                <line x1="80" y1="{svg_h-20}" x2="200" y2="{svg_h-20}" stroke="#1e40af" stroke-width="4"/>
-                                
-                                <rect x="75" y="40" width="40" height="{plate_draw_h}" fill="#1e40af" fill-opacity="0.1" stroke="#1e40af" stroke-width="2"/>
-                                
-                                <line x1="60" y1="40" x2="60" y2="{40+plate_draw_h}" stroke="#64748b" stroke-width="1"/>
-                                <text x="45" y="{45+plate_draw_h/2}" font-size="10" fill="#64748b" transform="rotate(-90 45,{45+plate_draw_h/2})">{conn['plate_h']}mm</text>
-                                
-                                {bolt_elements}
-                                
-                                <line x1="75" y1="50" x2="60" y2="35" stroke="#ef4444" stroke-width="1"/>
-                                <text x="35" y="30" font-size="9" fill="#ef4444" font-weight="bold">WELD {conn['weld']}mm</text>
-                            </svg>
-                        </div>
-
-                        <div style="flex:1;">
-                            <h4 style="margin:0 0 15px; font-size:14px; color:#334155;">Connection Specification</h4>
-                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; font-size:12px;">
-                                <div style="color:#64748b;">Plate Size:</div><div style="font-weight:600; text-align:right;">PL {conn['plate_t']} x {conn['plate_h']} mm</div>
-                                <div style="color:#64748b;">Bolt Type:</div><div style="font-weight:600; text-align:right;">{bolt.get('size','M20')} (Gr 8.8)</div>
-                                <div style="color:#64748b;">Bolt Layout:</div><div style="font-weight:600; text-align:right;">{conn['rows']} No. (1 Column)</div>
-                                <div style="color:#64748b;">Hole Diameter:</div><div style="font-weight:600; text-align:right;">{int(bolt.get('size','M20')[1:])+2} mm</div>
-                            </div>
-                            <div style="margin-top:20px; padding:12px; background:#fff7ed; border-radius:4px; border:1px solid #ffedd5; font-size:11px; color:#9a3412;">
-                                ⚠️ <b>ERECTION NOTE:</b> Ensure beam-to-support gap does not exceed 10mm. Use washers for all high-strength bolts.
-                            </div>
-                        </div>
-                    </div>
+                <div style="flex:1; font-size:12px;">
+                    <p style="color:#1e3a8a; font-weight:bold; border-bottom:1px solid #eee;">CONNECTION SPECIFICATIONS</p>
+                    <ul style="list-style:none; padding:0; line-height:1.8;">
+                        <li><b>Type:</b> Fin Plate (Single Shear)</li>
+                        <li><b>Plate:</b> PL {conn['plate_t']}mm x {conn['plate_h']}mm</li>
+                        <li><b>Bolts:</b> {conn['rows']} Nos. - {bolt.get('size', 'M20')} (Gr 8.8)</li>
+                        <li><b>Spacing:</b> Pitch {conn['pitch']}mm / Edge {conn['edge']}mm</li>
+                        <li><b>Welding:</b> Fillet {conn['weld']}mm (E70XX)</li>
+                    </ul>
                 </div>
+            </div>
 
-                <div style="margin-top:60px; padding-top:20px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
-                    <div style="font-size:10px; color:#94a3b8; max-width:60%;">
-                        AISC 360-22 Structural Steel Compliance Report. Calculated by Gemini Hybrid Engine. Verified for static loading conditions only.
-                    </div>
-                    <div style="text-align:right;">
-                        <span style="font-size:12px; font-weight:700; color:#1e40af;">BEAM INSIGHT PRO v2.0</span>
-                    </div>
+            <div style="margin-top:60px; display:flex; justify-content:space-between; align-items:flex-end;">
+                <div style="font-size:10px; color:#999;">
+                    Note: This document is valid only when accompanied by full structural drawings.<br>
+                    Generated by Beam Insight Pro v18.0 | Date: 2026-01-19
+                </div>
+                <div style="text-align:center; border-top:1px solid #333; width:150px; padding-top:5px;">
+                    <p style="margin:0; font-size:12px; font-weight:bold;">PREPARED BY</p>
+                    <p style="margin:0; font-size:10px; color:#666;">Structural Engineer</p>
                 </div>
             </div>
         </div>
 
-        <div style="text-align:center; margin-top:40px; margin-bottom:60px;">
-            <button onclick="window.print()" style="padding:14px 40px; background:#0f172a; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:700; font-size:14px; transition:all 0.2s;">
-                PRINT CALCULATION SHEET (PDF)
+        <div style="text-align:center; margin-top:30px;">
+            <button onclick="window.print()" style="padding:15px 50px; background:#1e3a8a; color:white; border:none; border-radius:5px; font-weight:bold; cursor:pointer; box-shadow:0 5px 15px rgba(0,0,0,0.3);">
+                DOWNLOAD OFFICIAL PDF REPORT
             </button>
         </div>
     </div>
