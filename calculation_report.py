@@ -1,4 +1,3 @@
-# calculation_report.py
 import math
 
 def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, material_grade="A36", bolt_grade="A325"):
@@ -20,39 +19,54 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
 
     def h2(text): lines.append(f"\n## {text}\n")
     def h3(text): lines.append(f"\n### {text}\n")
-    def divider(): lines.append("---")
-
-    # 🔥 ปรับแก้ฟังก์ชันแสดงผลให้อ่านง่ายขึ้น (ไม่ต้องใช้ aligned)
+    
+    # 🔥 ฟังก์ชันแสดงผลแบบ Clean Math (แก้เรื่องหน่วย mm²)
     def show_calc(title, symbol, formula, sub_str, result_val, unit, phi_factor=None, note=""):
         lines.append(f"**{title}** {note}")
         
-        # แปลงเครื่องหมายคูณ * เป็น \times เพื่อความสวยงามในสมการ
+        # จัดการหน่วยให้สวยงามใน LaTeX
+        if unit == "mm^2":
+            latex_unit = "\\text{mm}^2"
+        elif unit == "mm^3":
+            latex_unit = "\\text{mm}^3"
+        elif unit == "kN-m":
+            latex_unit = "\\text{kN}\\cdot\\text{m}"
+        else:
+            latex_unit = f"\\text{{{unit}}}"
+
+        # แปลงเครื่องหมายคูณ
         clean_formula = formula.replace("*", " \\times ")
         clean_sub = str(sub_str).replace("*", " \\times ")
         
-        # แสดงผลทีละบรรทัด (อ่านง่ายกว่า และไม่พังง่าย)
+        # บรรทัดที่ 1: สูตร
         lines.append(f"$$ {symbol} = {clean_formula} $$")
+        # บรรทัดที่ 2: แทนค่า
         lines.append(f"$$ = {clean_sub} $$")
-        lines.append(f"$$ = \\mathbf{{{result_val:,.2f}}} \\text{{ {unit} }} $$")
+        # บรรทัดที่ 3: คำตอบ + หน่วย
+        lines.append(f"$$ = \\mathbf{{{result_val:,.2f}}} {latex_unit} $$")
         
         if phi_factor:
             design_val = result_val * phi_factor
             phi_str = "0.90" if phi_factor == 0.90 else "0.75"
             if not is_lrfd: phi_str = "1/\\Omega"
             
-            lines.append(f"> **Design Strength:** ${design_sym} = {phi_str} \\times {result_val:,.2f} = \\mathbf{{{design_val:,.2f}}}$ **{unit}**")
+            lines.append(f"> **Design Strength:** ${design_sym} = {phi_str} \\times {result_val:,.2f} = \\mathbf{{{design_val:,.2f}}}$ **{unit.replace('^2','²')}**")
             lines.append("")
             
-        lines.append("") # เว้นบรรทัด
+        lines.append("") 
         return result_val * (phi_factor if phi_factor else 1.0)
 
-    def check_ratio(demand, capacity, label):
+    def check_ratio(demand, capacity, label, unit="kN"):
         ratio = demand / capacity if capacity > 0 else 999
         status = "✅ PASS" if ratio <= 1.0 else "❌ FAIL"
         color = "green" if ratio <= 1.0 else "red"
-        # ใช้ HTML Bar เพื่อความชัดเจน
-        lines.append(f"<div style='background-color:#f3f4f6; padding:8px; border-radius:4px; border-left:4px solid {color}; font-family:monospace;'>")
-        lines.append(f"Check {label}: {demand:.2f} / {capacity:.2f} = <b>{ratio:.2f}</b> <span style='color:{color}; float:right;'>{status}</span>")
+        
+        unit_display = unit.replace("^2", "²")
+        
+        lines.append(f"<div style='background-color:#f8f9fa; padding:10px; border-radius:5px; border-left:5px solid {color}; font-family:sans-serif; margin-bottom:10px;'>")
+        lines.append(f"<strong>Check {label}:</strong><br>")
+        lines.append(f"Demand: <b>{demand:.2f} {unit_display}</b> / Capacity: <b>{capacity:.2f} {unit_display}</b><br>")
+        lines.append(f"Ratio: <b>{ratio:.2f}</b> &nbsp; <span style='color:{color}; font-weight:bold;'>[{status}]</span>")
         lines.append("</div>")
         lines.append("")
 
@@ -62,7 +76,6 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
     lines.append(f"# 🏗️ Detailed Calculation Report ({method})")
     lines.append("---")
     
-    # Unpack Data
     d = bolts['d']
     Ab = (math.pi * d**2)/4
     rows = bolts['rows']; cols = bolts['cols']
@@ -72,16 +85,15 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
     Fy_pl = plate['Fy']; Fu_pl = plate['Fu']
     
     lines.append("#### 1. Design Inputs")
-    lines.append(f"- **Design Load:** $V_u = {V_load:.2f}$ kN, $T_u = {T_load:.2f}$ kN")
+    lines.append(f"- **Loads:** $V_u = {V_load:.2f}$ kN, $T_u = {T_load:.2f}$ kN")
     lines.append(f"- **Plate:** $t = {t_pl}$ mm, $H = {h_pl}$ mm ({material_grade})")
-    lines.append(f"- **Bolts:** {n_bolts} nos. M{d} ({bolt_grade}), Area $A_b = {Ab:.1f}$ mm²")
+    lines.append(f"- **Bolts:** {n_bolts} x M{d} ({bolt_grade}), Area $A_b = {Ab:.1f}$ mm²")
     
     # ==========================================
     # 2. BOLT FORCE ANALYSIS
     # ==========================================
-    h2("2. Bolt Force Analysis (Elastic Method)")
+    h2("2. Bolt Force Analysis")
     
-    # Eccentricity
     sv = bolts['s_v']; sh = bolts.get('s_h', 0)
     e1 = plate.get('e1', 0)
     x_bar = ((cols - 1) * sh) / 2 if cols > 1 else 0
@@ -89,36 +101,32 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
     
     show_calc("Eccentricity (e)", "e", "e_1 + x_{bar}", f"{e1} + {x_bar}", e_total, "mm")
     
-    # Moment
     Mu = V_load * e_total / 1000.0
     show_calc("Moment (Mu)", "M_u", "V_u \\times e", f"{V_load:.2f} \\times {e_total}/1000", Mu, "kN-m")
     
-    # Inertia Sum r^2
+    # Sum r^2 calculation
     sum_r2 = 0
     col_start = -x_bar
     row_start = -((rows - 1) * sv) / 2
-    
     for c in range(cols):
         for r in range(rows):
             dx = col_start + (c * sh)
             dy = row_start + (r * sv)
             sum_r2 += dx**2 + dy**2
             
-    show_calc("Polar Inertia (Sum r^2)", "\\Sigma (x^2 + y^2)", "\\text{sum of all bolts}", f"{sum_r2:,.0f}", sum_r2, "mm^2")
+    show_calc("Polar Inertia (Sum r²)", "\\Sigma (x^2 + y^2)", "\\text{sum of all bolts}", f"{sum_r2:,.0f}", sum_r2, "mm^2")
 
-    # Resultant Forces
-    # Simplified vector combination for critical bolt
     Rv_direct = V_load / n_bolts
     Rv_moment = (Mu * 1000 * x_bar) / sum_r2 if sum_r2 > 0 else 0 
     Rh_moment = (Mu * 1000 * ((rows-1)*sv)/2) / sum_r2 if sum_r2 > 0 else 0
     
     V_ub = math.sqrt((Rv_direct + Rv_moment)**2 + Rh_moment**2)
-    show_calc("Max Shear per Bolt (V_ub)", "V_{ub}", "\\sqrt{(V/n + R_{ym})^2 + (R_{xm})^2}", 
+    show_calc("Max Shear per Bolt", "V_{ub}", "\\text{Vector Sum}", 
               f"\\sqrt{{({Rv_direct:.2f}+{Rv_moment:.2f})^2 + {Rh_moment:.2f}^2}}", V_ub, "kN")
     
     T_ub = T_load / n_bolts
     if T_load > 0:
-        show_calc("Max Tension per Bolt (T_ub)", "T_{ub}", "T_u / n", f"{T_load:.2f} / {n_bolts}", T_ub, "kN")
+        show_calc("Max Tension per Bolt", "T_{ub}", "T_u / n", f"{T_load:.2f} / {n_bolts}", T_ub, "kN")
 
     # ==========================================
     # 3. BOLT CAPACITY
@@ -136,7 +144,6 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
     if T_load > 0:
         h3("Combined Tension & Shear")
         frv = (V_ub * 1000) / Ab
-        # show_calc("Shear Stress", "f_{rv}", "V_{ub} / A_b", f"{V_ub:.2f} \\times 1000 / {Ab:.1f}", frv, "MPa")
         
         Fnt = bolts.get('Fnt', Fnv*1.3)
         Fnt_prime = 1.3 * Fnt - (Fnt / (phi_r * Fnv)) * frv
@@ -195,8 +202,10 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
     Anv = Agv - ((rows-0.5)*(d+2)*t_pl)
     Ant = (plate.get('l_side', 35) - 0.5*(d+2)) * t_pl
     
-    lines.append(f"- Shear Areas: $A_{{gv}} = {Agv:.0f}, A_{{nv}} = {Anv:.0f}$ mm²")
-    lines.append(f"- Tension Area: $A_{{nt}} = {Ant:.0f}$ mm²")
+    # แสดงค่า Area ก่อนเข้าสูตร
+    lines.append(f"- **Shear Yield Area ($A_{{gv}}$):** {Agv:.0f} mm²")
+    lines.append(f"- **Shear Rupture Area ($A_{{nv}}$):** {Anv:.0f} mm²")
+    lines.append(f"- **Tension Area ($A_{{nt}}$):** {Ant:.0f} mm²")
     
     Rn_bs1 = (0.6 * Fu_pl * Anv + 1.0 * Fu_pl * Ant)/1000.0
     Rn_bs2 = (0.6 * Fy_pl * Agv + 1.0 * Fu_pl * Ant)/1000.0
@@ -219,5 +228,8 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
     
     R_total = math.sqrt(V_load**2 + T_load**2)
     check_ratio(R_total, cap_weld, "Weld Group")
+    
+    # End spacer
+    lines.append("<br><br>")
 
     return "\n".join(lines)
