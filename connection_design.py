@@ -6,7 +6,7 @@ import calculation_report as cr
 # ==========================================
 # 🧮 1. ENGINEERING LOGIC (QUICK CHECK)
 # ==========================================
-def calculate_quick_check(inputs, plate_geom, V_load_kg, mat_grade):
+def calculate_quick_check(inputs, plate_geom, V_load_kg, mat_grade, bolt_grade):
     """
     คำนวณเบื้องต้นสำหรับแสดง Status Bar ด้านซ้าย (หน่วย kg)
     """
@@ -19,10 +19,21 @@ def calculate_quick_check(inputs, plate_geom, V_load_kg, mat_grade):
         # ASD Equivalent Phi
         phi_y, phi_r, phi_b, phi_w = 1/1.50, 1/2.00, 1/2.00, 1/2.00
 
-    # Material (Estimated ksc -> kg/mm2)
+    # 1. Plate Material Properties (Approx ksc -> kg/mm2)
+    # 1 MPa approx 0.102 kg/mm2, 1 ksc approx 0.01 kg/mm2 ? No.
+    # Use approximate kg/mm2 for Quick Check
     if "SS400" in mat_grade: Fy, Fu = 24.5, 41.0
     elif "SM520" in mat_grade: Fy, Fu = 36.0, 53.0
     else: Fy, Fu = 25.0, 41.0 # A36 Default
+
+    # 2. Bolt Properties (Shear Strength Fnv)
+    # A325=372MPa(~38kg/mm2), A490=496MPa(~50kg/mm2), A307=188MPa(~19kg/mm2)
+    if "A490" in bolt_grade: 
+        Fnv = 50.0 
+    elif "A307" in bolt_grade: 
+        Fnv = 19.0
+    else: 
+        Fnv = 38.0 # A325 Default
 
     d = inputs['d']
     n_bolts = inputs['rows'] * inputs['cols']
@@ -30,27 +41,26 @@ def calculate_quick_check(inputs, plate_geom, V_load_kg, mat_grade):
     
     results = {}
 
-    # 1. Bolt Shear (Simple) - kg
+    # Check 1: Bolt Shear - kg
     Ab = (math.pi * d**2) / 4
-    Fnv = 38.0 # Approx A325 (kg/mm2)
     Rn_bolt = Fnv * Ab * n_bolts
     results['Bolt Shear'] = Rn_bolt * phi_r
 
-    # 2. Plate Shear Yielding - kg
+    # Check 2: Plate Shear Yielding - kg
     h_p = plate_geom['h']
     Rn_yld = 0.60 * Fy * (h_p * t)
     results['Plate Yielding'] = Rn_yld * phi_y
 
-    # 3. Plate Rupture - kg
+    # Check 3: Plate Rupture - kg
     h_hole = d + 2
     An = (h_p - (inputs['rows'] * h_hole)) * t
     Rn_rup = 0.60 * Fu * An
     results['Plate Rupture'] = Rn_rup * phi_r
     
-    # 4. Weld - kg
+    # Check 4: Weld - kg
     w_sz = inputs['weld_size']
     L_weld = h_p * 2
-    Fexx = 49.0 # E70xx
+    Fexx = 49.0 # E70xx ~ 480MPa
     Rn_weld = 0.60 * Fexx * 0.707 * w_sz * L_weld
     results['Weld Strength'] = Rn_weld * phi_w
 
@@ -86,9 +96,7 @@ def calculate_plate_geometry(conn_type, user_inputs):
 # ==========================================
 def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
     
-    # [FIX] Assign ค่ากลับเข้าตัวแปร local
     V_design_kg = V_design_from_tab1
-    
     current_method = st.session_state.get('design_method', method)
     
     # --- Layout ---
@@ -103,47 +111,55 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         </div>
         """, unsafe_allow_html=True)
         
-        # UI Tabs แยกหมวดหมู่
         in_tab1, in_tab2 = st.tabs(["🔩 1. Bolt Config", "🛡️ 2. Plate & Load"])
 
         # --- TAB 1: Bolt Configuration ---
         with in_tab1:
-            c1, c2 = st.columns(2)
-            d_bolt = c1.selectbox("Size (mm)", [12, 16, 20, 22, 24, 27, 30], index=2)
-            rows = c2.number_input("Rows", 2, 20, 3)
+            # [NEW] เพิ่มตัวเลือก Bolt Grade
+            c_grade, c_size = st.columns(2)
+            sel_bolt_grade = c_grade.selectbox("Bolt Grade", ["A325", "A490", "A307"], index=0)
+            d_bolt = c_size.selectbox("Size (mm)", [12, 16, 20, 22, 24, 27, 30], index=2)
             
+            c1, c2 = st.columns(2)
+            rows = c1.number_input("Rows", 2, 20, 3)
             if "End" in conn_type:
                 cols = 2
                 st.info("Cols: 2 (End Plate)")
             else:
-                cols = st.number_input("Cols", 1, 4, 1)
+                cols = c2.number_input("Cols", 1, 4, 1)
 
             c3, c4 = st.columns(2)
             s_v = c3.number_input("Pitch (sv)", 30, 200, 70)
             s_h = c4.number_input("Gauge (sh)", 0, 200, 0 if cols==1 else 70, disabled=(cols==1))
 
-        # --- TAB 2: Plate & Load Position (Reductions) ---
+        # --- TAB 2: Plate & Load Position ---
         with in_tab2:
-            st.caption("Plate Dimensions")
+            # [NEW] เพิ่มตัวเลือก Plate Material Grade (แยกจากคานหลัก)
+            mat_options = ["SS400 (Fy 2450)", "SM520 (Fy 3550)", "A36 (Fy 2500)"]
+            # หา index เริ่มต้นจาก default_mat_grade ที่ส่งมาจาก App หลัก
+            def_idx = 0
+            if "SM520" in default_mat_grade: def_idx = 1
+            elif "A36" in default_mat_grade: def_idx = 2
+            
+            sel_mat_grade = st.selectbox("Plate Material", mat_options, index=def_idx)
+
             c1, c2 = st.columns(2)
             t_plate = c1.number_input("Thickness (t)", 4, 50, 9)
             weld_sz = c2.number_input("Weld Size", 3, 20, 6)
             
+            st.divider()
             k1, k2 = st.columns(2)
             lv = k1.number_input("Edge V (lv)", 20, 150, 35)
             leh = k2.number_input("Edge H (leh)", 20, 150, 35)
 
-            # --- SECTION: Load Position & Reductions ---
             st.divider()
-            st.markdown("##### 📐 Load Position & Reductions")
+            st.markdown("##### 📐 Load Position")
             st.caption(f"Determines Eccentricity ($e = e1 + x_{{bar}}$)")
             
             k3, k4 = st.columns(2)
             is_end = "End" in conn_type
-            
-            # e1 และ setback ย้ายมาอยู่ที่นี่ตาม request
-            e1 = k3.number_input("e1 (Bolt-to-Support)", 30, 150, 40, disabled=is_end, help="Distance from Weld/Support to first bolt line.")
-            setback = k4.number_input("Setback (Gap)", 0, 50, 10, disabled=is_end, help="Installation clearance.")
+            e1 = k3.number_input("e1 (Bolt-to-Support)", 30, 150, 40, disabled=is_end)
+            setback = k4.number_input("Setback (Gap)", 0, 50, 10, disabled=is_end)
 
         # 2. Gather Inputs
         user_inputs = {
@@ -153,8 +169,8 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         }
         plate_geom = calculate_plate_geometry(conn_type, user_inputs)
         
-        # 3. Quick Check (Status Bar)
-        check_res = calculate_quick_check(user_inputs, plate_geom, V_design_kg, default_mat_grade)
+        # 3. Quick Check (ใช้เกรดใหม่ที่เลือกจาก Tab)
+        check_res = calculate_quick_check(user_inputs, plate_geom, V_design_kg, sel_mat_grade, sel_bolt_grade)
         
         st.divider()
         st.subheader("🏁 Quick Status")
@@ -178,47 +194,50 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
     
     if col_btn.button("📄 Generate Calculation Report", type="primary", use_container_width=True):
         
-        # 1. Prepare Data for Report (Unit Conversion: kg -> kN, MPa)
-        # Load
+        # 1. Prepare Data
         V_kN = V_design_kg * 9.81 / 1000.0
         
-        # Material
-        is_sm520 = "SM520" in default_mat_grade
+        # Determine Plate Properties from Selection (Override default)
+        is_sm520 = "SM520" in sel_mat_grade
         Fy_val = 355 if is_sm520 else 245  # MPa
         Fu_val = 520 if is_sm520 else 400  # MPa
         
-        # Beam Data
+        # Beam Data (Uses default/main beam grade)
+        # Assuming main beam uses what was passed in default_mat_grade
+        # or we can assume beam grade is same as selected plate if we want simple logic
+        # For robustness, let's keep beam Fu from 'default_mat_grade' to separate beam/plate logic
+        is_beam_sm520 = "SM520" in default_mat_grade
+        Fu_beam = 520 if is_beam_sm520 else 400
+
         beam_dict = {
             'tw': section_data.get('tw', 6),
-            'Fu': Fu_val # Assume same grade
+            'Fu': Fu_beam 
         }
         
-        # Plate Data
         plate_dict = {
             't': t_plate,
             'h': plate_geom['h'],
-            'w': plate_geom['w'],  # <--- [ADDED] เพิ่มบรรทัดนี้แล้วครับ
+            'w': plate_geom['w'],
             'Fy': Fy_val,
             'Fu': Fu_val,
             'weld_size': weld_sz,
-            'e1': e1,       # For eccentricity
-            'lv': lv,       # For Block Shear
-            'l_side': leh   # For Block Shear
+            'e1': e1, 'lv': lv, 'l_side': leh
         }
         
-        # Bolt Data
-        # Fnv for A325 approx 372 MPa (Threads included)
-        fnv_val = 372 
+        # Determine Bolt Shear Strength from Selection
+        if "A490" in sel_bolt_grade:
+            fnv_val = 496 # MPa
+        elif "A307" in sel_bolt_grade:
+            fnv_val = 188 # MPa
+        else:
+            fnv_val = 372 # A325 MPa
+
         bolt_dict = {
-            'd': d_bolt,
-            'rows': rows,
-            'cols': cols,
-            's_v': s_v,
-            's_h': s_h,
-            'Fnv': fnv_val 
+            'd': d_bolt, 'rows': rows, 'cols': cols, 
+            's_v': s_v, 's_h': s_h, 'Fnv': fnv_val 
         }
 
-        # 2. Call the external report generator
+        # 2. Call Generator
         try:
             report_md = cr.generate_report(
                 V_load=V_kN,
@@ -226,11 +245,10 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                 plate=plate_dict,
                 bolts=bolt_dict,
                 is_lrfd=is_lrfd,
-                material_grade=default_mat_grade,
-                bolt_grade=default_bolt_grade
+                material_grade=sel_mat_grade, # Use Selected Grade Name
+                bolt_grade=sel_bolt_grade     # Use Selected Bolt Name
             )
             
-            # 3. Display Result
             with st.container():
                 st.success("✅ Report Generated Successfully!")
                 with st.expander("📜 View Calculation Note", expanded=True):
