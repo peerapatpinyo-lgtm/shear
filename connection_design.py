@@ -9,11 +9,11 @@ import calculation_report as cr
 # ==========================================
 
 BOLT_DB = {
-    "Grade 8.8 (ISO)":   {"Fnv": 372, "Fnt": 620, "Fu": 800,  "Desc": "น็อตรับแรงดึงสูง (นิยมสุดในไทย)"},
-    "A325 (ASTM)":       {"Fnv": 372, "Fnt": 620, "Fu": 825,  "Desc": "น็อตโครงสร้าง มาตรฐานอเมริกา"},
-    "F10T (JIS)":        {"Fnv": 469, "Fnt": 780, "Fu": 1000, "Desc": "น็อต T.C. Bolt (หัวกลม) มาตรฐานญี่ปุ่น"},
-    "Grade 10.9 (ISO)":  {"Fnv": 469, "Fnt": 780, "Fu": 1000, "Desc": "น็อตรับแรงดึงสูงมาก (เทียบเท่า A490)"},
-    "A490 (ASTM)":       {"Fnv": 469, "Fnt": 780, "Fu": 1035, "Desc": "น็อตรับแรงสูงพิเศษ"},
+    "Grade 8.8 (ISO)":   {"Fnv": 372, "Fnt": 620, "Fu": 800,  "Desc": "High Tensile Bolt (Common in TH)"},
+    "A325 (ASTM)":       {"Fnv": 372, "Fnt": 620, "Fu": 825,  "Desc": "Structural Bolt (US Standard)"},
+    "F10T (JIS)":        {"Fnv": 469, "Fnt": 780, "Fu": 1000, "Desc": "T.C. Bolt (JIS Standard)"},
+    "Grade 10.9 (ISO)":  {"Fnv": 469, "Fnt": 780, "Fu": 1000, "Desc": "Very High Tensile (Eq. A490)"},
+    "A490 (ASTM)":       {"Fnv": 469, "Fnt": 780, "Fu": 1035, "Desc": "Extra High Strength Bolt"},
 }
 
 AISC_MIN_EDGE = {12: 20, 16: 22, 20: 34, 22: 38, 24: 42, 27: 48, 30: 52}
@@ -44,17 +44,17 @@ def check_geometry_compliance(inputs):
     min_edge = AISC_MIN_EDGE.get(d, d * 1.75)
     
     if inputs['lv'] < min_edge or inputs['leh'] < min_edge:
-        warnings.append(f"⚠️ ระยะขอบน้อยกว่ามาตรฐาน (Min {min_edge} mm)")
+        warnings.append(f"⚠️ Edge distance less than standard (Min {min_edge} mm)")
     
     min_spacing = 2.67 * d
     if inputs['s_v'] < min_spacing:
-        warnings.append(f"⚠️ ระยะห่างรูเจาะ (Pitch) ชิดเกินไป (Min {min_spacing:.1f} mm)")
+        warnings.append(f"⚠️ Bolt spacing (Pitch) too close (Min {min_spacing:.1f} mm)")
     
     return warnings
 
 def calculate_exact_capacity_kN(inputs, plate_geom, V_load_kN, T_load_kN, mat_grade, bolt_data):
     """
-    คำนวณ Capacity ทั้งหมดในหน่วย kN เพื่อให้ตรงกับ Report 100%
+    Calculate Capacity in kN to match Report 100%
     """
     
     # --- 1. Constants & Factors ---
@@ -68,7 +68,7 @@ def calculate_exact_capacity_kN(inputs, plate_geom, V_load_kN, T_load_kN, mat_gr
         # Convert ASD Omega to Phi equivalent for display consistency
         phi_y, phi_r, phi_w, phi_b = 1/1.67, 1/2.00, 1/2.00, 1/2.00
 
-    if "SS400" in mat_grade: Fy, Fu = 245, 400   
+    if "SS400" in mat_grade: Fy, Fu = 245, 400    
     elif "SM520" in mat_grade: Fy, Fu = 355, 520
     else: Fy, Fu = 250, 400 # A36
 
@@ -267,7 +267,7 @@ def run_optimization(V_target_kN, T_target_kN, mat_grade, bolt_grade_name, conn_
                     vol_mm3 = geom['h'] * geom['w'] * t
                     weight = (vol_mm3 / 1e9) * 7850 
                     
-                    if strategy == "Min Weight (ประหยัดเหล็ก)": score = weight
+                    if strategy == "Min Weight": score = weight
                     else: score = r * 100 + weight 
                     
                     valid_designs.append({
@@ -319,7 +319,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         # --- Optimizer ---
         with st.expander("⚡ AI Auto-Optimizer", expanded=False):
             c_fil1, c_fil2, c_fil3 = st.columns([1.5, 1.2, 1])
-            with c_fil1: opt_strategy = st.radio("เป้าหมาย:", ["Min Weight", "Min Bolts"])
+            with c_fil1: opt_strategy = st.radio("Objective:", ["Min Weight", "Min Bolts"])
             with c_fil2:
                 lock_bolt = st.checkbox("Lock Size?", value=False)
                 curr_d = st.session_state.get('auto_d', default_bolt_size) 
@@ -455,7 +455,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
         st.dataframe(
             df_show.style.applymap(highlight_status, subset=['Status'])
-                   .format({"Ratio": "{:.2f}"}),
+                    .format({"Ratio": "{:.2f}"}),
             use_container_width=True,
             hide_index=True
         )
