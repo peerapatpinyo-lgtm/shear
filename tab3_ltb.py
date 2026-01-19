@@ -1,3 +1,4 @@
+#tab3_ltb.py
 import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
@@ -21,7 +22,7 @@ def render(data):
     user_span = data['user_span']
     is_lrfd = data['is_lrfd']
     
-    # ดึงค่าที่เพิ่มเข้ามาสำหรับแสดงสูตร
+    # Extract additional values for formula display
     ry = data.get('ry', 0) 
     J = data.get('J', 0)
     h0 = data.get('h0', 1)
@@ -32,13 +33,15 @@ def render(data):
     Mp_kgm = Mp / 100
     
     st.subheader("🛡️ LTB Stability Analysis")
+    # Visual context for the physical phenomenon
+    st.markdown("")
 
     # --- PART 2: SIMULATION & GRAPH ---
     col_sim, col_graph = st.columns([1, 2])
     
     with col_sim:
         st.markdown("#### 🎮 Simulator")
-        st.caption("ปรับระยะค้ำยัน ($L_b$) เพื่อดูการเปลี่ยนแปลง")
+        st.caption("Adjust unbraced length ($L_b$) to observe changes in capacity.")
         
         lb_sim = st.slider("Simulate Lb (m)", 
                            min_value=0.5, 
@@ -75,7 +78,7 @@ def render(data):
         """, unsafe_allow_html=True)
 
     with col_graph:
-        # Plot Logic (เหมือนเดิม)
+        # Plot Logic
         max_len = max(Lr_m * 1.5, user_span)
         x_vals = np.linspace(0.1, max_len, 100)
         y_vals = []
@@ -105,17 +108,16 @@ def render(data):
         fig.update_layout(margin=dict(l=20, r=20, t=10, b=20), height=300, xaxis_title="Lb (m)", yaxis_title="Mn (kg-m)", showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
 
-    # --- PART 3: DEFINITIONS (ส่วนที่นำกลับมา) ---
+    # --- PART 3: DEFINITIONS ---
     st.divider()
     
-    # ใช้ Expander แยกออกมาเพื่อให้เปิดดูที่มาได้ชัดเจน
-    with st.expander("📘 Reference: ที่มาของค่า Lp และ Lr (Derivation)", expanded=False):
+    with st.expander("📘 Reference: Derivation of Lp and Lr", expanded=False):
         c_def1, c_def2 = st.columns(2)
         
         # --- Lp Derivation ---
         with c_def1:
             st.markdown("#### 1. Limit $L_p$ (Plastic Limit)")
-            st.caption("จุดสิ้นสุดของ Zone 1: เหล็กเริ่มจะมีการโก่งตัวด้านข้าง")
+            st.caption("End of Zone 1: Beam can reach full plastic moment without buckling.")
             
             st.latex(r"L_p = 1.76 r_y \sqrt{\frac{E}{F_y}}")
             
@@ -130,7 +132,7 @@ def render(data):
         # --- Lr Derivation ---
         with c_def2:
             st.markdown("#### 2. Limit $L_r$ (Elastic Limit)")
-            st.caption("จุดสิ้นสุดของ Zone 2: เหล็กเข้าสู่การโก่งเดาะแบบ Elastic")
+            st.caption("End of Zone 2: Beam transitions into elastic buckling behavior.")
             
             st.latex(r"L_r = 1.95 r_{ts} \frac{E}{0.7F_y} \sqrt{\frac{J c}{S_x h_0} + \sqrt{\left(\frac{J c}{S_x h_0}\right)^2 + 6.76\left(\frac{0.7F_y}{E}\right)^2}}")
             
@@ -147,21 +149,20 @@ def render(data):
 
     # --- PART 4: LIVE CALCULATION ---
     st.subheader(f"🧮 Live Calculation: {zone_sim}")
-    with st.expander("แสดงวิธีคำนวณ Mn (Calculation Steps)", expanded=True):
+    with st.expander("Mn Calculation Steps", expanded=True):
         
-        # แสดงค่าปัจจุบันที่ใช้คำนวณ
         st.markdown(f"**Current State:** $L_b = {lb_sim:.2f}$ m")
 
         if lb_sim_cm <= Lp_cm:
             # ZONE 1
             st.markdown("##### Case: Plastic Moment ($L_b \le L_p$)")
             st.latex(r"M_n = M_p = F_y Z_x")
-            st.write(f"แทนค่า: $M_n = {Mp/100:,.0f}$ kg-m")
+            st.write(f"Result: $M_n = {Mp/100:,.0f}$ kg-m")
             
         elif lb_sim_cm <= Lr_cm:
             # ZONE 2
             st.markdown("##### Case: Inelastic Buckling ($L_p < L_b \le L_r$)")
-            st.write("ใช้สูตร Linear Interpolation:")
+            st.write("Using Linear Interpolation Formula:")
             st.latex(r"M_n = C_b \left[ M_p - (M_p - 0.7 F_y S_x) \left( \frac{L_b - L_p}{L_r - L_p} \right) \right]")
             
             mr = 0.7 * Fy * Sx
@@ -172,17 +173,17 @@ Interpolation Factor = ({lb_sim_cm:.1f} - {Lp_cm:.1f}) / ({Lr_cm:.1f} - {Lp_cm:.
 Mp = {Mp:,.0f}
 Mr = {mr:,.0f}
             """)
-            st.write(f"แทนค่า: $M_n = {mn_sim_kgm:,.0f}$ kg-m")
+            st.write(f"Result: $M_n = {mn_sim_kgm:,.0f}$ kg-m")
             
         else:
             # ZONE 3
             st.markdown("##### Case: Elastic Buckling ($L_b > L_r$)")
-            st.write("ใช้สูตร Critical Stress ($F_{cr}$):")
+            st.write("Using Critical Stress ($F_{cr}$) Formula:")
             st.latex(r"F_{cr} = \frac{C_b \pi^2 E}{(L_b/r_{ts})^2} \sqrt{1 + 0.078 \frac{J}{S_x h_0} (L_b/r_{ts})^2}")
             
             slenderness = lb_sim_cm / r_ts
             st.write(f"Slenderness $(L_b / r_{{ts}}) = {slenderness:.2f}$")
-            st.write(f"แทนค่า: $M_n = {mn_sim_kgm:,.0f}$ kg-m")
+            st.write(f"Result: $M_n = {mn_sim_kgm:,.0f}$ kg-m")
 
         st.divider()
         # Final Design Value
