@@ -38,13 +38,23 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
+    
+    /* Card Styles */
     .detail-card { background: white; border-radius: 12px; padding: 20px; border: 1px solid #e5e7eb; border-top: 6px solid #2563eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; height: 100%; }
     .highlight-card { background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); padding: 25px; border-radius: 20px; border-left: 8px solid #2563eb; box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08); margin-bottom: 25px; border: 1px solid #e5e7eb; }
+    
+    /* Typography */
     .big-num { color: #1e40af; font-size: 42px; font-weight: 800; font-family: 'Roboto Mono', monospace; }
     .sub-text { color: #6b7280; font-size: 14px; font-weight: 600; text-transform: uppercase; }
-    .calc-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; font-family: 'Roboto Mono', monospace; font-size: 14px; color: #334155; margin-bottom: 10px; }
-    .status-pass { color: #10b981; font-weight: bold; }
-    .status-fail { color: #ef4444; font-weight: bold; }
+    
+    /* Calculation Sheet Style */
+    .calc-sheet { background-color: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px; margin-top: 10px; box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05); }
+    .calc-header { border-bottom: 2px solid #334155; padding-bottom: 10px; margin-bottom: 15px; font-weight: bold; color: #1e293b; display: flex; justify-content: space-between; }
+    .calc-row { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 8px; font-family: 'Sarabun', sans-serif; }
+    .calc-label { color: #475569; font-weight: 600; }
+    .calc-val { font-family: 'Roboto Mono', monospace; color: #0f172a; font-weight: 500; }
+    .calc-sub { font-size: 0.85em; color: #64748b; margin-left: 5px; }
+    .calc-formula { background: #f1f5f9; padding: 8px; border-radius: 4px; font-family: 'Roboto Mono', monospace; font-size: 0.9em; color: #334155; margin: 5px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -87,7 +97,7 @@ with st.sidebar:
         tf = st.number_input("Flange t (mm)", 3.0, 50.0, 13.0)
         sec_name = f"Custom H-{int(h)}x{int(b)}"
 
-    # --- Advanced Property Calculation (For LTB) ---
+    # --- Advanced Property Calculation ---
     h_c, b_c, tw_c, tf_c = h/10, b/10, tw/10, tf/10
     Ag = 2*b_c*tf_c + (h_c - 2*tf_c)*tw_c
     Ix = (b_c * h_c**3 - (b_c - tw_c) * (h_c - 2*tf_c)**3) / 12
@@ -96,13 +106,13 @@ with st.sidebar:
     Sx = (2 * Ix) / h_c 
     rx = math.sqrt(Ix/Ag)
     ry = math.sqrt(Iy/Ag)
+    Aw = h_c * tw_c
     
-    # Torsional Props (Approx for I-Section)
+    # Torsional Props
     J = (2 * b_c * tf_c**3 + (h_c - tf_c) * tw_c**3) / 3
     h0 = h_c - tf_c
     Cw = (Iy * h0**2) / 4
     r_ts = math.sqrt(math.sqrt(Iy * Cw) / Sx)
-    Aw = h_c * tw_c
 
     # --- Geometry & Load ---
     st.divider()
@@ -112,13 +122,15 @@ with st.sidebar:
     with col_g1:
         user_span = st.number_input("Span (m)", 0.5, 30.0, 6.0, step=0.5)
     with col_g2:
-        Lb = st.number_input("Unbraced Lb (m)", 0.0, user_span, user_span, step=0.5, help="ระยะค้ำยันด้านข้าง (ถ้าไม่มีใส่เท่าความยาวคาน)")
+        Lb = st.number_input("Unbraced Lb (m)", 0.0, user_span, user_span, step=0.5)
     
     defl_denom = int(st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1).split("/")[1])
     
-    # [ADDED BACK] Connection Design Percentage
-    st.caption("Connection Design Load")
-    conn_shear_pct = st.slider("% of Shear Capacity", 10, 100, 50, step=5, help="เลือก % ของกำลังรับแรงเฉือนสูงสุดเพื่อนำไปออกแบบจุดต่อ")
+    # --- LINK FIX: Connection Design Input ---
+    st.divider()
+    st.subheader("🔩 Connection Design")
+    conn_shear_pct = st.slider("% of Shear Capacity", 10, 100, 50, step=5, 
+                               help="Force the connection tab to design for this % of the beam's Max Shear Capacity")
 
     # Show Loads ONLY if in Check Mode
     w_load, p_load = 0.0, 0.0
@@ -130,22 +142,21 @@ with st.sidebar:
         with c_l2: p_load = st.number_input("Point Load (kg)", 0.0, 50000.0, 0.0)
 
 # ==========================================
-# 4. CALCULATION LOGIC (HYBRID ENGINE)
+# 4. CALCULATION LOGIC
 # ==========================================
 L_cm = user_span * 100
 Lb_cm = Lb * 100
 E = E_mod
 
-# --- 4.1 LTB Constants (Engineering Depth) ---
+# 4.1 LTB Constants
 Lp_cm = 1.76 * ry * math.sqrt(E/Fy)
 val_A = (J * 1.0) / (Sx * h0)
 val_B = 6.76 * ((0.7 * Fy) / E)**2
 Lr_cm = 1.95 * r_ts * (E / (0.7 * Fy)) * math.sqrt(val_A + math.sqrt(val_A**2 + val_B))
 
-# --- 4.2 Moment Capacity (Mn) Logic ---
+# 4.2 Moment Capacity (Mn)
 Mp = Fy * Zx
-Cb = 1.0 # Conservative
-
+Cb = 1.0 
 if Lb_cm <= Lp_cm:
     Mn = Mp
     ltb_zone = "Zone 1 (Plastic)"
@@ -159,36 +170,38 @@ else:
     Mn = min(Fcr * Sx, Mp)
     ltb_zone = "Zone 3 (Elastic)"
 
-# --- 4.3 Factored Capacities ---
+# 4.3 Factored/Allowable Capacities
+# LINK FIX: Use is_lrfd strictly here
 if is_lrfd:
     phi_v, phi_b = 1.00, 0.90
-    V_cap = phi_v * (0.60 * Fy * Aw)
+    V_n = 0.60 * Fy * Aw
+    V_cap = phi_v * V_n
     M_cap = (phi_b * Mn) / 100 # kg-m
     
-    # Load Factors
     fact_w = 1.4 * w_load
     fact_p = 1.4 * p_load
+    method_str = "LRFD"
 else:
     omg_v, omg_b = 1.50, 1.67
-    V_cap = (0.60 * Fy * Aw) / omg_v
+    V_n = 0.60 * Fy * Aw
+    V_cap = V_n / omg_v
     M_cap = (Mn / omg_b) / 100 # kg-m
     
-    # Load Factors
     fact_w = w_load
     fact_p = p_load
+    method_str = "ASD"
 
-# --- 4.4 Result Processing based on Mode ---
+# 4.4 Result Processing
 d_allow = L_cm / defl_denom
 
-# [ADDED BACK] Connection Design Load Logic
+# --- LINK FIX: Calculate Connection Design Force Globally ---
+# This ensures Tab 2 always gets the correct value based on slider
 v_conn_design = V_cap * (conn_shear_pct / 100.0)
 
 if is_check_mode:
-    # Check Design Mode
     v_act = (fact_w * user_span / 2) + (fact_p / 2)
     m_act = (fact_w * user_span**2 / 8) + (fact_p * user_span / 4)
     
-    # Deflection (Service Load)
     d_unif = (5 * (w_load/100) * (L_cm**4)) / (384 * E * Ix)
     d_point = (p_load * (L_cm**3)) / (48 * E * Ix)
     d_act = d_unif + d_point
@@ -203,27 +216,17 @@ if is_check_mode:
     else: gov_cause = "Deflection"
     
 else:
-    # Find Capacity Mode (Back-Calculate)
     w_safe_shear = (2 * V_cap) / user_span
     w_safe_moment = (8 * M_cap) / (user_span**2)
-    
-    # Back-calc Deflection (w_service) -> Convert to Factored for comparison if LRFD
     w_serv_defl = (384 * E * Ix * d_allow) / (5 * (L_cm**4)) * 100
     w_safe_defl = w_serv_defl * 1.4 if is_lrfd else w_serv_defl
     
     w_safe = min(w_safe_shear, w_safe_moment, w_safe_defl)
     
-    # Dummy values for display to prevent errors
-    v_act = 0.0
-    m_act = 0.0
-    d_act = 0.0
-    gov_ratio = 0.0
+    # Dummy values for display
+    v_act, m_act, d_act = 0.0, 0.0, 0.0
+    gov_ratio, ratio_v, ratio_m, ratio_d = 0.0, 0.0, 0.0, 0.0
     gov_cause = "Capacity Mode"
-    
-    # Dummy ratios
-    ratio_v = 0.0
-    ratio_m = 0.0
-    ratio_d = 0.0
     
     if w_safe == w_safe_shear: gov_cause = "Shear Control"
     elif w_safe == w_safe_moment: gov_cause = "Moment Control"
@@ -236,13 +239,13 @@ st.session_state.res_dict = {
     'v_cap': V_cap, 'v_act': v_act,
     'm_cap': M_cap, 'm_act': m_act, 'mn_raw': Mn,
     'd_all': d_allow, 'd_act': d_act,
-    'v_conn_design': v_conn_design, # Uses the slider value now
+    'v_conn_design': v_conn_design, 
     'ltb_info': {'Lp': Lp_cm, 'Lr': Lr_cm, 'Lb': Lb_cm, 'Zone': ltb_zone, 'Cb': Cb}
 }
 st.session_state.cal_success = True
 
 # ==========================================
-# 5. UI RENDERING (TAB 1: HYBRID DASHBOARD)
+# 5. UI RENDERING
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Analysis & Graphs", "🔩 Connection Detail", "🛡️ LTB Insight", "📝 Report"])
 
@@ -251,37 +254,35 @@ with tab1:
 
     # --- TOP CARD ---
     if is_check_mode:
-        # Show Pass/Fail
         status_color = "#10b981" if gov_ratio <= 1.0 else "#ef4444"
         status_icon = "✅ PASS" if gov_ratio <= 1.0 else "❌ FAIL"
         st.markdown(f"""
         <div class="highlight-card" style="border-left-color: {status_color};">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <span class="sub-text">Check Result ({gov_cause})</span><br>
+                    <span class="sub-text">Check Result ({method_str})</span><br>
                     <span class="big-num" style="color:{status_color}">{gov_ratio:.2f}</span> 
                     <span style="font-size:20px; font-weight:bold; color:{status_color}">{status_icon}</span>
                 </div>
                 <div style="text-align: right;">
-                    <small><b>Wu:</b> {fact_w:,.0f} kg/m | <b>Pu:</b> {fact_p:,.0f} kg</small><br>
-                    <small>Design: {st.session_state.design_method}</small>
+                    <small><b>Load Case:</b> {w_load:,.0f} kg/m, {p_load:,.0f} kg</small><br>
+                    <small><b>Control:</b> {gov_cause}</small>
                 </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
     else:
-        # Show Capacity
-        safe_val_show = w_safe / 1.4 if is_lrfd else w_safe 
+        safe_val_show = w_safe / 1.4 if is_lrfd else w_safe
         st.markdown(f"""
         <div class="highlight-card">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <span class="sub-text">Max Safe Uniform Load (Service)</span><br>
+                    <span class="sub-text">Max Safe Service Load ({method_str})</span><br>
                     <span class="big-num">{safe_val_show:,.0f}</span> <span style="font-size:24px; color:#6b7280;">kg/m</span>
                 </div>
                 <div style="text-align: right;">
-                    <span class="sub-text" style="color:#2563eb;">Controlled by: {gov_cause}</span><br>
-                    <small>Based on Span {user_span} m | Lb {Lb} m</small>
+                    <span class="sub-text" style="color:#2563eb;">Limit: {gov_cause}</span><br>
+                    <small>L={user_span}m | Lb={Lb}m</small>
                 </div>
             </div>
         </div>
@@ -325,66 +326,112 @@ with tab1:
             </div>
         </div>""", unsafe_allow_html=True)
 
-    # --- [ADDED BACK] DETAILED CALCULATION CHECKS ---
-    st.subheader("🧮 Detailed Calculation Checks")
-    with st.expander("Show/Hide Calculation Steps", expanded=True):
-        if is_check_mode:
-            # Check Mode: Show Actual / Capacity
+    # --- REVAMPED DETAILED CALCULATION ---
+    st.subheader("🧮 Calculation Sheet")
+    with st.expander("📄 View Detailed Engineering Calculations", expanded=True):
+        
+        # Determine labels based on method
+        v_label = "\phi V_n" if is_lrfd else "V_n / \Omega"
+        m_label = "\phi M_n" if is_lrfd else "M_n / \Omega"
+        load_label = "Factored" if is_lrfd else "Service"
+        
+        c_calc1, c_calc2 = st.columns(2)
+        
+        with c_calc1:
             st.markdown(f"""
-            **1. Shear Check (แรงเฉือน)**
-            $V_u$ (Required) = {v_act:,.2f} kg
-            $\phi V_n$ (Capacity) = {V_cap:,.2f} kg
-            $$Ratio = \\frac{{{v_act:,.0f}}}{{{V_cap:,.0f}}} = \\mathbf{{{ratio_v:.3f}}}$$
-            
-            **2. Moment Check (โมเมนต์ดัด)**
-            $M_u$ (Required) = {m_act:,.2f} kg-m
-            $\phi M_n$ (Capacity) = {M_cap:,.2f} kg-m (Control by: {ltb_zone})
-            $$Ratio = \\frac{{{m_act:,.0f}}}{{{M_cap:,.0f}}} = \\mathbf{{{ratio_m:.3f}}}$$
-            
-            **3. Deflection Check (การแอ่นตัว)**
-            $\Delta_{{act}}$ (Service) = {d_act:.4f} cm
-            $\Delta_{{allow}}$ (Limit L/{defl_denom}) = {d_allow:.4f} cm
-            $$Ratio = \\frac{{{d_act:.4f}}}{{{d_allow:.4f}}} = \\mathbf{{{ratio_d:.3f}}}$$
-            """)
-        else:
-            # Capacity Mode: Show Limits
+            <div class="calc-sheet">
+                <div class="calc-header">1. Shear Capacity ({method_str})</div>
+                <div class="calc-row">
+                    <span class="calc-label">Area Web ($A_w = h \cdot t_w$)</span>
+                    <span class="calc-val">{Aw:.2f} cm²</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">Nominal Shear ($V_n = 0.6 F_y A_w$)</span>
+                    <span class="calc-val">{0.6*Fy*Aw:,.0f} kg</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">Design Capacity ({v_label})</span>
+                    <span class="calc-val" style="color:#166534; font-weight:bold;">{V_cap:,.0f} kg</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">Actual Shear ($V_u$)</span>
+                    <span class="calc-val" style="color:#1e40af;">{v_act:,.0f} kg</span>
+                </div>
+                <div class="calc-formula">
+                    Ratio = {v_act:,.0f} / {V_cap:,.0f} = <b>{ratio_v:.3f}</b>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
             st.markdown(f"""
-            **1. Shear Capacity Limit**
-            Max $V_{{n}}$ = {V_cap:,.0f} kg
-            Max Uniform Load ($w_v$) = {w_safe_shear/ (1.4 if is_lrfd else 1.0):,.0f} kg/m (Service)
-            
-            **2. Moment Capacity Limit**
-            Max $M_{{n}}$ = {M_cap:,.0f} kg-m ({ltb_zone})
-            Max Uniform Load ($w_m$) = {w_safe_moment/ (1.4 if is_lrfd else 1.0):,.0f} kg/m (Service)
-            
-            **3. Deflection Limit ({defl_denom})**
-            Max $\Delta$ = {d_allow:.2f} cm
-            Max Uniform Load ($w_d$) = {w_safe_defl/ (1.4 if is_lrfd else 1.0):,.0f} kg/m (Service)
-            
-            **GOVERNING LOAD:**
-            **{w_safe/ (1.4 if is_lrfd else 1.0):,.0f} kg/m** (Controlled by {gov_cause})
-            """)
+            <div class="calc-sheet">
+                <div class="calc-header">3. Serviceability (Deflection)</div>
+                <div class="calc-row">
+                    <span class="calc-label">Moment of Inertia ($I_x$)</span>
+                    <span class="calc-val">{Ix:,.0f} cm⁴</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">Limit (L/{defl_denom})</span>
+                    <span class="calc-val" style="color:#166534;">{d_allow:.2f} cm</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">Actual Deflection ($\Delta$)</span>
+                    <span class="calc-val" style="color:#1e40af;">{d_act:.2f} cm</span>
+                </div>
+                <div class="calc-formula">
+                    Ratio = {d_act:.2f} / {d_allow:.2f} = <b>{ratio_d:.3f}</b>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with c_calc2:
+            st.markdown(f"""
+            <div class="calc-sheet">
+                <div class="calc-header">2. Flexural Capacity ({method_str})</div>
+                <div class="calc-row">
+                    <span class="calc-label">Unbraced Length ($L_b$)</span>
+                    <span class="calc-val">{Lb:.2f} m</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">LTB Limits ($L_p$, $L_r$)</span>
+                    <span class="calc-val">{Lp_cm/100:.2f} m, {Lr_cm/100:.2f} m</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">State</span>
+                    <span class="calc-val" style="color:#b45309;">{ltb_zone}</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">Nominal Moment ($M_n$)</span>
+                    <span class="calc-val">{Mn/100:,.0f} kg-m</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">Design Capacity ({m_label})</span>
+                    <span class="calc-val" style="color:#166534; font-weight:bold;">{M_cap:,.0f} kg-m</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">Actual Moment ($M_u$)</span>
+                    <span class="calc-val" style="color:#1e40af;">{m_act:,.0f} kg-m</span>
+                </div>
+                <div class="calc-formula">
+                    Ratio = {m_act:,.0f} / {M_cap:,.0f} = <b>{ratio_m:.3f}</b>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
     # --- GRAPH ---
     st.markdown("### 📉 Span vs. Load Capacity Curve")
-    
-    # Create span range for graph
     spans = np.linspace(1.0, 12.0, 50)
-    w_cap_moment = []
-    w_cap_shear = []
-    w_cap_defl = []
-
-    # Pre-calc constants for loop efficiency
-    factor_load = 1.4 if is_lrfd else 1.0 # To convert Cap to Service w on graph
+    w_cap_moment, w_cap_shear, w_cap_defl = [], [], []
+    factor_load = 1.4 if is_lrfd else 1.0 
 
     for s in spans:
         l_cm_g = s * 100
         lb_cm_g = l_cm_g 
         
-        # 1. Shear Limit
+        # Shear
         w_v = (2 * V_cap) / s
         
-        # 2. Moment Limit
+        # Moment
         if lb_cm_g <= Lp_cm: mn_g = Mp
         elif lb_cm_g <= Lr_cm:
             term_g = (Mp - 0.7*Fy*Sx) * ((lb_cm_g - Lp_cm)/(Lr_cm - Lp_cm))
@@ -397,7 +444,7 @@ with tab1:
         m_cap_g = (phi_b * mn_g)/100 if is_lrfd else (mn_g/omg_b)/100
         w_m = (8 * m_cap_g) / (s**2)
         
-        # 3. Deflection Limit
+        # Deflection
         d_all_g = l_cm_g / defl_denom
         w_d_serv = (d_all_g * 384 * E * Ix) / (5 * l_cm_g**4) * 100
         w_d = w_d_serv * factor_load 
@@ -406,36 +453,25 @@ with tab1:
         w_cap_shear.append(w_v / factor_load)
         w_cap_defl.append(w_d / factor_load)
 
-    # Plot
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=spans, y=w_cap_moment, name='Moment Limit', line=dict(color='#3b82f6', width=3)))
     fig.add_trace(go.Scatter(x=spans, y=w_cap_defl, name='Deflection Limit', line=dict(color='#10b981', dash='dash')))
     fig.add_trace(go.Scatter(x=spans, y=w_cap_shear, name='Shear Limit', line=dict(color='#f59e0b', dash='dot')))
     
-    # Add User Point (Only if Check Mode)
     if is_check_mode:
         equiv_w_act = (fact_w + (2*fact_p/user_span)) / factor_load 
         fig.add_trace(go.Scatter(x=[user_span], y=[equiv_w_act], mode='markers', name='Your Load', marker=dict(color='red', size=12, symbol='x')))
     
-    # Current Span Line
-    fig.add_vline(x=user_span, line_dash="dash", line_color="gray", annotation_text=f"L={user_span}m")
-    
-    fig.update_layout(
-        title="Safe Service Load (Uniform) vs. Span",
-        xaxis_title="Span Length (m)",
-        yaxis_title="Allowable Uniform Load (kg/m)",
-        hovermode="x unified",
-        height=450,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
+    fig.update_layout(title="Safe Service Load vs. Span", xaxis_title="Span (m)", yaxis_title="Load (kg/m)", height=450)
     st.plotly_chart(fig, use_container_width=True)
 
 with tab2:
     if st.session_state.cal_success:
+        st.info(f"⚡ **Designing for Shear Force:** {v_conn_design:,.0f} kg ({conn_shear_pct}% of Capacity)")
+        
         c_type = st.selectbox("Connection Type", ["Fin Plate", "End Plate", "Double Angle"])
         section_data = {"name": sec_name, "h": h, "b": b, "tw": tw, "tf": tf}
         
-        # Use v_conn_design which now respects the slider
         connection_design.render_connection_tab(
             V_design_from_tab1=v_conn_design,
             default_bolt_size=20,
@@ -448,22 +484,19 @@ with tab2:
         )
 
 with tab3:
-    st.subheader("🛡️ Lateral Torsional Buckling (LTB) Insight")
+    st.subheader("🛡️ LTB Insight")
     c_ltb1, c_ltb2 = st.columns([1, 2])
-    
     with c_ltb1:
-        st.info(f"**Current State:** {ltb_zone}")
         st.markdown(f"""
         <div style="background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
-            <b>Parameters</b><br>
-            • Unbraced Length ($L_b$): <b>{Lb:.2f} m</b><br>
-            • Plastic Limit ($L_p$): <b style="color:#059669">{Lp_cm/100:.2f} m</b><br>
-            • Inelastic Limit ($L_r$): <b style="color:#d97706">{Lr_cm/100:.2f} m</b><br>
-            • Gradient ($C_b$): <b>{Cb:.2f}</b>
-        </div>
-        """, unsafe_allow_html=True)
+            <b>LTB State:</b> {ltb_zone}<br>
+            <b>Lb:</b> {Lb:.2f} m<br>
+            <b>Lp:</b> {Lp_cm/100:.2f} m <br>
+            <b>Lr:</b> {Lr_cm/100:.2f} m
+        </div>""", unsafe_allow_html=True)
         
     with c_ltb2:
+        # Simplified LTB Plot Logic
         lb_vals = np.linspace(0.1, max(Lr_cm*1.5, Lb_cm*1.2), 50)
         mn_vals = []
         for l_chk in lb_vals:
@@ -478,12 +511,10 @@ with tab3:
             mn_vals.append(mn_chk/100) 
 
         fig_ltb = go.Figure()
-        fig_ltb.add_trace(go.Scatter(x=lb_vals/100, y=mn_vals, name='Mn Capacity', line=dict(color='#2563eb', width=3)))
+        fig_ltb.add_trace(go.Scatter(x=lb_vals/100, y=mn_vals, name='Mn Capacity', line=dict(color='#2563eb')))
         curr_Mn = (M_cap * 100 / phi_b) if is_lrfd else (M_cap * 100 * omg_b)
-        fig_ltb.add_trace(go.Scatter(x=[Lb], y=[curr_Mn/100], mode='markers+text', text=["This Beam"], textposition="top right", marker=dict(size=12, color='red')))
-        fig_ltb.add_vline(x=Lp_cm/100, line_dash="dash", annotation_text="Lp")
-        fig_ltb.add_vline(x=Lr_cm/100, line_dash="dash", annotation_text="Lr")
-        fig_ltb.update_layout(xaxis_title="Lb (m)", yaxis_title="Mn (kg-m)", height=350, margin=dict(t=20, b=20, l=20, r=20))
+        fig_ltb.add_trace(go.Scatter(x=[Lb], y=[curr_Mn/100], mode='markers', marker=dict(size=10, color='red')))
+        fig_ltb.update_layout(height=300, margin=dict(t=20,b=20,l=20,r=20))
         st.plotly_chart(fig_ltb, use_container_width=True)
 
 with tab4:
