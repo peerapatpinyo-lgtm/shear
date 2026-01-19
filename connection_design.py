@@ -287,7 +287,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                 opt_strategy = st.radio("เป้าหมาย:", ["Min Weight (ประหยัดเหล็ก)", "Min Bolts (ประหยัดแรงงาน)"])
             with c_fil2:
                 lock_bolt = st.checkbox("Lock Size?", value=False)
-                # เราใช้ default_bolt_size ถ้า user ยังไม่เลือกอะไร แต่ถ้าเลือกแล้วก็ใช้ค่าปัจจุบัน
                 curr_d = st.session_state.get('auto_d', default_bolt_size) 
                 if lock_bolt: st.caption(f"🔒 M{curr_d}")
             with c_fil3:
@@ -296,7 +295,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
             if run_opt:
                 with st.spinner("🤖 AI Engineer is calculating..."):
-                    # Template defaults
                     defaults = {
                         'cols': 1, 's_h': 0, 'weld_size': 6, 
                         'e1': 40, 'setback': 10, 'T_load': 0,
@@ -316,6 +314,13 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
             if 'opt_results' in st.session_state:
                 res_df = st.session_state['opt_results']
+                
+                # --- 🛡️ AUTO-FIX CRASH (เพิ่มส่วนนี้เพื่อแก้บั๊ก) ---
+                # ถ้าเจอข้อมูลเก่า (ที่เป็น String "M20") ให้ลบทิ้งและรีเซ็ตเพื่อกัน Error
+                if not pd.api.types.is_numeric_dtype(res_df['Bolt']):
+                    del st.session_state['opt_results']
+                    st.rerun()
+                # ------------------------------------------------
                 
                 st.markdown("#### 🏆 Top Recommendations")
                 
