@@ -386,3 +386,84 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                     st.markdown(report_md)
         except Exception as e:
             st.error(f"❌ Error generating report: {e}")
+
+
+# ==========================================
+# ⚡ 3. AUTO-OPTIMIZER LOGIC
+# ==========================================
+def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, current_inputs):
+    """
+    วนลูปหา Design ที่ประหยัดที่สุด (น้ำหนักน้อยสุด) ที่ผ่านการคำนวณ
+    """
+    import pandas as pd # ใช้จัดการข้อมูลตาราง
+
+    # 1. กำหนด Scope การค้นหา (Search Space)
+    candidate_bolts = [16, 20, 24, 27]    # ขนาดน็อตที่นิยมใช้
+    candidate_rows = range(2, 8)          # จำนวนแถว 2-7
+    candidate_thk = [6, 9, 12, 16, 20]    # ความหนาเพลทมาตรฐาน
+    
+    valid_designs = []
+    
+    # ดึงค่าคงที่จาก Database
+    bolt_db_data = BOLT_DB[bolt_grade_name]
+    
+    # 2. เริ่มวนลูป (Brute Force Search)
+    # ลูปนี้จะรันประมาณ 4*6*5 = 120 รอบ (ใช้เวลาเสี้ยววินาที)
+    for d in candidate_bolts:
+        for r in candidate_rows:
+            for t in candidate_thk:
+                
+                # Setup "Virtual" Inputs
+                # ใช้ระยะมาตรฐานในการ Optimize: Pitch=3d, Edge=1.5d
+                temp_inputs = current_inputs.copy()
+                temp_inputs.update({
+                    'd': d, 
+                    'rows': r, 
+                    'cols': 1, # สมมติ 1 col ก่อนเพื่อความประหยัด
+                    't': t,
+                    's_v': 3.0 * d,      # Standard Pitch
+                    'lv': 1.5 * d,       # Standard Edge V
+                    'leh': 1.5 * d,      # Standard Edge H
+                    's_h': 0,
+                    'weld_size': max(6, t-2) # เชื่อมตามความหนาโดยประมาณ
+                })
+
+                # คำนวณ Geometry
+                geom = calculate_plate_geometry(conn_type, temp_inputs)
+                
+                # Check Compliance (ข้ามถ้า geometry ผิดปกติ)
+                if check_geometry_compliance(temp_inputs): continue 
+
+                # ปรับ Fnv ตาม Logic (สมมติเป็น Type N - Included เพื่อความ Safe)
+                bolt_data_calc = bolt_db_data.copy() # ใช้ค่า Fnv เดิม (Type N)
+                
+                # คำนวณ Strength
+                res = calculate_quick_check(
+                    temp_inputs, geom, V_target, T_target, 
+                    mat_grade, bolt_data_calc
+                )
+                
+                # 3. ถ้าผ่าน (PASS) ให้เก็บเข้า List
+                if res['status'] == "PASS":
+                    # คำนวณน้ำหนักเหล็กแผ่นโดยประมาณ (Weight Estimation)
+                    # W = Volume * Density (7850 kg/m3)
+                    vol_mm3 = geom['h'] * geom['w'] * t
+                    weight = (vol_mm3 / 1e9) * 7850 
+                    
+                    valid_designs.append({
+                        'Bolt': f"M{d}",
+                        'Rows': r,
+                        'Plate': f"{t} mm",
+                        'Ratio': res['ratio'],
+                        'Weight (kg)': weight,
+                        'Params': temp_inputs # เก็บค่าไว้ส่งคืนเมื่อเลือก
+                    })
+
+    # 4. สรุปผล
+    if not valid_designs:
+        return None
+    
+    # แปลงเป็น DataFrame แล้ว Sort ตามน้ำหนักน้อยสุด
+    df = pd.DataFrame(valid_designs)
+    df = df.sort_values(by=['Weight (kg)', 'Ratio'], ascending=[True, False])
+    return df.head(3) # คืนค่า Top 3
