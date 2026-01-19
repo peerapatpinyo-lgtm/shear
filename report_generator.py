@@ -145,3 +145,64 @@ def render_report_tab(method, is_lrfd, sec_name, steel_grade, p, res, bolt):
     """
     
     components.html(html_content, height=1200, scrolling=True)
+def get_connection_details(res, p, bolt):
+    """
+    ฟังก์ชันวิเคราะห์และแนะนำจุดต่อที่เหมาะสม (Advisor Logic)
+    """
+    v_act = res.get('v_act', 0)
+    h_beam = p.get('h', 0)
+    tw = p.get('tw', 0)
+    
+    # 1. แนะนำจำนวน Bolt (สมมติกำลัง Bolt 1 ตัวรับได้ประมาณ 3000-4000 kg สำหรับ M20)
+    # ในหน้างานจริงควรคำนวณจาก bolt_capacity แต่ตรงนี้ใช้ Logic Advisor
+    suggested_rows = max(2, int(v_act / 3500) + 1)
+    
+    # 2. ขนาดแผ่น Fin Plate (สูงประมาณ 60% ของความลึกคาน)
+    plate_h = int((h_beam * 0.6) / 10) * 10 # ปัดเศษเป็นหลักสิบ mm
+    plate_t = int(tw + 2) if tw > 0 else 10 # หนาฐานที่ tw+2 หรือขั้นต่ำ 10mm
+    
+    # 3. ขนาดรอยเชื่อม (Weld Size) ตามมาตรฐาน AISC (Min weld size)
+    weld_size = 6 if tw <= 12 else 8 # mm
+    
+    return {
+        "rows": suggested_rows,
+        "plate_h": plate_h,
+        "plate_t": plate_t,
+        "weld": weld_size
+    }
+
+# ในฟังก์ชัน render_report_tab ให้เพิ่มส่วนนี้เข้าไปใน HTML:
+def render_report_tab(method, is_lrfd, sec_name, steel_grade, p, res, bolt):
+    conn = get_connection_details(res, p, bolt)
+    
+    # เพิ่ม HTML ต่อจากส่วนที่ 4 (Stability) ในเวอร์ชันก่อนหน้า
+    connection_html = f"""
+    <div style="margin-top:30px; border:2px dashed #1e40af; padding:20px; border-radius:8px; background:#f0f7ff;">
+        <h3 style="margin-top:0; color:#1e40af; font-size:16px;">🛠️ RECOMMENDED TYPICAL DETAIL (FIN PLATE)</h3>
+        <div style="display:flex; gap:30px; align-items:flex-start;">
+            <div style="background:white; padding:10px; border:1px solid #cbd5e1;">
+                <svg width="180" height="200" viewBox="0 0 100 120">
+                    <rect x="0" y="0" width="20" height="120" fill="#e2e8f0" stroke="#94a3b8"/>
+                    <rect x="25" y="20" width="75" height="80" fill="#f8fafc" stroke="#1e40af" stroke-width="2"/>
+                    <rect x="20" y="30" width="15" height="60" fill="#1e40af" opacity="0.8"/>
+                    {" ".join([f'<circle cx="27" cy="{40 + (i*20)}" r="3" fill="black"/>' for i in range(conn['rows'])])}
+                </svg>
+                <p style="font-size:10px; text-align:center; color:#64748b;">Schematic Diagram Only</p>
+            </div>
+            
+            <div style="font-size:13px; color:#1e40af; flex-grow:1;">
+                <table style="width:100%; border-collapse:collapse;">
+                    <tr><td style="padding:5px;"><b>Fin Plate Size:</b></td><td>PL {conn['plate_t']} x {conn['plate_h']} mm</td></tr>
+                    <tr><td style="padding:5px;"><b>Bolt Layout:</b></td><td>{conn['rows']} Rows x 1 Column</td></tr>
+                    <tr><td style="padding:5px;"><b>Bolt Specs:</b></td><td>{bolt.get('size', 'M20')} (Grade {bolt.get('grade', '8.8')})</td></tr>
+                    <tr><td style="padding:5px;"><b>Welding:</b></td><td>Fillet Weld {conn['weld']} mm (E70XX)</td></tr>
+                    <tr><td style="padding:5px;"><b>Edge Distance:</b></td><td>Min 1.5d (~30-40 mm)</td></tr>
+                </table>
+                <p style="margin-top:10px; font-size:11px; color:#475569; font-style:italic;">
+                    *คำแนะนำนี้อ้างอิงจากแรงเฉือน {res.get('v_act', 0):,.0f} kg และหน้าตัด {sec_name}
+                </p>
+            </div>
+        </div>
+    </div>
+    """
+    # รวม HTML ทั้งหมดแล้วแสดงผล...
