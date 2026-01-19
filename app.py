@@ -1,3 +1,5 @@
+#app.py
+
 import streamlit as st
 import math
 
@@ -16,7 +18,6 @@ try:
     import steel_db              
     import connection_design    
     import report_generator
-    # Import new modules
     import tab1_analysis
     import tab3_ltb
 except ImportError as e:
@@ -67,7 +68,7 @@ with st.sidebar:
     st.divider()
 
     # --- Mode Selection ---
-    analysis_mode = st.radio("🛠️ Operation Mode", ["Find Capacity (หาค่าน้ำหนักที่รับได้)", "Check Design (ตรวจสอบหน้าตัด)"])
+    analysis_mode = st.radio("🛠️ Operation Mode", ["Find Capacity", "Check Design"])
     is_check_mode = "Check" in analysis_mode
 
     # --- Design Method ---
@@ -119,7 +120,7 @@ with st.sidebar:
     st.subheader("📏 Geometry")
     col_g1, col_g2 = st.columns(2)
     with col_g1: user_span = st.number_input("Span (m)", 0.5, 30.0, 6.0, step=0.5)
-    with col_g2: Lb = st.number_input("Unbraced Lb (m)", 0.0, user_span, user_span, step=0.5)
+    with col_g2: Lb = st.number_input("Unbraced Length Lb (m)", 0.0, user_span, user_span, step=0.5)
     defl_denom = int(st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1).split("/")[1])
 
     # -----------------------------------------------
@@ -136,7 +137,7 @@ with st.sidebar:
         V_cap_disp = V_n_pre / omg_v
         v_label = "Vn/Ω"
 
-    # --- Connection Design Input (UPDATED) ---
+    # --- Connection Design Input ---
     st.divider()
     st.subheader("🔩 Connection Design")
     
@@ -159,7 +160,8 @@ with st.sidebar:
     st.markdown("---")
     st.write("📐 **Load Position & Reductions**")
     
-    ecc_e = st.number_input("Eccentricity 'e' (mm)", value=50, step=5, help="ระยะจากขอบ Support ถึงกึ่งกลางกลุ่มน็อต")
+    
+    ecc_e = st.number_input("Eccentricity 'e' (mm)", value=50, step=5, help="Distance from support face to bolt group centroid")
     
     # Calculate Reduction
     w_equiv_load = (2 * v_support_design) / user_span # kg/m
@@ -185,7 +187,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     
     # Final Decision for Calc
-    use_reduced = st.checkbox("Use Reduced Force for Design?", value=False, help="ถ้าเลือก จะใช้ค่า V @ Bolt ไปคำนวณ ถ้าไม่เลือก จะใช้ค่า V @ Support (Conservative)")
+    use_reduced = st.checkbox("Use Reduced Force for Design?", value=False, help="If selected, V @ Bolt is used. Otherwise, V @ Support is used (Conservative)")
     v_conn_final = v_at_bolt if use_reduced else v_support_design
 
     # --- Loads (Check Mode Only) ---
@@ -229,7 +231,7 @@ else:
 # 4.3 Factored/Allowable Capacities
 if is_lrfd:
     phi_b = 0.90
-    V_cap = V_cap_disp # Already calculated
+    V_cap = V_cap_disp 
     M_cap = (phi_b * Mn) / 100 # kg-m
     
     fact_w = 1.4 * w_load
@@ -237,7 +239,7 @@ if is_lrfd:
     method_str = "LRFD"
 else:
     omg_b = 1.67
-    V_cap = V_cap_disp # Already calculated
+    V_cap = V_cap_disp 
     M_cap = (Mn / omg_b) / 100 # kg-m
     
     fact_w = w_load
@@ -295,9 +297,7 @@ else:
 # ==========================================
 # 5. PACK DATA FOR TABS
 # ==========================================
-# Bundle all necessary data into a dictionary to pass to external files
 results_context = {
-    # Inputs
     'is_check_mode': is_check_mode,
     'method_str': method_str,
     'is_lrfd': is_lrfd,
@@ -308,13 +308,11 @@ results_context = {
     'Fy': Fy,
     'E': E,
     
-    # Loads
     'w_load': w_load,
     'p_load': p_load,
     'fact_w': fact_w,
     'fact_p': fact_p,
     
-    # Capacities & Ratios
     'V_cap': V_cap,
     'M_cap': M_cap,
     'v_act': v_act,
@@ -326,12 +324,10 @@ results_context = {
     'gov_cause': gov_cause,
     'w_safe': w_safe if not is_check_mode else 0,
     
-    # Deflection
     'd_act': d_act,
     'd_allow': d_allow,
     'defl_denom': defl_denom,
     
-    # Section Props & LTB Constants (Needed for graphs/calcs)
     'Aw': Aw,
     'Ix': Ix,
     'Sx': Sx,
@@ -345,7 +341,6 @@ results_context = {
     'ltb_zone': ltb_zone,
     'Mn': Mn,
     
-    # --- ADDED FOR TAB 3 DERIVATION ---
     'ry': ry,
     'J': J,
     'h0': h0
@@ -368,11 +363,11 @@ st.session_state.cal_success = True
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Analysis & Graphs", "🔩 Connection Detail", "🛡️ LTB Insight", "📝 Report"])
 
-# --- TAB 1: ANALYSIS & GRAPHS (External) ---
+# --- TAB 1: ANALYSIS & GRAPHS ---
 with tab1:
     tab1_analysis.render(results_context)
 
-# --- TAB 2: CONNECTION DETAIL (Internal Logic/External Module) ---
+# --- TAB 2: CONNECTION DETAIL ---
 with tab2:
     if st.session_state.cal_success:
         st.info(f"⚡ **Designing for Shear Force:** {v_conn_final:,.0f} kg")
@@ -395,11 +390,11 @@ with tab2:
     else:
         st.warning("Please complete analysis in Tab 1 first.")
 
-# --- TAB 3: LTB INSIGHT (External) ---
+# --- TAB 3: LTB INSIGHT ---
 with tab3:
     tab3_ltb.render(results_context)
 
-# --- TAB 4: REPORT (Existing External) ---
+# --- TAB 4: REPORT ---
 with tab4:
     if st.session_state.cal_success:
         report_generator.render_report_tab(
