@@ -53,7 +53,6 @@ st.markdown("""
     .calc-row { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 8px; font-family: 'Sarabun', sans-serif; }
     .calc-label { color: #475569; font-weight: 600; }
     .calc-val { font-family: 'Roboto Mono', monospace; color: #0f172a; font-weight: 500; }
-    .calc-sub { font-size: 0.85em; color: #64748b; margin-left: 5px; }
     .calc-formula { background: #f1f5f9; padding: 8px; border-radius: 4px; font-family: 'Roboto Mono', monospace; font-size: 0.9em; color: #334155; margin: 5px 0; }
 </style>
 """, unsafe_allow_html=True)
@@ -126,11 +125,11 @@ with st.sidebar:
     
     defl_denom = int(st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1).split("/")[1])
     
-    # --- LINK FIX: Connection Design Input ---
+    # --- Connection Design Input ---
     st.divider()
     st.subheader("🔩 Connection Design")
     conn_shear_pct = st.slider("% of Shear Capacity", 10, 100, 50, step=5, 
-                               help="Force the connection tab to design for this % of the beam's Max Shear Capacity")
+                               help="ออกแบบจุดต่อโดยใช้ % ของกำลังรับแรงเฉือนสูงสุดของหน้าตัด")
 
     # Show Loads ONLY if in Check Mode
     w_load, p_load = 0.0, 0.0
@@ -171,7 +170,6 @@ else:
     ltb_zone = "Zone 3 (Elastic)"
 
 # 4.3 Factored/Allowable Capacities
-# LINK FIX: Use is_lrfd strictly here
 if is_lrfd:
     phi_v, phi_b = 1.00, 0.90
     V_n = 0.60 * Fy * Aw
@@ -193,12 +191,10 @@ else:
 
 # 4.4 Result Processing
 d_allow = L_cm / defl_denom
-
-# --- LINK FIX: Calculate Connection Design Force Globally ---
-# This ensures Tab 2 always gets the correct value based on slider
 v_conn_design = V_cap * (conn_shear_pct / 100.0)
 
 if is_check_mode:
+    # --- CHECK MODE ---
     v_act = (fact_w * user_span / 2) + (fact_p / 2)
     m_act = (fact_w * user_span**2 / 8) + (fact_p * user_span / 4)
     
@@ -216,17 +212,29 @@ if is_check_mode:
     else: gov_cause = "Deflection"
     
 else:
+    # --- FIND CAPACITY MODE (Back Calculation) ---
     w_safe_shear = (2 * V_cap) / user_span
     w_safe_moment = (8 * M_cap) / (user_span**2)
+    
     w_serv_defl = (384 * E * Ix * d_allow) / (5 * (L_cm**4)) * 100
     w_safe_defl = w_serv_defl * 1.4 if is_lrfd else w_serv_defl
     
+    # หาตัวควบคุม
     w_safe = min(w_safe_shear, w_safe_moment, w_safe_defl)
     
-    # Dummy values for display
-    v_act, m_act, d_act = 0.0, 0.0, 0.0
-    gov_ratio, ratio_v, ratio_m, ratio_d = 0.0, 0.0, 0.0, 0.0
-    gov_cause = "Capacity Mode"
+    # Back-calculate forces at this "Limit" to show correct ratios
+    v_act = (w_safe * user_span) / 2
+    m_act = (w_safe * user_span**2) / 8
+    
+    ratio_v = w_safe / w_safe_shear
+    ratio_m = w_safe / w_safe_moment
+    ratio_d = w_safe / w_safe_defl
+    
+    # Actual deflection at limit (remove factor to get service d)
+    w_safe_service = w_safe / 1.4 if is_lrfd else w_safe
+    d_act = (5 * (w_safe_service/100) * (L_cm**4)) / (384 * E * Ix)
+
+    gov_ratio = 1.00 # At capacity
     
     if w_safe == w_safe_shear: gov_cause = "Shear Control"
     elif w_safe == w_safe_moment: gov_cause = "Moment Control"
@@ -297,7 +305,7 @@ with tab1:
                 {ratio_v:.2f} <small style="font-size:14px; color:#9ca3af;">(Ratio)</small>
             </div>
             <div style="margin-top:8px; font-size:14px;">
-                <div>Act: <b>{v_act:,.0f}</b> kg</div>
+                <div>Act*: <b>{v_act:,.0f}</b> kg</div>
                 <div>Cap: <b>{V_cap:,.0f}</b> kg</div>
             </div>
         </div>""", unsafe_allow_html=True)
@@ -309,7 +317,7 @@ with tab1:
                 {ratio_m:.2f} <small style="font-size:14px; color:#9ca3af;">(Ratio)</small>
             </div>
             <div style="margin-top:8px; font-size:14px;">
-                <div>Act: <b>{m_act:,.0f}</b> kg-m</div>
+                <div>Act*: <b>{m_act:,.0f}</b> kg-m</div>
                 <div>Cap: <b>{M_cap:,.0f}</b> kg-m</div>
             </div>
         </div>""", unsafe_allow_html=True)
@@ -318,22 +326,23 @@ with tab1:
         st.markdown(f"""<div class="detail-card">
             <h4 style="margin:0;">Deflection ($\Delta$)</h4>
             <div style="font-size:24px; font-weight:700; color:{'#ef4444' if is_check_mode and ratio_d>1 else '#1f2937'}">
-                {d_act/d_allow:.2f} <small style="font-size:14px; color:#9ca3af;">(Ratio)</small>
+                {ratio_d:.2f} <small style="font-size:14px; color:#9ca3af;">(Ratio)</small>
             </div>
             <div style="margin-top:8px; font-size:14px;">
-                <div>Act: <b>{d_act:.2f}</b> cm</div>
+                <div>Act*: <b>{d_act:.2f}</b> cm</div>
                 <div>All: <b>{d_allow:.2f}</b> cm</div>
             </div>
         </div>""", unsafe_allow_html=True)
+    
+    if not is_check_mode:
+        st.caption("*Act values in 'Find Capacity' mode represent the forces at the calculated Max Load.")
 
-    # --- REVAMPED DETAILED CALCULATION ---
+    # --- CALCULATION SHEET ---
     st.subheader("🧮 Calculation Sheet")
     with st.expander("📄 View Detailed Engineering Calculations", expanded=True):
         
-        # Determine labels based on method
         v_label = "\phi V_n" if is_lrfd else "V_n / \Omega"
         m_label = "\phi M_n" if is_lrfd else "M_n / \Omega"
-        load_label = "Factored" if is_lrfd else "Service"
         
         c_calc1, c_calc2 = st.columns(2)
         
@@ -496,7 +505,6 @@ with tab3:
         </div>""", unsafe_allow_html=True)
         
     with c_ltb2:
-        # Simplified LTB Plot Logic
         lb_vals = np.linspace(0.1, max(Lr_cm*1.5, Lb_cm*1.2), 50)
         mn_vals = []
         for l_chk in lb_vals:
