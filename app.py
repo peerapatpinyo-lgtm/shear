@@ -39,11 +39,8 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Sarabun', sans-serif; }
     
-    /* Card Styles */
     .detail-card { background: white; border-radius: 12px; padding: 20px; border: 1px solid #e5e7eb; border-top: 6px solid #2563eb; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; height: 100%; }
     .highlight-card { background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%); padding: 25px; border-radius: 20px; border-left: 8px solid #2563eb; box-shadow: 0 10px 30px rgba(37, 99, 235, 0.08); margin-bottom: 25px; border: 1px solid #e5e7eb; }
-    
-    /* Typography */
     .big-num { color: #1e40af; font-size: 42px; font-weight: 800; font-family: 'Roboto Mono', monospace; }
     .sub-text { color: #6b7280; font-size: 14px; font-weight: 600; text-transform: uppercase; }
     
@@ -54,11 +51,14 @@ st.markdown("""
     .calc-label { color: #475569; font-weight: 600; }
     .calc-val { font-family: 'Roboto Mono', monospace; color: #0f172a; font-weight: 500; }
     .calc-formula { background: #f1f5f9; padding: 8px; border-radius: 4px; font-family: 'Roboto Mono', monospace; font-size: 0.9em; color: #334155; margin: 5px 0; }
+    
+    /* Sidebar Info Box */
+    .sidebar-info { background: #f1f5f9; padding: 10px; border-radius: 6px; font-size: 0.85em; margin-bottom: 10px; border: 1px solid #cbd5e1; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. SIDEBAR INPUTS
+# 3. INPUTS & PRE-CALCULATION
 # ==========================================
 with st.sidebar:
     st.title("🏗️ Beam Insight")
@@ -113,35 +113,63 @@ with st.sidebar:
     Cw = (Iy * h0**2) / 4
     r_ts = math.sqrt(math.sqrt(Iy * Cw) / Sx)
 
-    # --- Geometry & Load ---
+    # --- Geometry ---
     st.divider()
-    st.subheader("📏 Geometry & Loads")
-    
+    st.subheader("📏 Geometry")
     col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        user_span = st.number_input("Span (m)", 0.5, 30.0, 6.0, step=0.5)
-    with col_g2:
-        Lb = st.number_input("Unbraced Lb (m)", 0.0, user_span, user_span, step=0.5)
-    
+    with col_g1: user_span = st.number_input("Span (m)", 0.5, 30.0, 6.0, step=0.5)
+    with col_g2: Lb = st.number_input("Unbraced Lb (m)", 0.0, user_span, user_span, step=0.5)
     defl_denom = int(st.selectbox("Deflection Limit", ["L/300", "L/360", "L/400"], index=1).split("/")[1])
-    
-    # --- Connection Design Input ---
+
+    # -----------------------------------------------
+    # PRE-CALCULATE CAPACITY (For Sidebar Display)
+    # -----------------------------------------------
+    if is_lrfd:
+        phi_v = 1.00
+        V_n_pre = 0.60 * Fy * Aw
+        V_cap_disp = phi_v * V_n_pre
+        v_label = "ϕVn"
+    else:
+        omg_v = 1.50
+        V_n_pre = 0.60 * Fy * Aw
+        V_cap_disp = V_n_pre / omg_v
+        v_label = "Vn/Ω"
+
+    # --- Connection Design Input (UPDATED) ---
     st.divider()
     st.subheader("🔩 Connection Design")
-    conn_shear_pct = st.slider("% of Shear Capacity", 10, 100, 50, step=5, 
-                               help="ออกแบบจุดต่อโดยใช้ % ของกำลังรับแรงเฉือนสูงสุดของหน้าตัด")
+    
+    # 1. Toggle Linkage
+    link_conn = st.checkbox("🔗 Link with Beam Capacity", value=True, help="ถ้าเลือก จะคำนวณแรงจาก % ของหน้าตัดคาน")
+    
+    # 2. Show Info Box
+    st.markdown(f"""
+    <div class="sidebar-info">
+        <div><b>Beam Span:</b> {user_span} m</div>
+        <div><b>Max Shear ({v_label}):</b> {V_cap_disp:,.0f} kg</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Show Loads ONLY if in Check Mode
+    if link_conn:
+        conn_shear_pct = st.slider("% of Shear Capacity", 10, 100, 50, step=5)
+        v_conn_design = V_cap_disp * (conn_shear_pct / 100.0)
+        st.markdown(f"👉 **Design Force:** `{v_conn_design:,.0f} kg`")
+    else:
+        v_conn_design = st.number_input("Design Shear Force (kg)", value=float(int(V_cap_disp*0.5)), step=100.0)
+        conn_shear_pct = (v_conn_design / V_cap_disp) * 100 if V_cap_disp > 0 else 0
+        st.caption(f"(Equivalent to {conn_shear_pct:.1f}% of Capacity)")
+
+    # --- Loads (Check Mode Only) ---
     w_load, p_load = 0.0, 0.0
     if is_check_mode:
         st.divider()
-        st.caption("Service Loads (ยังไม่คูณ Factor)")
+        st.subheader("⬇️ Loads (Service)")
         c_l1, c_l2 = st.columns(2)
-        with c_l1: w_load = st.number_input("Uniform Load (kg/m)", 0.0, 20000.0, 1000.0)
-        with c_l2: p_load = st.number_input("Point Load (kg)", 0.0, 50000.0, 0.0)
+        with c_l1: w_load = st.number_input("Uniform (kg/m)", 0.0, 20000.0, 1000.0)
+        with c_l2: p_load = st.number_input("Point (kg)", 0.0, 50000.0, 0.0)
 
 # ==========================================
-# 4. CALCULATION LOGIC
+# 4. MAIN LOGIC
 # ==========================================
 L_cm = user_span * 100
 Lb_cm = Lb * 100
@@ -171,18 +199,16 @@ else:
 
 # 4.3 Factored/Allowable Capacities
 if is_lrfd:
-    phi_v, phi_b = 1.00, 0.90
-    V_n = 0.60 * Fy * Aw
-    V_cap = phi_v * V_n
+    phi_b = 0.90
+    V_cap = V_cap_disp # Already calculated
     M_cap = (phi_b * Mn) / 100 # kg-m
     
     fact_w = 1.4 * w_load
     fact_p = 1.4 * p_load
     method_str = "LRFD"
 else:
-    omg_v, omg_b = 1.50, 1.67
-    V_n = 0.60 * Fy * Aw
-    V_cap = V_n / omg_v
+    omg_b = 1.67
+    V_cap = V_cap_disp # Already calculated
     M_cap = (Mn / omg_b) / 100 # kg-m
     
     fact_w = w_load
@@ -191,7 +217,6 @@ else:
 
 # 4.4 Result Processing
 d_allow = L_cm / defl_denom
-v_conn_design = V_cap * (conn_shear_pct / 100.0)
 
 if is_check_mode:
     # --- CHECK MODE ---
@@ -212,17 +237,16 @@ if is_check_mode:
     else: gov_cause = "Deflection"
     
 else:
-    # --- FIND CAPACITY MODE (Back Calculation) ---
+    # --- FIND CAPACITY MODE ---
     w_safe_shear = (2 * V_cap) / user_span
     w_safe_moment = (8 * M_cap) / (user_span**2)
     
     w_serv_defl = (384 * E * Ix * d_allow) / (5 * (L_cm**4)) * 100
     w_safe_defl = w_serv_defl * 1.4 if is_lrfd else w_serv_defl
     
-    # หาตัวควบคุม
     w_safe = min(w_safe_shear, w_safe_moment, w_safe_defl)
     
-    # Back-calculate forces at this "Limit" to show correct ratios
+    # Back-calculate forces at this "Limit"
     v_act = (w_safe * user_span) / 2
     m_act = (w_safe * user_span**2) / 8
     
@@ -230,11 +254,10 @@ else:
     ratio_m = w_safe / w_safe_moment
     ratio_d = w_safe / w_safe_defl
     
-    # Actual deflection at limit (remove factor to get service d)
     w_safe_service = w_safe / 1.4 if is_lrfd else w_safe
     d_act = (5 * (w_safe_service/100) * (L_cm**4)) / (384 * E * Ix)
 
-    gov_ratio = 1.00 # At capacity
+    gov_ratio = 1.00 
     
     if w_safe == w_safe_shear: gov_cause = "Shear Control"
     elif w_safe == w_safe_moment: gov_cause = "Moment Control"
@@ -341,8 +364,8 @@ with tab1:
     st.subheader("🧮 Calculation Sheet")
     with st.expander("📄 View Detailed Engineering Calculations", expanded=True):
         
-        v_label = "\phi V_n" if is_lrfd else "V_n / \Omega"
-        m_label = "\phi M_n" if is_lrfd else "M_n / \Omega"
+        v_label_calc = "\phi V_n" if is_lrfd else "V_n / \Omega"
+        m_label_calc = "\phi M_n" if is_lrfd else "M_n / \Omega"
         
         c_calc1, c_calc2 = st.columns(2)
         
@@ -359,7 +382,7 @@ with tab1:
                     <span class="calc-val">{0.6*Fy*Aw:,.0f} kg</span>
                 </div>
                 <div class="calc-row">
-                    <span class="calc-label">Design Capacity ({v_label})</span>
+                    <span class="calc-label">Design Capacity ({v_label_calc})</span>
                     <span class="calc-val" style="color:#166534; font-weight:bold;">{V_cap:,.0f} kg</span>
                 </div>
                 <div class="calc-row">
@@ -414,7 +437,7 @@ with tab1:
                     <span class="calc-val">{Mn/100:,.0f} kg-m</span>
                 </div>
                 <div class="calc-row">
-                    <span class="calc-label">Design Capacity ({m_label})</span>
+                    <span class="calc-label">Design Capacity ({m_label_calc})</span>
                     <span class="calc-val" style="color:#166534; font-weight:bold;">{M_cap:,.0f} kg-m</span>
                 </div>
                 <div class="calc-row">
@@ -437,10 +460,8 @@ with tab1:
         l_cm_g = s * 100
         lb_cm_g = l_cm_g 
         
-        # Shear
         w_v = (2 * V_cap) / s
         
-        # Moment
         if lb_cm_g <= Lp_cm: mn_g = Mp
         elif lb_cm_g <= Lr_cm:
             term_g = (Mp - 0.7*Fy*Sx) * ((lb_cm_g - Lp_cm)/(Lr_cm - Lp_cm))
@@ -453,7 +474,6 @@ with tab1:
         m_cap_g = (phi_b * mn_g)/100 if is_lrfd else (mn_g/omg_b)/100
         w_m = (8 * m_cap_g) / (s**2)
         
-        # Deflection
         d_all_g = l_cm_g / defl_denom
         w_d_serv = (d_all_g * 384 * E * Ix) / (5 * l_cm_g**4) * 100
         w_d = w_d_serv * factor_load 
@@ -476,7 +496,7 @@ with tab1:
 
 with tab2:
     if st.session_state.cal_success:
-        st.info(f"⚡ **Designing for Shear Force:** {v_conn_design:,.0f} kg ({conn_shear_pct}% of Capacity)")
+        st.info(f"⚡ **Designing for Shear Force:** {v_conn_design:,.0f} kg")
         
         c_type = st.selectbox("Connection Type", ["Fin Plate", "End Plate", "Double Angle"])
         section_data = {"name": sec_name, "h": h, "b": b, "tw": tw, "tf": tf}
