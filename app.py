@@ -1,8 +1,5 @@
 # app.py
 import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
 import math
 
 # ==========================================
@@ -19,7 +16,10 @@ st.markdown = _patched_markdown
 try:
     import steel_db              
     import connection_design    
-    import report_generator      
+    import report_generator
+    # Import new modules
+    import tab1_analysis
+    import tab3_ltb
 except ImportError as e:
     st.error(f"⚠️ Modules missing: {e}")
     st.stop()
@@ -29,7 +29,6 @@ except ImportError as e:
 # ==========================================
 st.set_page_config(page_title="Beam Insight Hybrid", layout="wide", page_icon="🏗️")
 
-# Initialize Session State
 if 'design_method' not in st.session_state:
     st.session_state.design_method = "LRFD (Limit State)"
 if 'cal_success' not in st.session_state:
@@ -164,7 +163,6 @@ with st.sidebar:
     ecc_e = st.number_input("Eccentricity 'e' (mm)", value=50, step=5, help="ระยะจากขอบ Support ถึงกึ่งกลางกลุ่มน็อต")
     
     # Calculate Reduction
-    # w = 2*V/L (Assuming Uniform Load dominance for reduction logic)
     w_equiv_load = (2 * v_support_design) / user_span # kg/m
     v_reduction = w_equiv_load * (ecc_e / 1000.0)     # kg
     v_at_bolt = v_support_design - v_reduction
@@ -183,9 +181,6 @@ with st.sidebar:
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <span style="color:#1e3a8a; font-weight:bold;">V @ Bolt Group:</span>
             <span style="background:#dbeafe; color:#1e40af; padding:2px 6px; border-radius:4px; font-weight:bold;">{v_at_bolt:,.0f} kg</span>
-        </div>
-        <div style="font-size:0.8em; color:#94a3b8; margin-top:5px; text-align:right;">
-            (Assumes Uniform Load Distribution)
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -298,7 +293,62 @@ else:
     elif w_safe == w_safe_moment: gov_cause = "Moment Control"
     else: gov_cause = "Deflection Control"
 
-# Save State
+# ==========================================
+# 5. PACK DATA FOR TABS
+# ==========================================
+# Bundle all necessary data into a dictionary to pass to external files
+# This avoids passing 30 arguments to a function
+results_context = {
+    # Inputs
+    'is_check_mode': is_check_mode,
+    'method_str': method_str,
+    'is_lrfd': is_lrfd,
+    'sec_name': sec_name,
+    'user_span': user_span,
+    'Lb': Lb,
+    'Lb_cm': Lb_cm,
+    'Fy': Fy,
+    'E': E,
+    
+    # Loads
+    'w_load': w_load,
+    'p_load': p_load,
+    'fact_w': fact_w,
+    'fact_p': fact_p,
+    
+    # Capacities & Ratios
+    'V_cap': V_cap,
+    'M_cap': M_cap,
+    'v_act': v_act,
+    'm_act': m_act,
+    'ratio_v': ratio_v,
+    'ratio_m': ratio_m,
+    'ratio_d': ratio_d,
+    'gov_ratio': gov_ratio,
+    'gov_cause': gov_cause,
+    'w_safe': w_safe if not is_check_mode else 0,
+    
+    # Deflection
+    'd_act': d_act,
+    'd_allow': d_allow,
+    'defl_denom': defl_denom,
+    
+    # Section Props & LTB Constants (Needed for graphs/calcs)
+    'Aw': Aw,
+    'Ix': Ix,
+    'Sx': Sx,
+    'Zx': Zx,
+    'Mp': Mp,
+    'Cb': Cb,
+    'r_ts': r_ts,
+    'val_A': val_A,
+    'Lp_cm': Lp_cm,
+    'Lr_cm': Lr_cm,
+    'ltb_zone': ltb_zone,
+    'Mn': Mn
+}
+
+# Save simplified state for report generator
 st.session_state.res_dict = {
     'w_safe': w_safe if not is_check_mode else 0, 
     'cause': gov_cause, 
@@ -311,233 +361,21 @@ st.session_state.res_dict = {
 st.session_state.cal_success = True
 
 # ==========================================
-# 5. UI RENDERING
+# 6. UI RENDERING
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Analysis & Graphs", "🔩 Connection Detail", "🛡️ LTB Insight", "📝 Report"])
 
-# --- TAB 1: ANALYSIS & GRAPHS ---
+# --- TAB 1: ANALYSIS & GRAPHS (External) ---
 with tab1:
-    st.subheader(f"Results for: {sec_name}")
+    tab1_analysis.render(results_context)
 
-    # --- TOP CARD ---
-    if is_check_mode:
-        status_color = "#10b981" if gov_ratio <= 1.0 else "#ef4444"
-        status_icon = "✅ PASS" if gov_ratio <= 1.0 else "❌ FAIL"
-        st.markdown(f"""
-        <div class="highlight-card" style="border-left-color: {status_color};">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <span class="sub-text">Check Result ({method_str})</span><br>
-                    <span class="big-num" style="color:{status_color}">{gov_ratio:.2f}</span> 
-                    <span style="font-size:20px; font-weight:bold; color:{status_color}">{status_icon}</span>
-                </div>
-                <div style="text-align: right;">
-                    <small><b>Load Case:</b> {w_load:,.0f} kg/m, {p_load:,.0f} kg</small><br>
-                    <small><b>Control:</b> {gov_cause}</small>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        safe_val_show = w_safe / 1.4 if is_lrfd else w_safe
-        st.markdown(f"""
-        <div class="highlight-card">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <span class="sub-text">Max Safe Service Load ({method_str})</span><br>
-                    <span class="big-num">{safe_val_show:,.0f}</span> <span style="font-size:24px; color:#6b7280;">kg/m</span>
-                </div>
-                <div style="text-align: right;">
-                    <span class="sub-text" style="color:#2563eb;">Limit: {gov_cause}</span><br>
-                    <small>L={user_span}m | Lb={Lb}m</small>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # --- METRICS ROW ---
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown(f"""<div class="detail-card">
-            <h4 style="margin:0;">Shear (V)</h4>
-            <div style="font-size:24px; font-weight:700; color:{'#ef4444' if is_check_mode and ratio_v>1 else '#1f2937'}">
-                {ratio_v:.2f} <small style="font-size:14px; color:#9ca3af;">(Ratio)</small>
-            </div>
-            <div style="margin-top:8px; font-size:14px;">
-                <div>Act*: <b>{v_act:,.0f}</b> kg</div>
-                <div>Cap: <b>{V_cap:,.0f}</b> kg</div>
-            </div>
-        </div>""", unsafe_allow_html=True)
-    
-    with c2:
-        st.markdown(f"""<div class="detail-card">
-            <h4 style="margin:0;">Moment (M)</h4>
-            <div style="font-size:24px; font-weight:700; color:{'#ef4444' if is_check_mode and ratio_m>1 else '#1f2937'}">
-                {ratio_m:.2f} <small style="font-size:14px; color:#9ca3af;">(Ratio)</small>
-            </div>
-            <div style="margin-top:8px; font-size:14px;">
-                <div>Act*: <b>{m_act:,.0f}</b> kg-m</div>
-                <div>Cap: <b>{M_cap:,.0f}</b> kg-m</div>
-            </div>
-        </div>""", unsafe_allow_html=True)
-
-    with c3:
-        st.markdown(f"""<div class="detail-card">
-            <h4 style="margin:0;">Deflection ($\Delta$)</h4>
-            <div style="font-size:24px; font-weight:700; color:{'#ef4444' if is_check_mode and ratio_d>1 else '#1f2937'}">
-                {ratio_d:.2f} <small style="font-size:14px; color:#9ca3af;">(Ratio)</small>
-            </div>
-            <div style="margin-top:8px; font-size:14px;">
-                <div>Act*: <b>{d_act:.2f}</b> cm</div>
-                <div>All: <b>{d_allow:.2f}</b> cm</div>
-            </div>
-        </div>""", unsafe_allow_html=True)
-    
-    if not is_check_mode:
-        st.caption("*Act values in 'Find Capacity' mode represent the forces at the calculated Max Load.")
-
-    # --- CALCULATION SHEET ---
-    st.subheader("🧮 Calculation Sheet")
-    with st.expander("📄 View Detailed Engineering Calculations", expanded=True):
-        
-        v_label_calc = "\phi V_n" if is_lrfd else "V_n / \Omega"
-        m_label_calc = "\phi M_n" if is_lrfd else "M_n / \Omega"
-        
-        c_calc1, c_calc2 = st.columns(2)
-        
-        with c_calc1:
-            st.markdown(f"""
-            <div class="calc-sheet">
-                <div class="calc-header">1. Shear Capacity ({method_str})</div>
-                <div class="calc-row">
-                    <span class="calc-label">Area Web ($A_w = h \cdot t_w$)</span>
-                    <span class="calc-val">{Aw:.2f} cm²</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">Nominal Shear ($V_n = 0.6 F_y A_w$)</span>
-                    <span class="calc-val">{0.6*Fy*Aw:,.0f} kg</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">Design Capacity ({v_label_calc})</span>
-                    <span class="calc-val" style="color:#166534; font-weight:bold;">{V_cap:,.0f} kg</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">Actual Shear ($V_u$)</span>
-                    <span class="calc-val" style="color:#1e40af;">{v_act:,.0f} kg</span>
-                </div>
-                <div class="calc-formula">
-                    Ratio = {v_act:,.0f} / {V_cap:,.0f} = <b>{ratio_v:.3f}</b>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            st.markdown(f"""
-            <div class="calc-sheet">
-                <div class="calc-header">3. Serviceability (Deflection)</div>
-                <div class="calc-row">
-                    <span class="calc-label">Moment of Inertia ($I_x$)</span>
-                    <span class="calc-val">{Ix:,.0f} cm⁴</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">Limit (L/{defl_denom})</span>
-                    <span class="calc-val" style="color:#166534;">{d_allow:.2f} cm</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">Actual Deflection ($\Delta$)</span>
-                    <span class="calc-val" style="color:#1e40af;">{d_act:.2f} cm</span>
-                </div>
-                <div class="calc-formula">
-                    Ratio = {d_act:.2f} / {d_allow:.2f} = <b>{ratio_d:.3f}</b>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with c_calc2:
-            st.markdown(f"""
-            <div class="calc-sheet">
-                <div class="calc-header">2. Flexural Capacity ({method_str})</div>
-                <div class="calc-row">
-                    <span class="calc-label">Unbraced Length ($L_b$)</span>
-                    <span class="calc-val">{Lb:.2f} m</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">LTB Limits ($L_p$, $L_r$)</span>
-                    <span class="calc-val">{Lp_cm/100:.2f} m, {Lr_cm/100:.2f} m</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">State</span>
-                    <span class="calc-val" style="color:#b45309;">{ltb_zone}</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">Nominal Moment ($M_n$)</span>
-                    <span class="calc-val">{Mn/100:,.0f} kg-m</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">Design Capacity ({m_label_calc})</span>
-                    <span class="calc-val" style="color:#166534; font-weight:bold;">{M_cap:,.0f} kg-m</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">Actual Moment ($M_u$)</span>
-                    <span class="calc-val" style="color:#1e40af;">{m_act:,.0f} kg-m</span>
-                </div>
-                <div class="calc-formula">
-                    Ratio = {m_act:,.0f} / {M_cap:,.0f} = <b>{ratio_m:.3f}</b>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    # --- GRAPH ---
-    st.markdown("### 📉 Span vs. Load Capacity Curve")
-    spans = np.linspace(1.0, 12.0, 50)
-    w_cap_moment, w_cap_shear, w_cap_defl = [], [], []
-    factor_load = 1.4 if is_lrfd else 1.0 
-
-    for s in spans:
-        l_cm_g = s * 100
-        lb_cm_g = l_cm_g 
-        
-        w_v = (2 * V_cap) / s
-        
-        if lb_cm_g <= Lp_cm: mn_g = Mp
-        elif lb_cm_g <= Lr_cm:
-            term_g = (Mp - 0.7*Fy*Sx) * ((lb_cm_g - Lp_cm)/(Lr_cm - Lp_cm))
-            mn_g = min(Mp, Cb*(Mp - term_g))
-        else:
-            slend_g = lb_cm_g / r_ts
-            fcr_g = (Cb * math.pi**2 * E) / (slend_g**2) * math.sqrt(1 + 0.078 * val_A * slend_g**2)
-            mn_g = min(fcr_g * Sx, Mp)
-            
-        m_cap_g = (phi_b * mn_g)/100 if is_lrfd else (mn_g/omg_b)/100
-        w_m = (8 * m_cap_g) / (s**2)
-        
-        d_all_g = l_cm_g / defl_denom
-        w_d_serv = (d_all_g * 384 * E * Ix) / (5 * l_cm_g**4) * 100
-        w_d = w_d_serv * factor_load 
-        
-        w_cap_moment.append(w_m / factor_load)
-        w_cap_shear.append(w_v / factor_load)
-        w_cap_defl.append(w_d / factor_load)
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=spans, y=w_cap_moment, name='Moment Limit', line=dict(color='#3b82f6', width=3)))
-    fig.add_trace(go.Scatter(x=spans, y=w_cap_defl, name='Deflection Limit', line=dict(color='#10b981', dash='dash')))
-    fig.add_trace(go.Scatter(x=spans, y=w_cap_shear, name='Shear Limit', line=dict(color='#f59e0b', dash='dot')))
-    
-    if is_check_mode:
-        equiv_w_act = (fact_w + (2*fact_p/user_span)) / factor_load 
-        fig.add_trace(go.Scatter(x=[user_span], y=[equiv_w_act], mode='markers', name='Your Load', marker=dict(color='red', size=12, symbol='x')))
-    
-    fig.update_layout(title="Safe Service Load vs. Span", xaxis_title="Span (m)", yaxis_title="Load (kg/m)", height=450)
-    st.plotly_chart(fig, use_container_width=True)
-
-# --- TAB 2: CONNECTION DETAIL ---
+# --- TAB 2: CONNECTION DETAIL (Internal Logic/External Module) ---
 with tab2:
     if st.session_state.cal_success:
         st.info(f"⚡ **Designing for Shear Force:** {v_conn_final:,.0f} kg")
         
-        # User Selection for Connection Type
         c_type = st.selectbox("Connection Type", ["Fin Plate", "End Plate", "Double Angle"], key='conn_type_select')
-        st.session_state.conn_type = c_type # Update State
+        st.session_state.conn_type = c_type 
         
         section_data = {"name": sec_name, "h": h, "b": b, "tw": tw, "tf": tf}
         
@@ -554,47 +392,11 @@ with tab2:
     else:
         st.warning("Please complete analysis in Tab 1 first.")
 
-# --- TAB 3: LTB INSIGHT ---
+# --- TAB 3: LTB INSIGHT (External) ---
 with tab3:
-    st.subheader("🛡️ LTB Insight")
-    c_ltb1, c_ltb2 = st.columns([1, 2])
-    with c_ltb1:
-        st.markdown(f"""
-        <div style="background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
-            <b>LTB State:</b> {ltb_zone}<br>
-            <b>Lb:</b> {Lb:.2f} m<br>
-            <b>Lp:</b> {Lp_cm/100:.2f} m <br>
-            <b>Lr:</b> {Lr_cm/100:.2f} m
-        </div>""", unsafe_allow_html=True)
-        
-    with c_ltb2:
-        lb_vals = np.linspace(0.1, max(Lr_cm*1.5, Lb_cm*1.2), 50)
-        mn_vals = []
-        for l_chk in lb_vals:
-            if l_chk <= Lp_cm: mn_chk = Mp
-            elif l_chk <= Lr_cm:
-                term = (Mp - 0.7 * Fy * Sx) * ((l_chk - Lp_cm) / (Lr_cm - Lp_cm))
-                mn_chk = min(Cb * (Mp - term), Mp)
-            else:
-                slend = (l_chk / r_ts)
-                fcr_chk = (Cb * math.pi**2 * E) / (slend**2) * math.sqrt(1 + 0.078 * val_A * slend**2)
-                mn_chk = min(fcr_chk * Sx, Mp)
-            mn_vals.append(mn_chk/100) 
+    tab3_ltb.render(results_context)
 
-        fig_ltb = go.Figure()
-        fig_ltb.add_trace(go.Scatter(x=lb_vals/100, y=mn_vals, name='Mn Capacity', line=dict(color='#2563eb')))
-        curr_Mn = (M_cap * 100 / phi_b) if is_lrfd else (M_cap * 100 * omg_b)
-        fig_ltb.add_trace(go.Scatter(x=[Lb], y=[curr_Mn/100], mode='markers', marker=dict(size=10, color='red'), name='Current Design'))
-        
-        # Add Zone Annotations
-        y_max = max(mn_vals)
-        fig_ltb.add_vline(x=Lp_cm/100, line_dash="dash", line_color="green", annotation_text="Lp")
-        fig_ltb.add_vline(x=Lr_cm/100, line_dash="dash", line_color="orange", annotation_text="Lr")
-        
-        fig_ltb.update_layout(height=350, margin=dict(t=20,b=20,l=20,r=20), xaxis_title="Unbraced Length (m)", yaxis_title="Moment Capacity (kg-m)")
-        st.plotly_chart(fig_ltb, use_container_width=True)
-
-# --- TAB 4: REPORT ---
+# --- TAB 4: REPORT (Existing External) ---
 with tab4:
     if st.session_state.cal_success:
         report_generator.render_report_tab(
