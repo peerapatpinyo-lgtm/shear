@@ -1,4 +1,3 @@
-# calculation_report.py
 import math
 
 def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, material_grade="A36", bolt_grade="A325"):
@@ -174,21 +173,22 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
         # b_prime approx distance from bolt center to face of web/weld
         # Assume b_prime = e1 - weld_size - (bolt_dia/2) approx? Or just e1/2
         b_prime = 35 # Assumed generic lever arm for prying
-        try:
-            p = s_v / n_rows # Tributary length per bolt
-            t_req_prying = math.sqrt((4.44 * T_res_bolt * 1000 * b_prime) / (p * Fy_pl))
-            
-            lines.append(f"Approx. required thickness to ignore prying ($t_{{req}}$):")
-            lines.append(f"$$ t_{{req}} = \\sqrt{{\\frac{{4.44 T_{{ub}} b'}}{{p F_y}}}} = {t_req_prying:.2f} \\text{{ mm}} $$")
-            
-            if t_pl < t_req_prying:
-                lines.append(f"⚠️ **Warning:** Plate thickness ({t_pl} mm) < {t_req_prying:.2f} mm. **Prying forces exist!**")
-                lines.append("Bolt tension capacity should be reduced or plate thickened.")
-                # Reduce Cap T artificially for warning
-                cap_t = cap_t * 0.7 
-                add_html_bar("Bolt Tension (w/ Prying Penalty)", T_res_bolt, cap_t)
-            else:
-                 lines.append("✅ **OK:** Plate is thick enough. Prying action is negligible.")
+        
+        # [FIXED HERE: REMOVED 'try' block that caused SyntaxError]
+        p = s_v / n_rows if n_rows > 0 else 1 # Tributary length per bolt (Safety check)
+        t_req_prying = math.sqrt((4.44 * T_res_bolt * 1000 * b_prime) / (p * Fy_pl)) if p*Fy_pl > 0 else 0
+        
+        lines.append(f"Approx. required thickness to ignore prying ($t_{{req}}$):")
+        lines.append(f"$$ t_{{req}} = \\sqrt{{\\frac{{4.44 T_{{ub}} b'}}{{p F_y}}}} = {t_req_prying:.2f} \\text{{ mm}} $$")
+        
+        if t_pl < t_req_prying:
+            lines.append(f"⚠️ **Warning:** Plate thickness ({t_pl} mm) < {t_req_prying:.2f} mm. **Prying forces exist!**")
+            lines.append("Bolt tension capacity should be reduced or plate thickened.")
+            # Reduce Cap T artificially for warning
+            cap_t = cap_t * 0.7 
+            add_html_bar("Bolt Tension (w/ Prying Penalty)", T_res_bolt, cap_t)
+        else:
+                lines.append("✅ **OK:** Plate is thick enough. Prying action is negligible.")
 
     else:
         # Pure Shear
@@ -208,18 +208,7 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
         lines.append("**[Coped Beam Analysis]**")
         
         # 2. Block Shear on Beam Web
-        # Area definitions specific to Beam Web
-        # Agv: Shear area along the bolts
-        # Anv: Net shear area
-        # Ant: Net tension area (horizontal from last bolt to end of beam)
-        
-        # Geometry for Beam Web Block Shear
-        # Top edge distance on beam = dc + (something). 
-        # Actually, for coped beam, the failure path is usually block shear L-shape.
-        
-        # Let's assume standard Block Shear Path on the Web
-        # Top of web is now lower.
-        ev_beam = lv # Assume same vertical edge dist as plate for simplicity or user input
+        ev_beam = lv # Assume same vertical edge dist as plate for simplicity
         eh_beam = 40 # Standard end distance on beam
         
         Agv_bm = (ev_beam + (n_rows-1)*s_v) * t_web
@@ -235,8 +224,6 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
         add_html_bar("Beam Web Block Shear", V_load, cap_blk_bm)
         
         # 3. Shear Yielding of Coped Area
-        # Reduced web depth = Total Depth - dc (Approx calculation)
-        # Using a simplified check for Shear on Net Section of Web
         h_remain = (n_rows * s_v + 2*lv) # Approximate remaining web height engaging
         Rn_yld_web = 0.6 * Fy_beam * (h_remain * t_web) / 1000.0
         cap_yld_web = Rn_yld_web * f_y
@@ -277,6 +264,6 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
     w_sz = plate['weld_size']
     L_weld = h_pl * 2
     cap_weld = (0.6 * 480 * 0.707 * w_sz * L_weld / 1000.0) * f_w
-    add_html_bar("Weld Strength", math.sqrt(V_load**2 + T_load**2), cap_weld) # Resultant load for weld
+    add_html_bar("Weld Strength", math.sqrt(V_load**2 + T_load**2), cap_weld)
 
     return "\n".join(lines)
