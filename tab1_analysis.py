@@ -10,6 +10,7 @@ def render(data):
     - Detailed Calculation for BOTH 'Check Mode' and 'Find Capacity Mode'
     - Smart Dashboard
     - Synchronized Graphs
+    - Engineering Notes & Reaction Force Summary (New!)
     """
     # ==========================================
     # 0. UNPACK DATA
@@ -309,7 +310,8 @@ def render(data):
     # ==========================================
     st.write("---")
     st.subheader("📈 Force & Deflection Diagrams")
-    st.caption(f"Graph Plot Load: {w_plot_service:,.0f} kg/m (Service)")
+    if not is_check_mode:
+        st.caption(f"💡 กราฟแสดงพฤติกรรมภายใต้ **Safe Load: {w_plot_service:,.0f} kg/m**")
 
     # Data Gen
     x_plot = np.linspace(0, user_span, 100)
@@ -404,3 +406,25 @@ def render(data):
 
     fig.update_layout(height=400, xaxis_title="Span (m)", yaxis_title="Safe Service Load (kg/m)")
     st.plotly_chart(fig, use_container_width=True)
+
+    # ==========================================
+    # PART 5: ENGINEERING SUMMARY & NOTES (NEW!)
+    # ==========================================
+    st.write("---")
+    st.subheader("🏗️ สรุปข้อมูลสำหรับออกแบบจุดต่อ (Connection Data)")
+    
+    # Calculate Reaction
+    # Reaction = Max Shear at Support
+    R_design = (fact_w_plot * user_span / 2) + (fact_p_plot / 2)
+    
+    ec1, ec2 = st.columns([1, 2])
+    with ec1:
+        st.info(f"**Max Reaction ($R_u$):**\n\n# {R_design:,.0f} kg")
+    with ec2:
+        st.markdown(f"""
+        **Engineering Notes:**
+        * **Reaction Force:** ใช้ค่า {R_design:,.0f} kg ในการออกแบบจุดต่อ (Bolt/Weld) หรือถ่ายแรงลงเสา
+        * **Self-Weight:** โปรดตรวจสอบว่าน้ำหนักบรรทุก ($w$) ได้รวมน้ำหนักตัวเองของคาน (Beam Self-weight) แล้วหรือไม่
+        * **Compactness:** รายการคำนวณนี้สมมติหน้าตัดเป็น **Compact Section** (ไม่เกิด Local Buckling)
+        * **Deflection:** ตรวจสอบที่สภาวะ Total Service Load (Limit $L/{defl_denom}$)
+        """)
