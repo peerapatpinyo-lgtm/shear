@@ -6,22 +6,24 @@ import math
 def render(data):
     """
     Render Tab 1: Analysis & Graphs
-    Smart Logic: Switches Calculation Sheet style based on 'Check Mode' vs 'Find Capacity'
+    Features:
+    - Smart Dashboard (Check vs Find Capacity)
+    - Detailed Calculation (Forward vs Reverse)
+    - Interactive Graphs (SFD, BMD, Deflection) that sync with the calculated load
+    - Span vs Capacity Curve
     """
     # ==========================================
     # 0. UNPACK DATA
     # ==========================================
-    is_check_mode = data['is_check_mode'] # True = Check, False = Find Capacity
+    is_check_mode = data['is_check_mode']
     gov_ratio = data['gov_ratio']
     gov_cause = data['gov_cause']
     method_str = data['method_str']
     is_lrfd = data['is_lrfd']
     
     # Loads
-    w_load = data['w_load'] # Input Load
-    p_load = data['p_load']
-    fact_w = data['fact_w']
-    fact_p = data['fact_p']
+    w_input = data['w_load']
+    p_input = data['p_load']
     
     # Geometry & Material
     user_span = data['user_span']
@@ -34,18 +36,10 @@ def render(data):
     Sx = data['Sx']
     Zx = data.get('Zx', Sx)
     
-    # Results
-    v_act = data['v_act']
+    # Capacities
     V_cap = data['V_cap']
-    m_act = data['m_act']
     M_cap = data['M_cap']
-    d_act = data['d_act']
     d_allow = data['d_allow']
-    
-    # Ratios
-    ratio_v = data['ratio_v']
-    ratio_m = data['ratio_m']
-    ratio_d = data['ratio_d']
     
     # LTB Parameters
     Mn = data['Mn']
@@ -57,203 +51,250 @@ def render(data):
     
     # Constants
     factor_txt = "1.4" if is_lrfd else "1.0"
-    load_comb_name = "1.4(DL+LL)" if is_lrfd else "DL+LL"
-    defl_denom = data['defl_denom']
     factor_val = 1.4 if is_lrfd else 1.0
+    defl_denom = data['defl_denom']
+    load_comb_name = "1.4(DL+LL)" if is_lrfd else "DL+LL"
+
+    # ==========================================
+    # LOGIC PREPARATION FOR DISPLAY
+    # ==========================================
+    # ถ้าเป็นโหมด "หาค่ารับน้ำหนัก" (Find Capacity) เราต้องจำลอง Load ขึ้นมาเพื่อพล็อตกราฟ
+    if not is_check_mode:
+        # ดึงค่า Safe Load ที่คำนวณมาได้ (Service Load)
+        w_safe_service = data['w_safe'] / factor_val
+        
+        # สมมติว่า P = 0 ในโหมดหา Uniform Load Capacity เพื่อให้กราฟ Clean
+        p_plot_service = 0 
+        w_plot_service = w_safe_service
+        
+        # Factored Load สำหรับกราฟ SFD/BMD
+        fact_w_plot = w_plot_service * factor_val
+        fact_p_plot = 0
+        
+        # Recalculate Ratios based on Safe Load (เพื่อให้เห็นว่า Ratio = 1.00 ที่จุดวิกฤต)
+        # 1. Shear Ratio
+        v_act_sim = (fact_w_plot * user_span) / 2
+        ratio_v_show = v_act_sim / V_cap
+        
+        # 2. Moment Ratio
+        m_act_sim = (fact_w_plot * user_span**2) / 8
+        ratio_m_show = m_act_sim / M_cap
+        
+        # 3. Deflection Ratio
+        # Delta = 5wL^4 / 384EI
+        w_kg_cm = w_plot_service / 100
+        l_cm = user_span * 100
+        d_act_sim = (5 * w_kg_cm * l_cm**4) / (384 * E * Ix)
+        ratio_d_show = d_act_sim / d_allow
+        
+        # Variables for Display
+        header_title = f"Max Safe Load: {w_safe_service:,.0f} kg/m"
+        header_subtitle = f"Limited by: {gov_cause} (Ratio reaches 1.00)"
+        header_color = "#0284c7" # Blue
+        header_bg = "#f0f9ff"
+        
+    else:
+        # โหมด Check: ใช้ค่าจริงจากการคำนวณ
+        w_plot_service = w_input
+        p_plot_service = p_input
+        fact_w_plot = data['fact_w']
+        fact_p_plot = data['fact_p']
+        
+        ratio_v_show = data['ratio_v']
+        ratio_m_show = data['ratio_m']
+        ratio_d_show = data['ratio_d']
+        
+        v_act_sim = data['v_act']
+        m_act_sim = data['m_act']
+        d_act_sim = data['d_act']
+        
+        pass_status = gov_ratio <= 1.0
+        header_title = f"Check Result: {'PASS ✅' if pass_status else 'FAIL ❌'}"
+        header_subtitle = f"Max Ratio: {gov_ratio:.2f} (Control: {gov_cause})"
+        header_color = "#10b981" if pass_status else "#ef4444"
+        header_bg = "#ecfdf5" if pass_status else "#fef2f2"
 
     st.subheader(f"ผลการวิเคราะห์หน้าตัด: {sec_name}")
 
     # ==========================================
-    # PART 1: DASHBOARD (คงเดิม)
+    # PART 1: DASHBOARD
     # ==========================================
-    if is_check_mode:
-        # ... (Code Check Mode Dashboard แบบเดิม) ...
-        status_color = "#10b981" if gov_ratio <= 1.0 else "#ef4444"
-        status_icon = "✅ ผ่าน (PASS)" if gov_ratio <= 1.0 else "❌ ไม่ผ่าน (FAIL)"
-        bg_color = "#ecfdf5" if gov_ratio <= 1.0 else "#fef2f2"
-        st.markdown(f"""
-        <div style="background:{bg_color}; border-left:5px solid {status_color}; padding:15px; border-radius:8px; margin-bottom:20px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <h3 style="margin:0; color:{status_color};">{status_icon}</h3>
-                    <div style="font-size:1.1em; color:#374151; margin-top:5px;">Ratio Max = <b>{gov_ratio:.2f}</b> ({gov_cause})</div>
-                </div>
-                <div style="text-align:right; font-size:0.9em; color:#6b7280;">Input Load: {w_load:,.0f} kg/m</div>
+    st.markdown(f"""
+    <div style="background:{header_bg}; border-left:5px solid {header_color}; padding:15px; border-radius:8px; margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <h3 style="margin:0; color:{header_color};">{header_title}</h3>
+                <div style="font-size:1.0em; color:#374151; margin-top:5px;">{header_subtitle}</div>
+            </div>
+            <div style="text-align:right; font-size:0.9em; color:#6b7280;">
+                <b>Design Method:</b> {method_str}<br>
+                Span: {user_span} m | Lb: {Lb} m
             </div>
         </div>
-        """, unsafe_allow_html=True)
-    else:
-        # ... (Code Find Capacity Dashboard แบบเดิม) ...
-        safe_load_show = data['w_safe'] / factor_val
-        st.markdown(f"""
-        <div style="background:#f0f9ff; border-left:5px solid #0284c7; padding:15px; border-radius:8px; margin-bottom:20px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div>
-                    <h3 style="margin:0; color:#0284c7;">Max Safe Load: {safe_load_show:,.0f} kg/m</h3>
-                    <div style="font-size:1.0em; color:#374151;">(Service Load) Limited by: <b>{gov_cause}</b></div>
-                </div>
-                <div style="text-align:right; font-size:0.9em; color:#6b7280;">Span = {user_span} m</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Metrics Row
+    # Metrics (แสดงค่า Actual vs Capacity)
     c1, c2, c3 = st.columns(3)
-    def get_metric_color(ratio):
-        if not is_check_mode: return '#1f2937' # Black in Find Mode
-        return '#ef4444' if ratio > 1 else '#1f2937'
+    
+    def metric_card(title, act, cap, ratio, unit):
+        # Color logic: Red if ratio > 1, Blue if ratio ~ 1 (Governing in find mode), Gray otherwise
+        if ratio > 1.001: color = "#ef4444" # Fail
+        elif 0.99 <= ratio <= 1.001: color = "#2563eb" # Governing Limit
+        else: color = "#374151" # OK
+        
+        st.markdown(f"""<div style="text-align:center; padding:10px; border:1px solid #e5e7eb; border-radius:8px; background:white;">
+            <div style="color:#6b7280; font-size:0.85em; font-weight:bold; text-transform:uppercase;">{title}</div>
+            <div style="font-size:1.8em; font-weight:800; color:{color}">{ratio:.2f}</div>
+            <div style="font-size:0.8em; color:#4b5563;">{act:,.0f} / {cap:,.0f} {unit}</div>
+        </div>""", unsafe_allow_html=True)
 
-    with c1:
-        st.metric("Shear Capacity", f"{V_cap:,.0f} kg", delta_color="off")
-    with c2:
-        st.metric("Moment Capacity", f"{M_cap:,.0f} kg-m", delta_color="off")
-    with c3:
-        st.metric("Allowable Deflection", f"{d_allow:.2f} cm", delta_color="off")
+    with c1: metric_card("Shear (V)", v_act_sim, V_cap, ratio_v_show, "kg")
+    with c2: metric_card("Moment (M)", m_act_sim, M_cap, ratio_m_show, "kg-m")
+    with c3: metric_card("Deflection", d_act_sim, d_allow, ratio_d_show, "cm")
 
     # ==========================================
-    # PART 2: DETAILED CALCULATION (แก้ใหม่ แยก 2 ทาง)
+    # PART 2: CALCULATION SHEET
     # ==========================================
     st.write("---")
-    st.subheader("📝 รายการคำนวณละเอียด (Detailed Calculation)")
+    st.subheader("📝 รายการคำนวณ (Calculation Sheet)")
     
-    with st.expander("แสดงวิธีทำอย่างละเอียด (Click to Expand)", expanded=True):
+    with st.expander("แสดงรายละเอียดการคำนวณ (Click to Expand)", expanded=True):
         st.markdown("""<style>.calc-head { font-weight: bold; font-size: 1.1em; color: #1e40af; margin-bottom: 10px; display:block; } .calc-step { border-bottom: 1px dashed #cbd5e1; padding-bottom: 15px; margin-bottom: 20px; }</style>""", unsafe_allow_html=True)
 
-        # 1. Properties (เหมือนกันทั้ง 2 โหมด)
-        st.markdown('<span class="calc-head">1. ข้อมูลหน้าตัด (Section Properties)</span>', unsafe_allow_html=True)
+        # 1. Properties
+        st.markdown('<span class="calc-head">1. ข้อมูลหน้าตัด (Properties)</span>', unsafe_allow_html=True)
         col_p1, col_p2, col_p3 = st.columns(3)
         with col_p1: st.latex(rf"S_x = {Sx} \; cm^3")
         with col_p2: st.latex(rf"Z_x = {Zx:.1f} \; cm^3")
         with col_p3: st.latex(rf"I_x = {Ix:,.0f} \; cm^4")
         st.markdown('<div class="calc-step"></div>', unsafe_allow_html=True)
 
-        # ---------------------------------------------------------
-        # CASE A: CHECK MODE (วิธีทำแบบเดินหน้า: Load -> Ratio)
-        # ---------------------------------------------------------
         if is_check_mode:
+            # --- CHECK MODE DISPLAY ---
+            st.info("Mode: Check Design (ตรวจสอบหน้าตัด)")
             # 2. Load
-            st.markdown('<span class="calc-head">2. วิเคราะห์น้ำหนักบรรทุก (Load Analysis)</span>', unsafe_allow_html=True)
-            st.latex(rf"w_u = {factor_txt} \times {w_load:,.0f} = \mathbf{{{fact_w:,.0f}}} \; kg/m")
-            st.latex(rf"P_u = {factor_txt} \times {p_load:,.0f} = \mathbf{{{fact_p:,.0f}}} \; kg")
+            st.markdown('<span class="calc-head">2. Load Analysis</span>', unsafe_allow_html=True)
+            st.latex(rf"w_u = {factor_txt} \times {w_input:,.0f} = {fact_w_plot:,.0f} \; kg/m")
             st.markdown('<div class="calc-step"></div>', unsafe_allow_html=True)
             
             # 3. Moment
-            st.markdown('<span class="calc-head">3. ตรวจสอบโมเมนต์ (Moment Check)</span>', unsafe_allow_html=True)
-            st.write("Demand ($M_u$):")
-            st.latex(rf"M_u = \frac{{w_u L^2}}{{8}} + \frac{{P_u L}}{{4}} = \mathbf{{{m_act:,.0f}}} \; kg \cdot m")
-            
-            st.write("Capacity ($M_{n}$):")
-            st.caption(f"LTB Zone: {ltb_zone} (Lb={Lb} m)")
-            if is_lrfd: st.latex(rf"\phi M_n = \mathbf{{{M_cap:,.0f}}} \; kg \cdot m")
-            else: st.latex(rf"M_n / \Omega = \mathbf{{{M_cap:,.0f}}} \; kg \cdot m")
-            
-            st.write(f"Ratio = {ratio_m:.3f} ({'OK' if ratio_m<=1 else 'FAIL'})")
-            st.markdown('<div class="calc-step"></div>', unsafe_allow_html=True)
-            
-            # 4. Shear & Deflection (ย่อ)
-            st.markdown('<span class="calc-head">4. ตรวจสอบแรงเฉือนและระยะแอ่น</span>', unsafe_allow_html=True)
-            st.latex(rf"V_u = {v_act:,.0f} \; kg \quad \text{{vs}} \quad Capacity = {V_cap:,.0f} \; kg \quad \rightarrow \text{{Ratio}} = {ratio_v:.3f}")
-            st.latex(rf"\Delta = {d_act:.2f} \; cm \quad \text{{vs}} \quad \Delta_{{allow}} = {d_allow:.2f} \; cm \quad \rightarrow \text{{Ratio}} = {ratio_d:.3f}")
-
-        # ---------------------------------------------------------
-        # CASE B: FIND CAPACITY MODE (วิธีทำแบบย้อนกลับ: Capacity -> w)
-        # ---------------------------------------------------------
+            st.markdown('<span class="calc-head">3. Moment Check</span>', unsafe_allow_html=True)
+            st.latex(rf"M_u = {m_act_sim:,.0f} \; kg \cdot m")
+            if is_lrfd: st.latex(rf"\phi M_n = {M_cap:,.0f} \; kg \cdot m")
+            else: st.latex(rf"M_n / \Omega = {M_cap:,.0f} \; kg \cdot m")
+            st.write(f"Ratio = {ratio_m_show:.3f}")
         else:
-            st.info("💡 โหมดหาค่าน้ำหนัก: คำนวณย้อนกลับจากกำลังรับน้ำหนัก (Capacity) ไปหา Distributed Load ($w$)")
-            
-            # 2. Moment Capacity Base
-            st.markdown('<span class="calc-head">2. หากำลังรับโมเมนต์ดัด ($M_{capacity}$ & $M_n$)</span>', unsafe_allow_html=True)
-            st.write(f"พิจารณาการค้ำยันด้านข้าง $L_b = {Lb}$ m $\rightarrow$ **{ltb_zone}**")
-            
-            # Show Mn Formula briefly based on zone
-            if "Zone 1" in ltb_zone: st.latex(r"M_n = M_p = F_y Z_x")
-            elif "Zone 2" in ltb_zone: st.latex(r"M_n = C_b [M_p - (M_p - 0.7 F_y S_x)...]")
-            else: st.latex(r"M_n = F_{cr} S_x")
-            
-            mn_kgm = Mn/100
-            st.latex(rf"M_n = {mn_kgm:,.0f} \; kg \cdot m")
-            
-            if is_lrfd:
-                st.latex(rf"\phi M_n = 0.90 \times {mn_kgm:,.0f} = \mathbf{{{M_cap:,.0f}}} \; kg \cdot m")
-            else:
-                st.latex(rf"M_n / \Omega = {mn_kgm:,.0f} / 1.67 = \mathbf{{{M_cap:,.0f}}} \; kg \cdot m")
+            # --- FIND CAPACITY MODE DISPLAY ---
+            st.info("Mode: Find Capacity (หาค่ารับน้ำหนัก)")
+            # 2. Capacity
+            st.markdown('<span class="calc-head">2. คำนวณกำลังรับน้ำหนัก (Capacity)</span>', unsafe_allow_html=True)
+            st.latex(rf"V_{{cap}} = {V_cap:,.0f} \; kg")
+            st.latex(rf"M_{{cap}} = {M_cap:,.0f} \; kg \cdot m \quad (\text{{Zone: }} {ltb_zone})")
+            st.latex(rf"\Delta_{{allow}} = L/{defl_denom} = {d_allow:.2f} \; cm")
             st.markdown('<div class="calc-step"></div>', unsafe_allow_html=True)
             
-            # 3. Back-Calculate w
-            st.markdown('<span class="calc-head">3. คำนวณน้ำหนักบรรทุกปลอดภัย ($w_{safe}$ Calculation)</span>', unsafe_allow_html=True)
+            # 3. Reverse Calc
+            st.markdown('<span class="calc-head">3. คำนวณน้ำหนักบรรทุกปลอดภัย (Safe Load)</span>', unsafe_allow_html=True)
+            st.write(f"คำนวณหา $w$ จากสมการย้ายข้าง (Uniform Load Only):")
             
-            # 3.1 From Moment
-            st.write("**กรณีที่ 1: ควบคุมโดยโมเมนต์ (Moment Control)**")
-            st.latex(r"M_{cap} = \frac{w_u L^2}{8} \quad \Rightarrow \quad w_u = \frac{8 M_{cap}}{L^2}")
             w_m_val = (8 * M_cap) / (user_span**2)
-            st.latex(rf"w_{{moment}} = \frac{{8 ({M_cap:,.0f})}}{{ {user_span}^2 }} = \mathbf{{{w_m_val:,.0f}}} \; kg/m")
-            
-            # 3.2 From Shear
-            st.write("**กรณีที่ 2: ควบคุมโดยแรงเฉือน (Shear Control)**")
-            st.latex(r"V_{cap} = \frac{w_u L}{2} \quad \Rightarrow \quad w_u = \frac{2 V_{cap}}{L}")
             w_v_val = (2 * V_cap) / user_span
-            st.latex(rf"w_{{shear}} = \frac{{2 ({V_cap:,.0f})}}{{ {user_span} }} = \mathbf{{{w_v_val:,.0f}}} \; kg/m")
             
-            # 3.3 From Deflection
-            st.write("**กรณีที่ 3: ควบคุมโดยระยะแอ่น (Deflection Control)**")
-            st.caption("Note: ใช้ Service Load สำหรับ Deflection")
-            st.latex(r"\Delta_{allow} = \frac{5 w_{serv} L^4}{384 E I} \quad \Rightarrow \quad w_{serv} = \frac{384 E I \Delta_{allow}}{5 L^4}")
-            
-            # Calc values for display
+            # Deflection w (service)
             l_cm = user_span * 100
-            w_d_val = (384 * E * Ix * d_allow) / (5 * l_cm**4) * 100 # *100 converts kg/cm to kg/m
+            w_d_serv = (384 * E * Ix * d_allow) / (5 * l_cm**4) * 100
+            w_d_ult = w_d_serv * factor_val
             
-            st.latex(rf"w_{{defl(service)}} = \frac{{384 ({E:.0f}) ({Ix:.0f}) ({d_allow:.2f})}}{{5 ({l_cm:.0f})^4}} \times 100 = \mathbf{{{w_d_val:,.0f}}} \; kg/m")
+            st.latex(rf"w_{{moment(u)}} = \frac{{8 M_{{cap}}}}{{L^2}} = \mathbf{{{w_m_val:,.0f}}} \; kg/m")
+            st.latex(rf"w_{{shear(u)}} = \frac{{2 V_{{cap}}}}{{L}} = \mathbf{{{w_v_val:,.0f}}} \; kg/m")
+            st.latex(rf"w_{{defl(u)}} = w_{{serv}} \times {factor_txt} = {w_d_serv:,.0f} \times {factor_txt} = \mathbf{{{w_d_ult:,.0f}}} \; kg/m")
             
-            # Convert Deflection w to Ultimate level for comparison (if LRFD)
-            w_d_ult = w_d_val * factor_val
-            st.write(f"เทียบเท่า Load Factor ({factor_txt}): $w_{{defl(u)}} = {w_d_val:,.0f} \\times {factor_txt} = {w_d_ult:,.0f}$ kg/m")
-            
-            st.markdown('<div class="calc-step"></div>', unsafe_allow_html=True)
-            
-            # 4. Conclusion
-            st.markdown('<span class="calc-head">4. สรุปผล (Conclusion)</span>', unsafe_allow_html=True)
-            min_w_u = min(w_m_val, w_v_val, w_d_ult)
-            st.latex(rf"w_{{safe(u)}} = \min({w_m_val:,.0f}, {w_v_val:,.0f}, {w_d_ult:,.0f}) = \mathbf{{{min_w_u:,.0f}}} \; kg/m")
-            
-            st.write(f"แปลงกลับเป็น **Service Load** (หารด้วย {factor_txt}):")
-            final_safe = min_w_u / factor_val
-            st.markdown(f"### ✅ Max Safe Service Load = {final_safe:,.0f} kg/m")
-            st.caption(f"Controlled by: {gov_cause}")
+            st.markdown(f"**Conclusion:** เลือกค่าน้อยที่สุดเป็นคำตอบ")
+            st.latex(rf"w_{{safe(u)}} = \min({w_m_val:,.0f}, {w_v_val:,.0f}, {w_d_ult:,.0f}) = \mathbf{{{w_plot_service*factor_val:,.0f}}} \; kg/m")
+            st.write(f"Safe Service Load = {w_plot_service:,.0f} kg/m")
 
     # ==========================================
-    # PART 3: GRAPHS (คงเดิม)
+    # PART 3: GRAPHS (UPDATED WITH DEFLECTION)
     # ==========================================
-    st.markdown("---")
-    st.subheader("📈 Force Diagrams & Capacity Curve")
-    
-    # 1. SFD/BMD
+    st.write("---")
+    st.subheader("📈 Force & Deflection Diagrams")
+    if not is_check_mode:
+        st.caption(f"💡 กราฟแสดงพฤติกรรมภายใต้ **Safe Load: {w_plot_service:,.0f} kg/m** (เพื่อให้เห็นว่าหน้าตัดรับแรงเต็มพิกัดอย่างไร)")
+    else:
+        st.caption(f"💡 กราฟแสดงพฤติกรรมภายใต้ **Input Load** ของคุณ")
+
+    # --- Generate Data Points ---
     x_plot = np.linspace(0, user_span, 100)
-    ra = v_act # Note: In Find Capacity, these acts are based on the capacity load
-    v_y, m_y = [], []
-    for val in x_plot:
-        shear = ra - (fact_w * val)
-        if val > user_span/2: shear -= fact_p
+    ra = (fact_w_plot * user_span / 2) + (fact_p_plot / 2) # Reaction
+    
+    v_y = []
+    m_y = []
+    d_y = [] # Deflection
+    
+    # Unit conversions for Deflection calc
+    w_line_kcm = (w_plot_service / 100) # kg/cm (Service load for defl)
+    p_point_k = p_plot_service # kg
+    L_cm = user_span * 100
+    E_val = E
+    I_val = Ix
+
+    for x_m in x_plot:
+        # 1. Shear & Moment (Using Factored Load)
+        shear = ra - (fact_w_plot * x_m)
+        if x_m > user_span/2: shear -= fact_p_plot
         v_y.append(shear)
-        moment = (ra * val) - (fact_w * val**2 / 2)
-        if val > user_span/2: moment -= fact_p * (val - user_span/2)
+        
+        moment = (ra * x_m) - (fact_w_plot * x_m**2 / 2)
+        if x_m > user_span/2: moment -= fact_p_plot * (x_m - user_span/2)
         m_y.append(moment)
+        
+        # 2. Deflection (Using Service Load, Simplified for Display)
+        # Superposition: UDL + Point Load at center
+        x_cm = x_m * 100
+        
+        # Deflection due to UDL
+        y_udl = (w_line_kcm * x_cm) / (24 * E_val * I_val) * (L_cm**3 - 2*L_cm*x_cm**2 + x_cm**3)
+        
+        # Deflection due to Point Load (approx at center for graph smoothness)
+        if x_cm <= L_cm/2:
+            y_pl = (p_point_k * x_cm) / (48 * E_val * I_val) * (3*L_cm**2 - 4*x_cm**2)
+        else:
+            y_pl = (p_point_k * (L_cm - x_cm)) / (48 * E_val * I_val) * (3*L_cm**2 - 4*(L_cm-x_cm)**2)
+            
+        d_y.append(y_udl + y_pl)
 
-    c_g1, c_g2 = st.columns(2)
-    with c_g1:
+    # --- Plotting 3 Columns ---
+    col_g1, col_g2, col_g3 = st.columns(3)
+    
+    with col_g1:
         fig_v = go.Figure(go.Scatter(x=x_plot, y=v_y, fill='tozeroy', line_color='#3b82f6', name='Shear'))
-        fig_v.update_layout(title="Shear Force (SFD)", height=300, margin=dict(l=20,r=20,t=40,b=20))
+        fig_v.add_hline(y=V_cap, line_dash="dot", line_color="gray", annotation_text="Capacity")
+        fig_v.add_hline(y=-V_cap, line_dash="dot", line_color="gray")
+        fig_v.update_layout(title="Shear Force (SFD)", yaxis_title="Shear (kg)", height=250, margin=dict(l=10,r=10,t=30,b=10))
         st.plotly_chart(fig_v, use_container_width=True)
-    with c_g2:
+        
+    with col_g2:
         fig_m = go.Figure(go.Scatter(x=x_plot, y=m_y, fill='tozeroy', line_color='#ef4444', name='Moment'))
-        fig_m.update_layout(title="Bending Moment (BMD)", height=300, margin=dict(l=20,r=20,t=40,b=20))
+        fig_m.add_hline(y=M_cap, line_dash="dot", line_color="gray", annotation_text="Capacity")
+        fig_m.update_layout(title="Bending Moment (BMD)", yaxis_title="Moment (kg-m)", height=250, margin=dict(l=10,r=10,t=30,b=10))
         st.plotly_chart(fig_m, use_container_width=True)
+        
+    with col_g3:
+        # Deflection (Invert y-axis to look like beam sagging)
+        fig_d = go.Figure(go.Scatter(x=x_plot, y=d_y, line_color='#10b981', name='Deflection'))
+        fig_d.add_hline(y=d_allow, line_dash="dash", line_color="red", annotation_text="Limit")
+        fig_d.update_yaxes(autorange="reversed") # กลับหัวกราฟ
+        fig_d.update_layout(title="Deflection Profile", yaxis_title="Deflection (cm)", height=250, margin=dict(l=10,r=10,t=30,b=10))
+        st.plotly_chart(fig_d, use_container_width=True)
 
-    # 2. Span Curve (Logic เดิม)
-    st.subheader("📉 Safe Load vs Span")
+    # ==========================================
+    # PART 4: CAPACITY CURVE (Logic เดิม คงไว้ตามขอ)
+    # ==========================================
+    st.subheader("📉 Safe Load vs Span Curve")
+    
     spans = np.linspace(1.0, 12.0, 50)
     w_cap_m, w_cap_v, w_cap_d = [], [], []
-    
     r_ts_g = data.get('r_ts', 1.0)
     
     for s in spans:
@@ -280,14 +321,17 @@ def render(data):
         w_cap_d.append(w_d/factor_val)
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=spans, y=w_cap_m, name='Moment', line=dict(color='blue')))
-    fig.add_trace(go.Scatter(x=spans, y=w_cap_d, name='Deflection', line=dict(color='green', dash='dash')))
-    fig.add_trace(go.Scatter(x=spans, y=w_cap_v, name='Shear', line=dict(color='orange', dash='dot')))
+    fig.add_trace(go.Scatter(x=spans, y=w_cap_m, name='Moment Limit', line=dict(color='blue')))
+    fig.add_trace(go.Scatter(x=spans, y=w_cap_d, name='Deflection Limit', line=dict(color='green', dash='dash')))
+    fig.add_trace(go.Scatter(x=spans, y=w_cap_v, name='Shear Limit', line=dict(color='orange', dash='dot')))
     
+    # Marker จุดที่เราสนใจ
     if is_check_mode:
-        fig.add_trace(go.Scatter(x=[user_span], y=[(fact_w+2*fact_p/user_span)/factor_val], mode='markers', name='Your Load', marker=dict(color='red', size=10, symbol='x')))
+        fig.add_trace(go.Scatter(x=[user_span], y=[(fact_w_plot + 2*fact_p_plot/user_span)/factor_val], 
+                                 mode='markers', name='Your Load', marker=dict(color='red', size=12, symbol='x')))
     else:
-         fig.add_trace(go.Scatter(x=[user_span], y=[safe_load_show], mode='markers', name='Safe Load', marker=dict(color='purple', size=12, symbol='star')))
+         fig.add_trace(go.Scatter(x=[user_span], y=[w_plot_service], 
+                                  mode='markers', name='Calculated Safe Load', marker=dict(color='purple', size=14, symbol='star')))
 
-    fig.update_layout(height=400, xaxis_title="Span (m)", yaxis_title="Service Load (kg/m)")
+    fig.update_layout(height=400, xaxis_title="Span (m)", yaxis_title="Safe Service Load (kg/m)")
     st.plotly_chart(fig, use_container_width=True)
