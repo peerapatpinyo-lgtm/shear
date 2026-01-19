@@ -1,235 +1,183 @@
 import math
 
-def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, material_grade="A36", bolt_grade="A325"):
+def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd, material_grade, bolt_grade):
+    """
+    Generate Markdown Calculation Report (Strict AISC Format)
+    Units: Forces in kN, Dimensions in mm
+    """
     
-    lines = []
-    
-    # ==========================================
-    # 0. SETUP & HELPER FUNCTIONS
-    # ==========================================
+    # --- 1. SET FACTORS ---
+    method = "LRFD" if is_lrfd else "ASD"
     
     if is_lrfd:
-        method = "LRFD"
-        phi_y = 0.90; phi_r = 0.75; phi_w = 0.75; phi_b = 0.75
-        design_sym = "\\phi R_n"
+        # Phi factors
+        phi_y = 0.90
+        phi_r = 0.75
+        phi_w = 0.75
+        phi_b = 0.75
+        lab_cap = "Design Strength (ϕRn)"
+        lab_dem = "Factored Load (Ru)"
     else:
-        method = "ASD"
-        phi_y = 1/1.67; phi_r = 1/2.00; phi_w = 1/2.00; phi_b = 1/2.00
-        design_sym = "R_n / \\Omega"
+        # Omega factors (ASD)
+        om_y = 1.67
+        om_r = 2.00
+        om_w = 2.00
+        om_b = 2.00
+        lab_cap = "Allowable Strength (Rn/Ω)"
+        lab_dem = "Service Load (Ra)"
 
-    def h2(text): lines.append(f"\n## {text}\n")
-    def h3(text): lines.append(f"\n### {text}\n")
-    
-    # 🔥 ฟังก์ชันแสดงผลแบบ Clean Math (แก้เรื่องหน่วย mm²)
-    def show_calc(title, symbol, formula, sub_str, result_val, unit, phi_factor=None, note=""):
-        lines.append(f"**{title}** {note}")
-        
-        # จัดการหน่วยให้สวยงามใน LaTeX
-        if unit == "mm^2":
-            latex_unit = "\\text{mm}^2"
-        elif unit == "mm^3":
-            latex_unit = "\\text{mm}^3"
-        elif unit == "kN-m":
-            latex_unit = "\\text{kN}\\cdot\\text{m}"
-        else:
-            latex_unit = f"\\text{{{unit}}}"
-
-        # แปลงเครื่องหมายคูณ
-        clean_formula = formula.replace("*", " \\times ")
-        clean_sub = str(sub_str).replace("*", " \\times ")
-        
-        # บรรทัดที่ 1: สูตร
-        lines.append(f"$$ {symbol} = {clean_formula} $$")
-        # บรรทัดที่ 2: แทนค่า
-        lines.append(f"$$ = {clean_sub} $$")
-        # บรรทัดที่ 3: คำตอบ + หน่วย
-        lines.append(f"$$ = \\mathbf{{{result_val:,.2f}}} {latex_unit} $$")
-        
-        if phi_factor:
-            design_val = result_val * phi_factor
-            phi_str = "0.90" if phi_factor == 0.90 else "0.75"
-            if not is_lrfd: phi_str = "1/\\Omega"
-            
-            lines.append(f"> **Design Strength:** ${design_sym} = {phi_str} \\times {result_val:,.2f} = \\mathbf{{{design_val:,.2f}}}$ **{unit.replace('^2','²')}**")
-            lines.append("")
-            
-        lines.append("") 
-        return result_val * (phi_factor if phi_factor else 1.0)
-
-    def check_ratio(demand, capacity, label, unit="kN"):
-        ratio = demand / capacity if capacity > 0 else 999
-        status = "✅ PASS" if ratio <= 1.0 else "❌ FAIL"
-        color = "green" if ratio <= 1.0 else "red"
-        
-        unit_display = unit.replace("^2", "²")
-        
-        lines.append(f"<div style='background-color:#f8f9fa; padding:10px; border-radius:5px; border-left:5px solid {color}; font-family:sans-serif; margin-bottom:10px;'>")
-        lines.append(f"<strong>Check {label}:</strong><br>")
-        lines.append(f"Demand: <b>{demand:.2f} {unit_display}</b> / Capacity: <b>{capacity:.2f} {unit_display}</b><br>")
-        lines.append(f"Ratio: <b>{ratio:.2f}</b> &nbsp; <span style='color:{color}; font-weight:bold;'>[{status}]</span>")
-        lines.append("</div>")
-        lines.append("")
-
-    # ==========================================
-    # 1. INPUT PARAMETERS
-    # ==========================================
-    lines.append(f"# 🏗️ Detailed Calculation Report ({method})")
-    lines.append("---")
-    
+    # --- 2. PREPARE VARIABLES ---
+    # Unpack for clarity
     d = bolts['d']
-    Ab = (math.pi * d**2)/4
-    rows = bolts['rows']; cols = bolts['cols']
+    rows = bolts['rows']
+    cols = bolts['cols']
     n_bolts = rows * cols
     
-    t_pl = plate['t']; h_pl = plate['h']
-    Fy_pl = plate['Fy']; Fu_pl = plate['Fu']
+    t_plt = plate['t']
+    Fy_plt = plate['Fy']
+    Fu_plt = plate['Fu']
     
-    lines.append("#### 1. Design Inputs")
-    lines.append(f"- **Loads:** $V_u = {V_load:.2f}$ kN, $T_u = {T_load:.2f}$ kN")
-    lines.append(f"- **Plate:** $t = {t_pl}$ mm, $H = {h_pl}$ mm ({material_grade})")
-    lines.append(f"- **Bolts:** {n_bolts} x M{d} ({bolt_grade}), Area $A_b = {Ab:.1f}$ mm²")
-    
-    # ==========================================
-    # 2. BOLT FORCE ANALYSIS
-    # ==========================================
-    h2("2. Bolt Force Analysis")
-    
-    sv = bolts['s_v']; sh = bolts.get('s_h', 0)
-    e1 = plate.get('e1', 0)
-    x_bar = ((cols - 1) * sh) / 2 if cols > 1 else 0
-    e_total = e1 + x_bar
-    
-    show_calc("Eccentricity (e)", "e", "e_1 + x_{bar}", f"{e1} + {x_bar}", e_total, "mm")
-    
-    Mu = V_load * e_total / 1000.0
-    show_calc("Moment (Mu)", "M_u", "V_u \\times e", f"{V_load:.2f} \\times {e_total}/1000", Mu, "kN-m")
-    
-    # Sum r^2 calculation
-    sum_r2 = 0
-    col_start = -x_bar
-    row_start = -((rows - 1) * sv) / 2
-    for c in range(cols):
-        for r in range(rows):
-            dx = col_start + (c * sh)
-            dy = row_start + (r * sv)
-            sum_r2 += dx**2 + dy**2
-            
-    show_calc("Polar Inertia (Sum r²)", "\\Sigma (x^2 + y^2)", "\\text{sum of all bolts}", f"{sum_r2:,.0f}", sum_r2, "mm^2")
+    # --- 3. START REPORT ---
+    lines = []
+    lines.append(f"# 🏗️ CONNECTION DESIGN REPORT ({method})")
+    lines.append(f"**Material:** {material_grade} | **Bolt:** {bolt_grade} (M{d})")
+    lines.append(f"**Load:** Shear V = {V_load:.2f} kN | Tension T = {T_load:.2f} kN")
+    lines.append("---")
 
-    Rv_direct = V_load / n_bolts
-    Rv_moment = (Mu * 1000 * x_bar) / sum_r2 if sum_r2 > 0 else 0 
-    Rh_moment = (Mu * 1000 * ((rows-1)*sv)/2) / sum_r2 if sum_r2 > 0 else 0
-    
-    V_ub = math.sqrt((Rv_direct + Rv_moment)**2 + Rh_moment**2)
-    show_calc("Max Shear per Bolt", "V_{ub}", "\\text{Vector Sum}", 
-              f"\\sqrt{{({Rv_direct:.2f}+{Rv_moment:.2f})^2 + {Rh_moment:.2f}^2}}", V_ub, "kN")
-    
-    T_ub = T_load / n_bolts
-    if T_load > 0:
-        show_calc("Max Tension per Bolt", "T_{ub}", "T_u / n", f"{T_load:.2f} / {n_bolts}", T_ub, "kN")
-
-    # ==========================================
-    # 3. BOLT CAPACITY
-    # ==========================================
-    h2("3. Bolt Capacity Checks")
-    
-    # 3.1 Shear
+    # =================================================
+    # CHECK 1: BOLT SHEAR
+    # =================================================
+    lines.append("### 1. Bolt Shear Strength")
+    Ab = math.pi * d**2 / 4
     Fnv = bolts['Fnv']
-    Rn_shear = Fnv * Ab / 1000.0
-    cap_shear = show_calc("Bolt Shear Strength", "R_n", "F_{nv} A_b", 
-                          f"{Fnv} \\times {Ab:.1f} / 1000", Rn_shear, "kN", phi_r)
-    check_ratio(V_ub, cap_shear, "Bolt Shear")
-
-    # 3.2 Tension
-    if T_load > 0:
-        h3("Combined Tension & Shear")
-        frv = (V_ub * 1000) / Ab
+    
+    Rn_shear = Fnv * Ab * n_bolts / 1000.0 # kN (Total)
+    
+    if is_lrfd:
+        Cap_Shear = phi_b * Rn_shear
+    else:
+        Cap_Shear = Rn_shear / om_b
         
-        Fnt = bolts.get('Fnt', Fnv*1.3)
-        Fnt_prime = 1.3 * Fnt - (Fnt / (phi_r * Fnv)) * frv
-        Fnt_prime = min(max(Fnt_prime, 0), Fnt)
+    ratio_shear = V_load / Cap_Shear
+    status_shear = "✅ PASS" if ratio_shear <= 1.0 else "❌ FAIL"
+
+    lines.append(f"- **Nominal Strength ($R_n$):** {Rn_shear:.2f} kN")
+    lines.append(f"- **{lab_cap}:** {Cap_Shear:.2f} kN")
+    lines.append(f"- **{lab_dem}:** {V_load:.2f} kN")  # <--- FIX: Show Input Load directly
+    lines.append(f"- **Ratio:** {ratio_shear:.2f}  [{status_shear}]")
+    lines.append("")
+
+    # =================================================
+    # CHECK 2: BOLT BEARING & TEAROUT
+    # =================================================
+    lines.append("### 2. Bolt Bearing & Tearout")
+    d_hole = d + 2.0
+    lc_edge = plate['lv'] - (d_hole / 2.0)
+    lc_inner = bolts['s_v'] - d_hole
+    
+    # Rn per bolt (N)
+    rn_edge = min(1.2 * lc_edge * t_plt * Fu_plt, 2.4 * d * t_plt * Fu_plt)
+    rn_inner = min(1.2 * lc_inner * t_plt * Fu_plt, 2.4 * d * t_plt * Fu_plt)
+    
+    if rows >= 2:
+        Rn_bearing_total = (rn_edge + (rows - 1) * rn_inner) * cols
+    else:
+        Rn_bearing_total = rn_edge * cols
         
-        show_calc("Reduced Tension Stress (F'nt)", "F'_{nt}", 
-                  "1.3F_{nt} - \\frac{F_{nt}}{\\phi F_{nv}}f_{rv}",
-                  f"1.3({Fnt}) - \\dots({frv:.1f})", Fnt_prime, "MPa")
+    Rn_bearing_kN = Rn_bearing_total / 1000.0
+    
+    if is_lrfd:
+        Cap_Bearing = phi_r * Rn_bearing_kN
+    else:
+        Cap_Bearing = Rn_bearing_kN / om_r # Use Omega = 2.00 for Bearing
         
-        Rn_tens = Fnt_prime * Ab / 1000.0
-        cap_tens = show_calc("Bolt Tension Strength", "R_n", "F'_{nt} A_b",
-                             f"{Fnt_prime:.1f} \\times {Ab:.1f} / 1000", Rn_tens, "kN", phi_r)
-        check_ratio(T_ub, cap_tens, "Bolt Tension")
+    ratio_bear = V_load / Cap_Bearing
+    status_bear = "✅ PASS" if ratio_bear <= 1.0 else "❌ FAIL"
 
-    # 3.3 Bearing
-    h3("Bearing Strength (Plate)")
-    lv = plate.get('lv', 35)
-    Lc = lv - (d+2)/2.0
-    show_calc("Clear Distance (Lc)", "L_c", "l_v - d_{hole}/2", f"{lv} - {(d+2)}/2", Lc, "mm")
-    
-    Rn_br1 = (1.2 * Lc * t_pl * Fu_pl) / 1000.0
-    Rn_br2 = (2.4 * d * t_pl * Fu_pl) / 1000.0
-    Rn_br = min(Rn_br1, Rn_br2)
-    
-    show_calc("Bearing Strength", "R_n", "\\min(1.2 L_c t F_u, 2.4 d t F_u)", 
-              f"\\min({Rn_br1:.1f}, {Rn_br2:.1f})", Rn_br, "kN", phi_b)
-    check_ratio(V_ub, Rn_br*phi_b, "Bolt Bearing")
+    lines.append(f"- **Nominal Strength ($R_n$):** {Rn_bearing_kN:.2f} kN")
+    lines.append(f"- **{lab_cap}:** {Cap_Bearing:.2f} kN")
+    lines.append(f"- **{lab_dem}:** {V_load:.2f} kN") # <--- FIX: Same Demand
+    lines.append(f"- **Ratio:** {ratio_bear:.2f}  [{status_bear}]")
+    lines.append("")
 
-    # ==========================================
-    # 4. PLATE CAPACITY
-    # ==========================================
-    h2("4. Plate Capacity Checks")
+    # =================================================
+    # CHECK 3: PLATE SHEAR YIELDING
+    # =================================================
+    lines.append("### 3. Plate Shear Yielding")
+    Agv = plate['h'] * t_plt
+    Rn_yield = 0.60 * Fy_plt * Agv / 1000.0
     
-    # 4.1 Yielding
-    Ag = h_pl * t_pl
-    show_calc("Gross Area (Ag)", "A_g", "H \\times t", f"{h_pl} \\times {t_pl}", Ag, "mm^2")
-    
-    Rn_yld = Fy_pl * Ag / 1000.0
-    cap_yld = show_calc("Shear Yielding", "R_n", "0.60 F_y A_g", 
-                        f"0.60({Fy_pl})({Ag}) / 1000", Rn_yld, "kN", phi_y)
-    check_ratio(V_load, cap_yld, "Plate Yield")
-    
-    # 4.2 Rupture
-    An = (h_pl - (rows * (d+2))) * t_pl
-    show_calc("Net Area (An)", "A_n", "(H - n_{row} d_{hole}) t", 
-              f"({h_pl} - {rows}\\times{d+2})({t_pl})", An, "mm^2")
-              
-    Rn_rup = 0.60 * Fu_pl * An / 1000.0
-    cap_rup = show_calc("Shear Rupture", "R_n", "0.60 F_u A_n", 
-                        f"0.60({Fu_pl})({An}) / 1000", Rn_rup, "kN", phi_r)
-    check_ratio(V_load, cap_rup, "Plate Rupture")
-    
-    # 4.3 Block Shear
-    h3("Block Shear (Plate)")
-    Agv = (lv + (rows-1)*sv) * t_pl
-    Anv = Agv - ((rows-0.5)*(d+2)*t_pl)
-    Ant = (plate.get('l_side', 35) - 0.5*(d+2)) * t_pl
-    
-    # แสดงค่า Area ก่อนเข้าสูตร
-    lines.append(f"- **Shear Yield Area ($A_{{gv}}$):** {Agv:.0f} mm²")
-    lines.append(f"- **Shear Rupture Area ($A_{{nv}}$):** {Anv:.0f} mm²")
-    lines.append(f"- **Tension Area ($A_{{nt}}$):** {Ant:.0f} mm²")
-    
-    Rn_bs1 = (0.6 * Fu_pl * Anv + 1.0 * Fu_pl * Ant)/1000.0
-    Rn_bs2 = (0.6 * Fy_pl * Agv + 1.0 * Fu_pl * Ant)/1000.0
-    Rn_bs = min(Rn_bs1, Rn_bs2)
-    
-    show_calc("Block Shear Strength", "R_n", "\\min(R_{n1}, R_{n2})", 
-              f"\\min({Rn_bs1:.1f}, {Rn_bs2:.1f})", Rn_bs, "kN", phi_r)
-    check_ratio(V_load, Rn_bs*phi_r, "Block Shear")
-    
-    # ==========================================
-    # 5. WELD CHECK
-    # ==========================================
-    h2("5. Weld Capacity")
-    w_sz = plate['weld_size']
-    Lw = h_pl * 2
-    
-    Rn_weld = 0.60 * 480 * (0.707 * w_sz * Lw) / 1000.0
-    cap_weld = show_calc("Weld Strength", "R_n", "0.60 F_{exx} (0.707 w L)",
-                         f"0.60(480)(0.707 \\times {w_sz} \\times {Lw}) / 1000", Rn_weld, "kN", phi_w)
-    
-    R_total = math.sqrt(V_load**2 + T_load**2)
-    check_ratio(R_total, cap_weld, "Weld Group")
-    
-    # End spacer
-    lines.append("<br><br>")
+    if is_lrfd:
+        Cap_Yield = phi_y * Rn_yield
+    else:
+        Cap_Yield = Rn_yield / om_y # Use Omega = 1.67
+        
+    ratio_yield = V_load / Cap_Yield
+    status_yield = "✅ PASS" if ratio_yield <= 1.0 else "❌ FAIL"
 
+    lines.append(f"- **Nominal Strength ($R_n$):** {Rn_yield:.2f} kN")
+    lines.append(f"- **{lab_cap}:** {Cap_Yield:.2f} kN")
+    lines.append(f"- **{lab_dem}:** {V_load:.2f} kN") # <--- FIX: Same Demand
+    lines.append(f"- **Ratio:** {ratio_yield:.2f}  [{status_yield}]")
+    lines.append("")
+
+    # =================================================
+    # CHECK 4: PLATE SHEAR RUPTURE
+    # =================================================
+    lines.append("### 4. Plate Shear Rupture")
+    Anv = (plate['h'] - (rows * d_hole)) * t_plt
+    Rn_rup = 0.60 * Fu_plt * Anv / 1000.0
+    
+    if is_lrfd:
+        Cap_Rup = phi_r * Rn_rup
+    else:
+        Cap_Rup = Rn_rup / om_r # Use Omega = 2.00
+        
+    ratio_rup = V_load / Cap_Rup
+    status_rup = "✅ PASS" if ratio_rup <= 1.0 else "❌ FAIL"
+
+    lines.append(f"- **Nominal Strength ($R_n$):** {Rn_rup:.2f} kN")
+    lines.append(f"- **{lab_cap}:** {Cap_Rup:.2f} kN")
+    lines.append(f"- **{lab_dem}:** {V_load:.2f} kN") # <--- FIX: Same Demand
+    lines.append(f"- **Ratio:** {ratio_rup:.2f}  [{status_rup}]")
+    lines.append("")
+
+    # =================================================
+    # CHECK 5: BLOCK SHEAR
+    # =================================================
+    lines.append("### 5. Block Shear Strength")
+    # Geometry recalculation for Report clarity
+    L_gv = plate['lv'] + (rows - 1) * bolts['s_v']
+    Agv_bs = L_gv * t_plt * cols
+    Anv_bs = (L_gv - (rows - 0.5) * d_hole) * t_plt * cols
+    Ant_bs = (plate['l_side'] - 0.5 * d_hole) * t_plt * cols
+    Ubs = 1.0
+    
+    term1 = (0.6 * Fu_plt * Anv_bs) + (Ubs * Fu_plt * Ant_bs)
+    term2 = (0.6 * Fy_plt * Agv_bs) + (Ubs * Fu_plt * Ant_bs)
+    Rn_bs = min(term1, term2) / 1000.0
+    
+    if is_lrfd:
+        Cap_BS = phi_r * Rn_bs
+    else:
+        Cap_BS = Rn_bs / om_r # Use Omega = 2.00
+        
+    ratio_bs = V_load / Cap_BS
+    status_bs = "✅ PASS" if ratio_bs <= 1.0 else "❌ FAIL"
+
+    lines.append(f"- **Nominal Strength ($R_n$):** {Rn_bs:.2f} kN")
+    lines.append(f"- **{lab_cap}:** {Cap_BS:.2f} kN")
+    lines.append(f"- **{lab_dem}:** {V_load:.2f} kN") # <--- FIX: Same Demand
+    lines.append(f"- **Ratio:** {ratio_bs:.2f}  [{status_bs}]")
+    lines.append("")
+    
+    # =================================================
+    # SUMMARY
+    # =================================================
+    lines.append("### 📝 Conclusion")
+    max_ratio = max(ratio_shear, ratio_bear, ratio_yield, ratio_rup, ratio_bs)
+    final_status = "PASSED" if max_ratio <= 1.0 else "FAILED"
+    
+    lines.append(f"The connection design has **{final_status}** with a maximum Utility Ratio of **{max_ratio:.2f}**.")
+    
     return "\n".join(lines)
