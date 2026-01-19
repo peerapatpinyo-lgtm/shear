@@ -16,11 +16,13 @@ def calculate_quick_check(inputs, plate_geom, V_load_kg, mat_grade):
     if is_lrfd:
         phi_y, phi_r, phi_b, phi_w = 0.90, 0.75, 0.75, 0.75
     else:
+        # ASD Equivalent Phi
         phi_y, phi_r, phi_b, phi_w = 1/1.50, 1/2.00, 1/2.00, 1/2.00
 
+    # Material (Estimated ksc -> kg/mm2)
     if "SS400" in mat_grade: Fy, Fu = 24.5, 41.0
     elif "SM520" in mat_grade: Fy, Fu = 36.0, 53.0
-    else: Fy, Fu = 25.0, 41.0 
+    else: Fy, Fu = 25.0, 41.0 # A36 Default
 
     d = inputs['d']
     n_bolts = inputs['rows'] * inputs['cols']
@@ -28,27 +30,27 @@ def calculate_quick_check(inputs, plate_geom, V_load_kg, mat_grade):
     
     results = {}
 
-    # 1. Bolt Shear
+    # 1. Bolt Shear (Simple) - kg
     Ab = (math.pi * d**2) / 4
-    Fnv = 38.0 
+    Fnv = 38.0 # Approx A325 (kg/mm2)
     Rn_bolt = Fnv * Ab * n_bolts
     results['Bolt Shear'] = Rn_bolt * phi_r
 
-    # 2. Plate Yielding
+    # 2. Plate Shear Yielding - kg
     h_p = plate_geom['h']
     Rn_yld = 0.60 * Fy * (h_p * t)
     results['Plate Yielding'] = Rn_yld * phi_y
 
-    # 3. Plate Rupture
+    # 3. Plate Rupture - kg
     h_hole = d + 2
     An = (h_p - (inputs['rows'] * h_hole)) * t
     Rn_rup = 0.60 * Fu * An
     results['Plate Rupture'] = Rn_rup * phi_r
     
-    # 4. Weld
+    # 4. Weld - kg
     w_sz = inputs['weld_size']
     L_weld = h_p * 2
-    Fexx = 49.0 
+    Fexx = 49.0 # E70xx
     Rn_weld = 0.60 * Fexx * 0.707 * w_sz * L_weld
     results['Weld Strength'] = Rn_weld * phi_w
 
@@ -82,7 +84,11 @@ def calculate_plate_geometry(conn_type, user_inputs):
 # ==========================================
 # 🖥️ 2. UI RENDERING
 # ==========================================
-def render_connection_tab(V_design_kg, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
+# [FIX] เปลี่ยนชื่อ parameter แรกเป็น V_design_from_tab1 เพื่อให้ตรงกับ app.py
+def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
+    
+    # [FIX] Assign ค่ากลับเข้าตัวแปร local
+    V_design_kg = V_design_from_tab1
     
     current_method = st.session_state.get('design_method', method)
     
@@ -98,7 +104,7 @@ def render_connection_tab(V_design_kg, default_bolt_size, method, is_lrfd, secti
         </div>
         """, unsafe_allow_html=True)
         
-        # [NEW] ใช้ Tabs แทน Expander เพื่อแยกส่วน Load Position ชัดเจน
+        # UI Tabs แยกหมวดหมู่
         in_tab1, in_tab2 = st.tabs(["🔩 1. Bolt Config", "🛡️ 2. Plate & Load"])
 
         # --- TAB 1: Bolt Configuration ---
@@ -136,7 +142,7 @@ def render_connection_tab(V_design_kg, default_bolt_size, method, is_lrfd, secti
             k3, k4 = st.columns(2)
             is_end = "End" in conn_type
             
-            # e1 คือระยะที่ส่งผลต่อ Moment (Reduction Effect)
+            # e1 และ setback ย้ายมาอยู่ที่นี่ตาม request
             e1 = k3.number_input("e1 (Bolt-to-Support)", 30, 150, 40, disabled=is_end, help="Distance from Weld/Support to first bolt line.")
             setback = k4.number_input("Setback (Gap)", 0, 50, 10, disabled=is_end, help="Installation clearance.")
 
@@ -174,29 +180,45 @@ def render_connection_tab(V_design_kg, default_bolt_size, method, is_lrfd, secti
     if col_btn.button("📄 Generate Calculation Report", type="primary", use_container_width=True):
         
         # 1. Prepare Data for Report (Unit Conversion: kg -> kN, MPa)
+        # Load
         V_kN = V_design_kg * 9.81 / 1000.0
         
         # Material
         is_sm520 = "SM520" in default_mat_grade
-        Fy_val = 355 if is_sm520 else 245
-        Fu_val = 520 if is_sm520 else 400
+        Fy_val = 355 if is_sm520 else 245  # MPa
+        Fu_val = 520 if is_sm520 else 400  # MPa
         
-        beam_dict = {'tw': section_data.get('tw', 6), 'Fu': Fu_val}
-        
-        plate_dict = {
-            't': t_plate, 'h': plate_geom['h'],
-            'Fy': Fy_val, 'Fu': Fu_val,
-            'weld_size': weld_sz,
-            'e1': e1, 'lv': lv, 'l_side': leh
+        # Beam Data
+        beam_dict = {
+            'tw': section_data.get('tw', 6),
+            'Fu': Fu_val # Assume same grade
         }
         
+        # Plate Data
+        plate_dict = {
+            't': t_plate,
+            'h': plate_geom['h'],
+            'Fy': Fy_val,
+            'Fu': Fu_val,
+            'weld_size': weld_sz,
+            'e1': e1,       # For eccentricity
+            'lv': lv,       # For Block Shear
+            'l_side': leh   # For Block Shear
+        }
+        
+        # Bolt Data
+        # Fnv for A325 approx 372 MPa (Threads included)
         fnv_val = 372 
         bolt_dict = {
-            'd': d_bolt, 'rows': rows, 'cols': cols, 
-            's_v': s_v, 's_h': s_h, 'Fnv': fnv_val 
+            'd': d_bolt,
+            'rows': rows,
+            'cols': cols,
+            's_v': s_v,
+            's_h': s_h,
+            'Fnv': fnv_val 
         }
 
-        # 2. Call Generator
+        # 2. Call the external report generator
         try:
             report_md = cr.generate_report(
                 V_load=V_kN,
