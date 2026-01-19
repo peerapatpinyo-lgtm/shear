@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import math
 
@@ -297,7 +296,6 @@ else:
 # 5. PACK DATA FOR TABS
 # ==========================================
 # Bundle all necessary data into a dictionary to pass to external files
-# This avoids passing 30 arguments to a function
 results_context = {
     # Inputs
     'is_check_mode': is_check_mode,
@@ -345,7 +343,12 @@ results_context = {
     'Lp_cm': Lp_cm,
     'Lr_cm': Lr_cm,
     'ltb_zone': ltb_zone,
-    'Mn': Mn
+    'Mn': Mn,
+    
+    # --- ADDED FOR TAB 3 DERIVATION ---
+    'ry': ry,
+    'J': J,
+    'h0': h0
 }
 
 # Save simplified state for report generator
