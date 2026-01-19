@@ -17,9 +17,9 @@ st.markdown = _patched_markdown
 # 1. IMPORT MODULES
 # ==========================================
 try:
-    import steel_db             
+    import steel_db              
     import connection_design    
-    import report_generator     
+    import report_generator      
 except ImportError as e:
     st.error(f"⚠️ Modules missing: {e}")
     st.stop()
@@ -29,11 +29,15 @@ except ImportError as e:
 # ==========================================
 st.set_page_config(page_title="Beam Insight Hybrid", layout="wide", page_icon="🏗️")
 
+# Initialize Session State
 if 'design_method' not in st.session_state:
     st.session_state.design_method = "LRFD (Limit State)"
 if 'cal_success' not in st.session_state:
     st.session_state.cal_success = False
+if 'conn_type' not in st.session_state:
+    st.session_state.conn_type = "Fin Plate"
 
+# CSS Styles
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Roboto+Mono:wght@400;700&display=swap');
@@ -53,10 +57,6 @@ st.markdown("""
     
     /* Sidebar Specific */
     .sidebar-info { background: #f8fafc; padding: 12px; border-radius: 8px; font-size: 0.9em; margin-bottom: 15px; border: 1px solid #cbd5e1; }
-    .sidebar-note { font-size: 0.85em; color: #475569; margin-top: 5px; line-height: 1.4; background: #fff; padding:8px; border-radius:4px; border:1px solid #e2e8f0; }
-    .metric-box { background: #eff6ff; padding: 10px; border-radius: 6px; border: 1px solid #bfdbfe; text-align: center; margin-bottom: 8px; }
-    .metric-val { font-size: 1.2em; font-weight: bold; color: #1e3a8a; }
-    .metric-lbl { font-size: 0.8em; color: #60a5fa; text-transform: uppercase; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -315,6 +315,7 @@ st.session_state.cal_success = True
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Analysis & Graphs", "🔩 Connection Detail", "🛡️ LTB Insight", "📝 Report"])
 
+# --- TAB 1: ANALYSIS & GRAPHS ---
 with tab1:
     st.subheader(f"Results for: {sec_name}")
 
@@ -529,15 +530,17 @@ with tab1:
     fig.update_layout(title="Safe Service Load vs. Span", xaxis_title="Span (m)", yaxis_title="Load (kg/m)", height=450)
     st.plotly_chart(fig, use_container_width=True)
 
+# --- TAB 2: CONNECTION DETAIL ---
 with tab2:
     if st.session_state.cal_success:
         st.info(f"⚡ **Designing for Shear Force:** {v_conn_final:,.0f} kg")
         
-        c_type = st.selectbox("Connection Type", ["Fin Plate", "End Plate", "Double Angle"])
+        # User Selection for Connection Type
+        c_type = st.selectbox("Connection Type", ["Fin Plate", "End Plate", "Double Angle"], key='conn_type_select')
+        st.session_state.conn_type = c_type # Update State
+        
         section_data = {"name": sec_name, "h": h, "b": b, "tw": tw, "tf": tf}
         
-        
-
         connection_design.render_connection_tab(
             V_design_from_tab1=v_conn_final,
             default_bolt_size=20,
@@ -548,7 +551,10 @@ with tab2:
             default_bolt_grade="A325",
             default_mat_grade=grade_choice
         )
+    else:
+        st.warning("Please complete analysis in Tab 1 first.")
 
+# --- TAB 3: LTB INSIGHT ---
 with tab3:
     st.subheader("🛡️ LTB Insight")
     c_ltb1, c_ltb2 = st.columns([1, 2])
@@ -578,17 +584,27 @@ with tab3:
         fig_ltb = go.Figure()
         fig_ltb.add_trace(go.Scatter(x=lb_vals/100, y=mn_vals, name='Mn Capacity', line=dict(color='#2563eb')))
         curr_Mn = (M_cap * 100 / phi_b) if is_lrfd else (M_cap * 100 * omg_b)
-        fig_ltb.add_trace(go.Scatter(x=[Lb], y=[curr_Mn/100], mode='markers', marker=dict(size=10, color='red')))
-        fig_ltb.update_layout(height=300, margin=dict(t=20,b=20,l=20,r=20))
+        fig_ltb.add_trace(go.Scatter(x=[Lb], y=[curr_Mn/100], mode='markers', marker=dict(size=10, color='red'), name='Current Design'))
+        
+        # Add Zone Annotations
+        y_max = max(mn_vals)
+        fig_ltb.add_vline(x=Lp_cm/100, line_dash="dash", line_color="green", annotation_text="Lp")
+        fig_ltb.add_vline(x=Lr_cm/100, line_dash="dash", line_color="orange", annotation_text="Lr")
+        
+        fig_ltb.update_layout(height=350, margin=dict(t=20,b=20,l=20,r=20), xaxis_title="Unbraced Length (m)", yaxis_title="Moment Capacity (kg-m)")
         st.plotly_chart(fig_ltb, use_container_width=True)
 
+# --- TAB 4: REPORT ---
 with tab4:
-    report_generator.render_report_tab(
-        method=st.session_state.design_method,
-        is_lrfd=is_lrfd,
-        sec_name=sec_name,
-        steel_grade=grade_choice,
-        p={'h': h, 'b': b, 'tw': tw, 'tf': tf, 'Ix': Ix, 'Zx': Zx, 'Sx': Sx},
-        res=st.session_state.res_dict,
-        bolt={'type': c_type if 'c_type' in locals() else "Fin Plate", 'grade': 'A325', 'size': 'M20', 'qty': 'N/A'}
-    )
+    if st.session_state.cal_success:
+        report_generator.render_report_tab(
+            method=st.session_state.design_method,
+            is_lrfd=is_lrfd,
+            sec_name=sec_name,
+            steel_grade=grade_choice,
+            p={'h': h, 'b': b, 'tw': tw, 'tf': tf, 'Ix': Ix, 'Zx': Zx, 'Sx': Sx},
+            res=st.session_state.res_dict,
+            bolt={'type': st.session_state.get('conn_type', 'Fin Plate'), 'grade': 'A325', 'size': 'M20', 'qty': 'N/A'}
+        )
+    else:
+        st.warning("Please complete analysis first.")
