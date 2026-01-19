@@ -1,10 +1,10 @@
-# calculation_report.py
 import math
+import textwrap
 
 def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A36", bolt_grade="A325"):
     
     # =================================================================================
-    # 🎨 HELPER: FORMATTING ENGINE (Fix LaTeX Escaping)
+    # 🎨 HELPER FUNCTIONS
     # =================================================================================
     def header(title):
         return f"\n### {title}\n"
@@ -15,13 +15,9 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
 
     def calc_block(symbol, description, formula_tex, sub_tex, result, unit):
         """
-        Render LaTeX using explicit double backslashes to prevent Python string escaping issues.
-        We use standard '$$' blocks with 'aligned' environment.
+        Create a LaTeX block without indentation to prevent Markdown from treating it as code.
         """
-        # หมายเหตุ: ใน Python f-string:
-        # \\  -> กลายเป็น \ ใน LaTeX (สำหรับคำสั่งเช่น \phi)
-        # \\\\ -> กลายเป็น \\ ใน LaTeX (สำหรับการขึ้นบรรทัดใหม่)
-        
+        # IMPORTANT: No indentation for the string content to avoid 'Code Block' rendering
         latex_str = f"""
 $$
 \\begin{{aligned}}
@@ -39,10 +35,11 @@ $$
         else:
             ratio = demand / capacity
             
+        # Color logic
         color = "#15803d" if ratio <= 1.0 else "#b91c1c" # Green / Red
         icon = "✅ PASS" if ratio <= 1.0 else "❌ FAIL"
         
-        # ใช้ HTML progress bar ง่ายๆ เพื่อความสวยงามและอ่านง่าย
+        # HTML Rendering for visual check
         return f"""
 > **Check {label}:** ${demand:.2f} / {capacity:.2f} = \\mathbf{{{ratio:.2f}}}$ &nbsp; <span style='color:{color}; font-weight:bold'>[{icon}]</span>
 """
@@ -53,16 +50,20 @@ $$
     
     if is_lrfd:
         method_name = "LRFD (Limit State Design)"
+        # Factors
         f_v = 0.75; f_y = 0.90; f_r = 0.75; f_w = 0.75
         
-        # LaTeX Symbols (Must escape backslashes!)
+        # Display Symbols
         phi_sym = r"\phi"
         kv_sym = r"\phi R_n"
         
+        # Helper to get numeric factor
         get_f = lambda t: f_v if t=='v' else (f_y if t=='y' else (f_r if t=='r' else f_w))
+        # Helper to format factor string (e.g., "0.75")
         fmt_f = lambda t: f"{get_f(t)}"
     else:
         method_name = "ASD (Allowable Strength Design)"
+        # Factors
         om_v = 2.00; om_y = 1.50; om_r = 2.00; om_w = 2.00
         
         phi_sym = r"\Omega"
@@ -141,9 +142,10 @@ $$
 
     md.append(sub_header("Geometric Properties"))
     
-    # Note: Use \\sum for summation symbol in LaTeX within Python string
+    # --- FIX 1: Use raw strings for LaTeX formulas to avoid escape issues ---
+    # --- FIX 2: Ensure calc_block handles indentation correctly ---
     md.append(calc_block("e", "Eccentricity", "e_{dist} + x_{bar}", f"{e_dist} + {x_bar}", eccentricity, "mm"))
-    md.append(calc_block("J", "Polar Moment of Inertia", "\\sum (x^2 + y^2)", f"{sum_r2:,.0f}", sum_r2, "mm^2"))
+    md.append(calc_block("J", "Polar Moment of Inertia", r"\sum (x^2 + y^2)", f"{sum_r2:,.0f}", sum_r2, "mm^2"))
 
     # 3.2 Force Demand
     Rv_direct = V_load / n_total
@@ -158,17 +160,17 @@ $$
     md.append(sub_header("Force Demand on Critical Bolt"))
     md.append(f"- Critical Bolt Position: $(x,y) = ({crit_x:.1f}, {crit_y:.1f})$ mm")
     
-    # Component Forces (Manual LaTeX construction for clarity)
     md.append(f"**Component Forces:**")
     
     # Horizontal
+    # Using f-string for values but raw strings for static latex parts where possible
     md.append(f"$$ R_{{vx}} = \\frac{{M \\cdot y}}{{J}} = \\frac{{{Mu_mm:.0f} \\cdot {crit_y:.1f}}}{{{sum_r2:.0f}}} = \\mathbf{{{Rh_moment:.2f}}} \\text{{ kN}} $$")
     
     # Vertical
     md.append(f"$$ R_{{vy}} = \\frac{{V}}{{n}} + \\frac{{M \\cdot x}}{{J}} = {Rv_direct:.2f} + {Rv_moment:.2f} = \\mathbf{{{(Rv_direct+Rv_moment):.2f}}} \\text{{ kN}} $$")
 
     # Resultant
-    md.append(calc_block("V_{r}", "Resultant Shear Force", "\\sqrt{R_{vx}^2 + R_{vy}^2}", 
+    md.append(calc_block("V_{r}", "Resultant Shear Force", r"\sqrt{R_{vx}^2 + R_{vy}^2}", 
                          f"\\sqrt{{{Rh_moment:.2f}^2 + {(Rv_direct+Rv_moment):.2f}^2}}", V_res, "kN"))
 
     # =================================================================================
@@ -203,7 +205,7 @@ $$
     
     cap_br_min = min(cap_br_pl, cap_br_wb)
     
-    # Display simplified bearing check
+    # Using explicit latex string construction to ensure no indentation
     md.append(f"**Plate Bearing ($t={t_pl}$):**")
     md.append(f"$$ {kv_sym} = {fmt_f('v')} \\cdot 2.4({d})({t_pl})({Fu_pl})/1000 = \\mathbf{{{cap_br_pl:.2f}}} \\text{{ kN}} $$")
     
@@ -255,6 +257,7 @@ $$
     Rn_blk = min(Rn_blk_1, Rn_blk_2)
     cap_blk = Rn_blk * get_f('r')
     
+    # Note: Use raw strings for complex logic
     eq_blk = r"\min [0.6 F_u A_{nv} + U_{bs} F_u A_{nt}, \quad 0.6 F_y A_{gv} + U_{bs} F_u A_{nt}]"
     sub_blk = f"\\min [{Rn_blk_1:.1f}, {Rn_blk_2:.1f}]"
     
