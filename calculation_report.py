@@ -1,9 +1,10 @@
+# calculation_report.py
 import math
 
 def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A36", bolt_grade="A325"):
     
     # =================================================================================
-    # 🎨 HELPER: FORMATTING ENGINE
+    # 🎨 HELPER: FORMATTING ENGINE (Fix LaTeX Escaping)
     # =================================================================================
     def header(title):
         return f"\n### {title}\n"
@@ -12,25 +13,15 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
         ref_text = f" *(Ref: AISC 360-16, {ref})*" if ref else ""
         return f"\n#### {title}{ref_text}\n"
 
-    def calc_block(symbol, description, formula_tex, sub_tex, result, unit, check_cap=None):
+    def calc_block(symbol, description, formula_tex, sub_tex, result, unit):
         """
-        Render Engineering Calculation Block using LaTeX 'aligned' environment
-        Format:
-        Description
-        Symbol = Formula
-               = Substitution
-               = Result [Unit]  (Check Info)
+        Render LaTeX using explicit double backslashes to prevent Python string escaping issues.
+        We use standard '$$' blocks with 'aligned' environment.
         """
-        check_str = ""
-        color = "black"
+        # หมายเหตุ: ใน Python f-string:
+        # \\  -> กลายเป็น \ ใน LaTeX (สำหรับคำสั่งเช่น \phi)
+        # \\\\ -> กลายเป็น \\ ใน LaTeX (สำหรับการขึ้นบรรทัดใหม่)
         
-        if check_cap is not None:
-            # check_cap คือค่า Capacity ที่เอามาเทียบ (ถ้า symbol คือ Demand)
-            # หรือ check_cap คือ Demand (ถ้า symbol คือ Capacity)
-            # ในที่นี้เราจะรับ Ratio เข้ามา หรือทำ Check แยก
-            pass 
-
-        # Create LaTeX Block
         latex_str = f"""
 $$
 \\begin{{aligned}}
@@ -43,11 +34,15 @@ $$
         return f"**{description}**\n{latex_str}\n"
 
     def ratio_bar(demand, capacity, label="Ratio"):
-        ratio = demand / capacity if capacity > 0 else 999
-        color = "green" if ratio <= 1.0 else "red"
-        icon = "✅ OK" if ratio <= 1.0 else "❌ N.G."
-        percent = ratio * 100
+        if capacity == 0:
+            ratio = 999
+        else:
+            ratio = demand / capacity
+            
+        color = "#15803d" if ratio <= 1.0 else "#b91c1c" # Green / Red
+        icon = "✅ PASS" if ratio <= 1.0 else "❌ FAIL"
         
+        # ใช้ HTML progress bar ง่ายๆ เพื่อความสวยงามและอ่านง่าย
         return f"""
 > **Check {label}:** ${demand:.2f} / {capacity:.2f} = \\mathbf{{{ratio:.2f}}}$ &nbsp; <span style='color:{color}; font-weight:bold'>[{icon}]</span>
 """
@@ -60,11 +55,10 @@ $$
         method_name = "LRFD (Limit State Design)"
         f_v = 0.75; f_y = 0.90; f_r = 0.75; f_w = 0.75
         
-        # LaTeX Symbols
+        # LaTeX Symbols (Must escape backslashes!)
         phi_sym = r"\phi"
         kv_sym = r"\phi R_n"
         
-        # Helper for factors
         get_f = lambda t: f_v if t=='v' else (f_y if t=='y' else (f_r if t=='r' else f_w))
         fmt_f = lambda t: f"{get_f(t)}"
     else:
@@ -92,28 +86,28 @@ $$
     Fnv = bolts['Fnv']
     w_sz = plate['weld_size']
 
-    md = [] # Markdown Lines accumulator
+    md = [] 
 
     # =================================================================================
-    # 2. REPORT HEADER & INPUT DATA
+    # 2. REPORT HEADER
     # =================================================================================
     md.append(f"# 📐 CALCULATION REPORT")
     md.append(f"**Design Method:** {method_name} | **Standard:** AISC 360-16")
     md.append("---")
     
     col1 = f"""
-    **LOADS:**
-    - Shear Load ($V_u$): **{V_load:.2f} kN**
-    
-    **MEMBERS:**
-    - Plate: {t_pl} mm thick ($F_y={Fy_pl}, F_u={Fu_pl}$)
-    - Beam Web: {t_web} mm thick ($F_u={Fu_beam}$)
+**LOADS:**
+- Shear Load ($V_u$): **{V_load:.2f} kN**
+
+**MEMBERS:**
+- Plate: {t_pl} mm thick ($F_y={Fy_pl}, F_u={Fu_pl}$)
+- Beam Web: {t_web} mm thick ($F_u={Fu_beam}$)
     """
     col2 = f"""
-    **BOLT GROUP:**
-    - Size: M{d} ({bolt_grade})
-    - Arr.: {n_rows} Rows x {n_cols} Cols
-    - Pitch: {s_v} mm
+**BOLT GROUP:**
+- Size: M{d} ({bolt_grade})
+- Arr.: {n_rows} Rows x {n_cols} Cols
+- Pitch: {s_v} mm
     """
     md.append(col1 + "\n\n" + col2)
     md.append("---")
@@ -122,8 +116,7 @@ $$
     # 3. ANALYSIS: BOLT GROUP (ELASTIC METHOD)
     # =================================================================================
     md.append(header("1. Bolt Group Analysis (Elastic Method)"))
-    md.append("*Determining the resultant force on the critical bolt due to direct shear and eccentricity.*")
-
+    
     # 3.1 Properties
     if n_cols > 1: x_bar = ((n_cols - 1) * s_h) / 2
     else: x_bar = 0
@@ -147,8 +140,10 @@ $$
                 crit_x, crit_y = abs(dx), abs(dy)
 
     md.append(sub_header("Geometric Properties"))
+    
+    # Note: Use \\sum for summation symbol in LaTeX within Python string
     md.append(calc_block("e", "Eccentricity", "e_{dist} + x_{bar}", f"{e_dist} + {x_bar}", eccentricity, "mm"))
-    md.append(calc_block("J", "Polar Moment of Inertia ($\\sum r^2$)", "\\sum (x^2 + y^2)", f"{sum_r2:,.0f}", sum_r2, "mm^2"))
+    md.append(calc_block("J", "Polar Moment of Inertia", "\\sum (x^2 + y^2)", f"{sum_r2:,.0f}", sum_r2, "mm^2"))
 
     # 3.2 Force Demand
     Rv_direct = V_load / n_total
@@ -163,10 +158,14 @@ $$
     md.append(sub_header("Force Demand on Critical Bolt"))
     md.append(f"- Critical Bolt Position: $(x,y) = ({crit_x:.1f}, {crit_y:.1f})$ mm")
     
-    # Component Forces
+    # Component Forces (Manual LaTeX construction for clarity)
     md.append(f"**Component Forces:**")
-    md.append(r"$$ \begin{aligned} R_{vx} &= \frac{M \cdot y}{J} = \frac{" + f"{Mu_mm:.0f} \\cdot {crit_y:.1f}" + r"}{" + f"{sum_r2:.0f}" + r"} = \mathbf{" + f"{Rh_moment:.2f}" + r"} \text{ kN} \\" + \
-              r"R_{vy} &= \frac{V}{n} + \frac{M \cdot x}{J} = " + f"{Rv_direct:.2f} + {Rv_moment:.2f} = \mathbf{{{(Rv_direct+Rv_moment):.2f}}}" + r" \text{ kN} \end{aligned} $$")
+    
+    # Horizontal
+    md.append(f"$$ R_{{vx}} = \\frac{{M \\cdot y}}{{J}} = \\frac{{{Mu_mm:.0f} \\cdot {crit_y:.1f}}}{{{sum_r2:.0f}}} = \\mathbf{{{Rh_moment:.2f}}} \\text{{ kN}} $$")
+    
+    # Vertical
+    md.append(f"$$ R_{{vy}} = \\frac{{V}}{{n}} + \\frac{{M \\cdot x}}{{J}} = {Rv_direct:.2f} + {Rv_moment:.2f} = \\mathbf{{{(Rv_direct+Rv_moment):.2f}}} \\text{{ kN}} $$")
 
     # Resultant
     md.append(calc_block("V_{r}", "Resultant Shear Force", "\\sqrt{R_{vx}^2 + R_{vy}^2}", 
@@ -194,9 +193,6 @@ $$
     md.append(sub_header("2.2 Bolt Bearing Strength", "J3.10"))
     md.append("*Checking minimum of Plate and Beam Web.*")
     
-    # Bearing Formula String
-    eq_br = f"{fmt_f('v')} \\cdot 2.4 d t F_u" if is_lrfd else f"\\frac{{2.4 d t F_u}}{{{om_v}}}"
-    
     # Plate
     Rn_br_pl = (2.4 * d * t_pl * Fu_pl) / 1000.0
     cap_br_pl = Rn_br_pl * get_f('v')
@@ -207,6 +203,7 @@ $$
     
     cap_br_min = min(cap_br_pl, cap_br_wb)
     
+    # Display simplified bearing check
     md.append(f"**Plate Bearing ($t={t_pl}$):**")
     md.append(f"$$ {kv_sym} = {fmt_f('v')} \\cdot 2.4({d})({t_pl})({Fu_pl})/1000 = \\mathbf{{{cap_br_pl:.2f}}} \\text{{ kN}} $$")
     
@@ -250,7 +247,7 @@ $$
     md.append(f"- Areas: $A_{{gv}}={Agv:.0f}, A_{{nv}}={Anv:.0f}, A_{{nt}}={Ant:.0f}$ mm²")
     
     term1 = 0.6 * Fu_pl * Anv
-    term2 = 1.0 * Fu_pl * Ant # Ubs = 1.0
+    term2 = 1.0 * Fu_pl * Ant 
     term3 = 0.6 * Fy_pl * Agv
     
     Rn_blk_1 = (term1 + term2) / 1000.0
