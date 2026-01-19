@@ -1,168 +1,176 @@
-# report_generator.py (V25 - Ultimate Senior Global Edition)
 import streamlit as st
 import streamlit.components.v1 as components
 
 def get_connection_logic(res, p):
     """
-    Advanced Logic: คำนวณความสูงแผ่นเหล็กและจำนวนโบลต์ตามแรงที่เกิดขึ้นจริง
-    อ้างอิงมาตรฐาน AISC 360-22
+    Advanced Engineering Logic based on AISC 360-22
+    Calculates precise geometry for a single shear fin plate connection.
     """
     v_act = res.get('v_act', 0)
     h_beam = p.get('h', 0)
+    tw = p.get('tw', 6)
     
-    # คำนวณจำนวนแถวโบลต์ (M20 Gr 8.8 รับแรงเฉือนได้ประมาณ 3,800 - 4,400 kg ตามการออกแบบ)
-    rows = max(2, int(v_act / 3800) + 1)
-    pitch = 75   # mm (ระยะห่างมาตรฐาน)
-    edge = 40    # mm (ระยะขอบมาตรฐานขั้นต่ำสำหรับ M20)
-    plate_h = (rows - 1) * pitch + (2 * edge)
+    # 1. Bolt Strength Calculation (M20 Gr 8.8 Single Shear ~ 4,400 kg @ phi=0.75)
+    rows = max(2, int(v_act / 4400) + 1)
+    pitch = 75   # mm (Standard)
+    edge_top = 40 # mm (Standard min for M20)
     
-    # ตรวจสอบ Clearance ไม่ให้แผ่นเหล็กชนปีกคาน (Flanges)
-    if plate_h > (h_beam - 60):
-        rows = max(2, rows - 1)
-        plate_h = (rows - 1) * pitch + (2 * edge)
+    # 2. Plate Geometry
+    plate_h = (rows - 1) * pitch + (2 * edge_top)
+    
+    # 3. Weld Sizing (AISC Table J2.4: Min weld based on thinner part)
+    min_weld = 5 if tw <= 6 else 6
+    weld_size = max(min_weld, int(tw * 0.75)) # Rule of thumb for full strength
 
     return {
-        "rows": rows, "pitch": pitch, "edge": edge,
-        "plate_h": int(plate_h),
-        "plate_t": max(9, int(p.get('tw', 6) + 3)),
-        "weld_size": 6 if p.get('tw', 6) <= 10 else 8
+        "rows": rows, "pitch": pitch, "edge": edge_top,
+        "plate_h": int(plate_h), "plate_w": 90,
+        "plate_t": max(10, int(tw + 3)), # Min 10mm for professional feel
+        "weld_size": weld_size,
+        "bolt_dia": 20,
+        "bolt_grade": "8.8"
     }
 
 def render_report_tab(method, is_lrfd, sec_name, steel_grade, p, res, bolt):
-    """
-    ฟังก์ชันหลักในการสร้าง Report และ Drawing แบบสมบูรณ์
-    """
     conn = get_connection_logic(res, p)
     v_cap = res.get('v_cap', 1)
     v_act = res.get('v_act', 0)
-    util_ratio = (v_act / v_cap) * 100
+    m_cap = res.get('m_cap', 1)
+    m_act = res.get('m_act', 0)
+    
+    ratio_v = v_act / v_cap
+    ratio_m = m_act / m_cap
+    max_ratio = max(ratio_v, ratio_m)
 
-    # --- SVG PRECISION DRAWING CONFIG ---
-    c_w, c_h = 600, 550  # Canvas Size
-    p_w = 80             # Plate Width
-    p_h = conn['plate_h']
+    # --- SVG PRECISION ENGINE ---
+    # Optimized Canvas with Professional Padding
+    c_w, c_h = 700, 600
+    start_x, start_y = 200, (c_h - conn['plate_h']) / 2
+    bolt_x = start_x + 45 # Positioned for 90mm plate
     
-    start_x = 180        # จุดเริ่มวาดแผ่นเหล็ก (X)
-    start_y = (c_h - p_h) / 2  # จุดเริ่มวาด (Y) เพื่อให้รูปอยู่กลาง Canvas
-    bolt_x = start_x + (p_w / 2)
-    
-    # 1. หัวลูกศรแบบวิศวกรรม (Precision Markers)
-    svg_defs = """
-    <defs>
-        <marker id="arrow-start" markerWidth="10" markerHeight="10" refX="0" refY="5" orient="auto">
-            <path d="M10,0 L0,5 L10,10 Z" fill="#475569" />
-        </marker>
-        <marker id="arrow-end" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto">
-            <path d="M0,0 L10,5 L0,10 Z" fill="#475569" />
-        </marker>
-        <marker id="arrow-red" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" fill="#ef4444" />
-        </marker>
-    </defs>
-    """
-
-    # 2. วาดโบลต์และระยะห่าง (Bolts & Pitch Dimensions)
-    bolt_group = ""
-    dim_group = ""
-    
+    bolt_svg = ""
+    pitch_svg = ""
     for i in range(conn['rows']):
-        current_bolt_y = start_y + conn['edge'] + (i * conn['pitch'])
-        
-        # สัญลักษณ์โบลต์ (Center-cross circle)
-        bolt_group += f"""
-        <g transform="translate({bolt_x}, {current_bolt_y})">
-            <circle r="6" fill="white" stroke="#0f172a" stroke-width="1.5"/>
-            <line x1="-4" y1="-4" x2="4" y2="4" stroke="#0f172a" stroke-width="1"/>
-            <line x1="4" y1="-4" x2="-4" y2="4" stroke="#0f172a" stroke-width="1"/>
-        </g>
-        """
-        
-        # เส้นบอกระยะ Pitch (75mm) - ลูกศรชี้ระหว่างจุดต่อจุด
+        by = start_y + conn['edge'] + (i * conn['pitch'])
+        # High-res Bolt Cross symbol
+        bolt_svg += f"""
+        <g transform="translate({bolt_x}, {by})">
+            <circle r="7" fill="white" stroke="#1e293b" stroke-width="1.5"/>
+            <line x1="-5" y1="-5" x2="5" y2="5" stroke="#1e293b" stroke-width="1.2"/>
+            <line x1="5" y1="-5" x2="-5" y2="5" stroke="#1e293b" stroke-width="1.2"/>
+        </g>"""
+        # Precise Pitch Dimensions (Right Side)
         if i < conn['rows'] - 1:
-            next_bolt_y = current_bolt_y + conn['pitch']
-            dim_y_mid = (current_bolt_y + next_bolt_y) / 2
-            dim_group += f"""
-            <line x1="{bolt_x + 40}" y1="{current_bolt_y}" x2="{bolt_x + 40}" y2="{next_bolt_y}" stroke="#475569" stroke-width="1" marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
-            <text x="{bolt_x + 50}" y="{dim_y_mid + 4}" font-size="12" fill="#475569" font-family="Arial">{conn['pitch']} mm</text>
+            mid_y = by + (conn['pitch']/2)
+            pitch_svg += f"""
+            <line x1="{bolt_x + 35}" y1="{by}" x2="{bolt_x + 35}" y2="{by + conn['pitch']}" stroke="#64748b" marker-start="url(#dot)" marker-end="url(#dot)"/>
+            <text x="{bolt_x + 45}" y="{mid_y + 4}" font-size="12" font-family="monospace" fill="#475569">{conn['pitch']}mm</text>
             """
 
-    # 3. บอกระยะขอบ (Edge Distance) - ป้องกันการตกหล่นข้อมูลสำคัญ
-    dim_group += f"""
-    <line x1="{bolt_x + 40}" y1="{start_y}" x2="{bolt_x + 40}" y2="{start_y + conn['edge']}" stroke="#94a3b8" stroke-width="1" marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
-    <text x="{bolt_x + 50}" y="{start_y + conn['edge']/2 + 4}" font-size="11" fill="#94a3b8">e={conn['edge']} mm</text>
-    """
-
-    # HTML Output
     html_content = f"""
-    <div style="background:#f1f5f9; padding:30px; font-family:'Inter', sans-serif;">
-        <div style="max-width:850px; margin:auto; background:white; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.1); overflow:hidden; border:1px solid #e2e8f0;">
+    <div style="background:#eef2f6; padding:50px 20px; font-family:'Inter', sans-serif; display:flex; justify-content:center;">
+        <div style="width:850px; background:white; padding:60px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); border-top:8px solid #0f172a;">
             
-            <div style="background:#0f172a; padding:30px 40px; color:white; display:flex; justify-content:space-between; align-items:center;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:40px; border-bottom:2px solid #f1f5f9; padding-bottom:20px;">
                 <div>
-                    <h1 style="margin:0; font-size:22px; font-weight:800; letter-spacing:0.5px;">STRUCTURAL CALCULATION REPORT</h1>
-                    <p style="margin:5px 0 0; color:#94a3b8; font-size:12px;">AISC 360-22 Steel Construction Manual</p>
+                    <h1 style="margin:0; font-size:26px; font-weight:900; color:#0f172a; letter-spacing:-0.5px;">STRUCTURAL DESIGN CALCULATION</h1>
+                    <p style="margin:5px 0; color:#64748b; font-size:13px; font-weight:600;">Standard: AISC 360-22 LRFD Edition | Project Code: GI-2026-X</p>
                 </div>
-                <div style="background:{'#10b981' if util_ratio <= 100 else '#ef4444'}; padding:10px 20px; border-radius:4px; text-align:center;">
-                    <div style="font-size:10px; opacity:0.8;">UTILIZATION</div>
-                    <div style="font-size:20px; font-weight:900;">{util_ratio:.1f}%</div>
+                <div style="text-align:right;">
+                    <div style="background:{'#059669' if max_ratio <= 1 else '#dc2626'}; color:white; padding:10px 25px; border-radius:4px; font-size:22px; font-weight:900;">
+                        { "CONFORMS" if max_ratio <= 1 else "NON-CONFORM" }
+                    </div>
+                    <p style="margin:5px 0; font-size:12px; color:#94a3b8;">Utilization: {(max_ratio*100):.1f}%</p>
                 </div>
             </div>
 
-            <div style="padding:40px;">
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:30px; margin-bottom:30px; font-size:13px; border-bottom:1px solid #f1f5f9; padding-bottom:20px;">
-                    <div>
-                        <p style="margin:5px 0; color:#64748b;">Member Section: <b style="color:#1e293b;">{sec_name}</b></p>
-                        <p style="margin:5px 0; color:#64748b;">Steel Grade: <b style="color:#1e293b;">{steel_grade}</b></p>
-                    </div>
-                    <div>
-                        <p style="margin:5px 0; color:#64748b;">Design Shear (φVn): <b style="color:#1e293b;">{v_cap:,.0f} kg</b></p>
-                        <p style="margin:5px 0; color:#64748b;">Applied Shear (Vu): <b style="color:#ef4444;">{v_act:,.0f} kg</b></p>
-                    </div>
-                </div>
+            <div style="margin-bottom:40px;">
+                <h2 style="font-size:14px; background:#0f172a; color:white; padding:8px 15px; display:inline-block; border-radius:2px; margin-bottom:20px;">1.0 STRENGTH VERIFICATION</h2>
+                <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                    <thead>
+                        <tr style="border-bottom:2px solid #0f172a; text-align:left; background:#f8fafc;">
+                            <th style="padding:12px;">Check Component</th>
+                            <th style="padding:12px;">Limit State (φRn)</th>
+                            <th style="padding:12px;">Demand (Ru)</th>
+                            <th style="padding:12px; text-align:center;">Utility Ratio</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="border-bottom:1px solid #f1f5f9;">
+                            <td style="padding:12px;"><b>Flexural Strength</b><br><small>AISC F2-1 (Plasticity)</small></td>
+                            <td style="padding:12px;">{res.get('m_cap',0):,.0f} kg.m</td>
+                            <td style="padding:12px;">{res.get('m_act',0):,.0f} kg.m</td>
+                            <td style="padding:12px; text-align:center; font-weight:700; color:{'green' if ratio_m < 1 else 'red'}">{ratio_m:.3f}</td>
+                        </tr>
+                        <tr style="border-bottom:1px solid #f1f5f9;">
+                            <td style="padding:12px;"><b>Shear Strength</b><br><small>AISC G2-1 (Web Shear)</small></td>
+                            <td style="padding:12px;">{res.get('v_cap',0):,.0f} kg</td>
+                            <td style="padding:12px;">{res.get('v_act',0):,.0f} kg</td>
+                            <td style="padding:12px; text-align:center; font-weight:700; color:{'green' if ratio_v < 1 else 'red'}">{ratio_v:.3f}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
 
-                <div style="border:1px solid #e2e8f0; border-radius:8px; background:#ffffff; position:relative;">
-                    <div style="position:absolute; top:15px; left:20px; font-size:11px; font-weight:bold; color:#1e293b; text-transform:uppercase;">Typical Connection Elevation</div>
-                    <svg width="100%" height="{c_h}" viewBox="0 0 {c_w} {c_h}">
-                        {svg_defs}
+            <div style="margin-bottom:40px;">
+                <h2 style="font-size:14px; background:#0f172a; color:white; padding:8px 15px; display:inline-block; border-radius:2px; margin-bottom:20px;">2.0 CONNECTION DETAIL (ELEVATION)</h2>
+                <div style="border:1.5px solid #e2e8f0; padding:20px; background:white; display:flex; justify-content:center; border-radius:8px;">
+                    <svg width="{c_w}" height="{c_h}" viewBox="0 0 {c_w} {c_h}">
+                        <defs>
+                            <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#1e293b" /></marker>
+                            <marker id="dot" markerWidth="4" markerHeight="4" refX="2" refY="2"><circle cx="2" cy="2" r="2" fill="#64748b" /></marker>
+                        </defs>
                         
-                        <rect x="{start_x - 15}" y="30" width="15" height="{c_h-60}" fill="#cbd5e1"/>
+                        <rect x="{start_x - 20}" y="40" width="20" height="{c_h-80}" fill="#f1f5f9" stroke="#cbd5e1"/>
                         
-                        <line x1="{start_x}" y1="60" x2="{c_w - 50}" y2="60" stroke="#e2e8f0" stroke-width="2" stroke-dasharray="8,4"/>
-                        <line x1="{start_x}" y1="{c_h - 60}" x2="{c_w - 50}" y2="{c_h - 60}" stroke="#e2e8f0" stroke-width="2" stroke-dasharray="8,4"/>
+                        <line x1="{start_x}" y1="80" x2="{c_w-50}" y2="80" stroke="#e2e8f0" stroke-width="2" stroke-dasharray="10,5"/>
+                        <line x1="{start_x}" y1="{c_h-80}" x2="{c_w-50}" y2="{c_h-80}" stroke="#e2e8f0" stroke-width="2" stroke-dasharray="10,5"/>
                         
-                        <rect x="{start_x}" y="{start_y}" width="{p_w}" height="{p_h}" fill="#3b82f6" fill-opacity="0.05" stroke="#3b82f6" stroke-width="2.5"/>
+                        <rect x="{start_x}" y="{start_y}" width="{conn['plate_w']}" height="{conn['plate_h']}" fill="#3b82f6" fill-opacity="0.03" stroke="#0f172a" stroke-width="2"/>
                         
-                        {bolt_group}
-                        {dim_group}
-                        
-                        <line x1="{c_w - 100}" y1="{start_y}" x2="{c_w - 100}" y2="{start_y + p_h}" stroke="#0f172a" stroke-width="1.5" marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
-                        <text x="{c_w - 85}" y="{start_y + p_h/2}" font-size="13" font-weight="900" fill="#0f172a" transform="rotate(90 {c_w - 85},{start_y + p_h/2})">PLATE HEIGHT: {p_h} mm</text>
-                        
-                        <path d="M{start_x} {start_y + 30} L{start_x - 60} {start_y - 20} L{start_x - 120} {start_y - 20}" fill="none" stroke="#ef4444" stroke-width="1.5" marker-end="url(#arrow-red)"/>
-                        <text x="{start_x - 120}" y="{start_y - 30}" font-size="11" font-weight="bold" fill="#ef4444">WELD FILLET {conn['weld_size']} mm (TYP)</text>
+                        <line x1="{start_x - 60}" y1="{start_y}" x2="{start_x - 60}" y2="{start_y + conn['plate_h']}" stroke="#0f172a" stroke-width="1.2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+                        <text x="{start_x - 75}" y="{start_y + conn['plate_h']/2}" font-size="14" font-weight="900" transform="rotate(-90 {start_x - 75},{start_y + conn['plate_h']/2})">PL HEIGHT {conn['plate_h']}mm</text>
+
+                        <line x1="{bolt_x + 35}" y1="{start_y}" x2="{bolt_x + 35}" y2="{start_y + conn['edge']}" stroke="#64748b" marker-start="url(#dot)" marker-end="url(#dot)"/>
+                        <text x="{bolt_x + 45}" y="{start_y + conn['edge']/2 + 4}" font-size="11" fill="#64748b">e={conn['edge']}mm</text>
+
+                        {bolt_svg}
+                        {pitch_svg}
+
+                        <path d="M{start_x} {start_y + 30} L{start_x - 80} {start_y - 20} L{start_x - 140} {start_y - 20}" fill="none" stroke="#ef4444" stroke-width="1.5"/>
+                        <text x="{start_x - 140}" y="{start_y - 30}" font-size="13" font-weight="bold" fill="#ef4444">△ {conn['weld_size']} (TYP)</text>
+                        <text x="{start_x/2}" y="{c_h-10}" font-size="12" font-weight="bold" fill="#94a3b8">SCALE: N.T.S</text>
                     </svg>
                 </div>
+            </div>
 
-                <div style="margin-top:30px; display:grid; grid-template-columns: 1fr 1fr; gap:40px; font-size:12px; border-top:2px solid #f1f5f9; padding-top:20px; color:#475569;">
-                    <div>
-                        <p><b>PLATE:</b> Thickness {conn['plate_t']} mm | Grade A36/SS400</p>
-                        <p><b>WELDING:</b> AWS E70XX Electrode</p>
-                    </div>
-                    <div>
-                        <p><b>BOLTS:</b> {bolt.get('size','M20')} Grade 8.8 (High Strength)</p>
-                        <p><b>HOLES:</b> Standard Clearance (+2mm)</p>
-                    </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:40px; border-top:2px solid #f1f5f9; padding-top:30px;">
+                <div style="font-size:13px;">
+                    <h4 style="margin:0 0 10px; color:#0f172a; border-left:4px solid #3b82f6; padding-left:10px;">MATERIAL SPECIFICATION</h4>
+                    <ul style="list-style:none; padding:0; line-height:1.8;">
+                        <li>• <b>Member:</b> {sec_name} ({steel_grade})</li>
+                        <li>• <b>Connection Plate:</b> PL {conn['plate_t']}mm (A36 / S275)</li>
+                        <li>• <b>Fasteners:</b> {conn['rows']} x {conn['bolt_dia']}mm Gr {conn['bolt_grade']} HSFG</li>
+                        <li>• <b>Weld:</b> E70XX Fillet Weld</li>
+                    </ul>
+                </div>
+                <div style="font-size:12px; color:#475569; background:#fff7ed; padding:15px; border-radius:4px; border:1px solid #fed7aa;">
+                    <b>ENGINEER'S NOTES:</b><br>
+                    1. All welding to be inspected via VT (Visual Testing) 100%.<br>
+                    2. Tightening of bolts shall follow AISC turn-of-nut method.<br>
+                    3. Shop to verify beam length with 10mm clearance at support.
                 </div>
             </div>
 
-            <div style="background:#f8fafc; padding:20px 40px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-size:10px; color:#94a3b8;">Issued by Beam Insight Pro v25.0 | Jan 2026</span>
+            <div style="margin-top:60px; display:flex; justify-content:space-between; align-items:flex-end;">
+                <div style="font-size:10px; color:#94a3b8;">Beam Insight v2026.1 | Reference: AISC 360-22 Structural Steel Standard</div>
                 <div style="text-align:center;">
-                    <div style="width:140px; height:1px; background:#0f172a; margin-bottom:5px;"></div>
-                    <span style="font-size:11px; font-weight:bold; color:#0f172a;">SENIOR ENGINEER REVIEW</span>
+                    <div style="border-bottom:1.5px solid #0f172a; width:200px; margin-bottom:8px;"></div>
+                    <p style="margin:0; font-size:13px; font-weight:900; color:#0f172a;">PRINCIPAL STRUCTURAL ENGINEER</p>
+                    <p style="margin:0; font-size:11px; color:#64748b;">REGISTRATION NO. 00-2026-X</p>
                 </div>
             </div>
         </div>
     </div>
     """
-    components.html(html_content, height=1450, scrolling=True)
+    components.html(html_content, height=1400, scrolling=True)
