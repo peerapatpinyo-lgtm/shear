@@ -1,5 +1,6 @@
 import streamlit as st
 import math
+import pandas as pd
 import drawing_utils as dw
 import calculation_report as cr 
 
@@ -53,7 +54,7 @@ def check_geometry_compliance(inputs):
         
     # 2. Spacing Check (Min 2.67d, Preferred 3d)
     min_spacing = 2.67 * d
-    pref_spacing = 3.0 * d
+    # pref_spacing = 3.0 * d
     if inputs['s_v'] < min_spacing:
         warnings.append(f"⚠️ ระยะห่างรูเจาะ (Pitch) ชิดเกินไป (Min {min_spacing:.1f} mm)")
     
@@ -208,7 +209,80 @@ def calculate_quick_check(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade, b
     }
 
 # ==========================================
-# 🖥️ 2. UI RENDERING (UPDATED)
+# ⚡ 2. AUTO-OPTIMIZER LOGIC
+# ==========================================
+def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, current_inputs):
+    """
+    วนลูปหา Design ที่ประหยัดที่สุด (น้ำหนักน้อยสุด) ที่ผ่านการคำนวณ
+    """
+    # 1. กำหนด Scope การค้นหา (Search Space)
+    candidate_bolts = [16, 20, 24, 27]    # ขนาดน็อตที่นิยมใช้
+    candidate_rows = range(2, 8)          # จำนวนแถว 2-7
+    candidate_thk = [6, 9, 12, 16, 20]    # ความหนาเพลทมาตรฐาน
+    
+    valid_designs = []
+    
+    # ดึงค่าคงที่จาก Database
+    bolt_db_data = BOLT_DB[bolt_grade_name]
+    
+    # 2. เริ่มวนลูป (Brute Force Search)
+    for d in candidate_bolts:
+        for r in candidate_rows:
+            for t in candidate_thk:
+                
+                # Setup "Virtual" Inputs
+                temp_inputs = current_inputs.copy()
+                temp_inputs.update({
+                    'd': d, 
+                    'rows': r, 
+                    'cols': 1, # สมมติ 1 col ก่อนเพื่อความประหยัด
+                    't': t,
+                    's_v': 3.0 * d,      # Standard Pitch
+                    'lv': 1.5 * d,       # Standard Edge V
+                    'leh': 1.5 * d,      # Standard Edge H
+                    's_h': 0,
+                    'weld_size': max(6, t-2) # เชื่อมตามความหนาโดยประมาณ
+                })
+
+                # คำนวณ Geometry
+                geom = calculate_plate_geometry(conn_type, temp_inputs)
+                
+                # Check Compliance (ข้ามถ้า geometry ผิดปกติ)
+                if check_geometry_compliance(temp_inputs): continue 
+
+                # ปรับ Fnv ตาม Logic (สมมติเป็น Type N - Included เพื่อความ Safe)
+                bolt_data_calc = bolt_db_data.copy() 
+                
+                # คำนวณ Strength
+                res = calculate_quick_check(
+                    temp_inputs, geom, V_target, T_target, 
+                    mat_grade, bolt_data_calc
+                )
+                
+                # 3. ถ้าผ่าน (PASS) ให้เก็บเข้า List
+                if res['status'] == "PASS":
+                    vol_mm3 = geom['h'] * geom['w'] * t
+                    weight = (vol_mm3 / 1e9) * 7850 
+                    
+                    valid_designs.append({
+                        'Bolt': f"M{d}",
+                        'Rows': r,
+                        'Plate': f"{t} mm",
+                        'Ratio': res['ratio'],
+                        'Weight (kg)': weight,
+                        'Params': temp_inputs 
+                    })
+
+    # 4. สรุปผล
+    if not valid_designs:
+        return None
+    
+    df = pd.DataFrame(valid_designs)
+    df = df.sort_values(by=['Weight (kg)', 'Ratio'], ascending=[True, False])
+    return df.head(3) # คืนค่า Top 3
+
+# ==========================================
+# 🖥️ 3. UI RENDERING
 # ==========================================
 
 def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
@@ -235,6 +309,38 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         mat_options = ["SS400 (Fy 245)", "SM520 (Fy 355)", "A36 (Fy 250)"]
         sel_mat_grade = row_mat[1].selectbox("🛡️ Plate Grade", mat_options)
         
+        # --- OPTIMIZER UI ---
+        with st.expander("⚡ AI Auto-Optimizer (ช่วยออกแบบ)", expanded=False):
+            c_opt1, c_opt2 = st.columns([1, 2])
+            with c_opt1:
+                if st.button("🚀 Find Best Design", type="primary"):
+                    with st.spinner("Thinking..."):
+                        # สร้างค่า Default สำหรับส่งไป Optimize
+                        current_defaults = {
+                            'd': default_bolt_size, 'rows': 3, 'cols': 1, 's_v': 70, 's_h': 0,
+                            't': 9, 'weld_size': 6, 'lv': 35, 'leh': 35, 'e1': 40, 'setback': 10,
+                            'T_load': 0, 'cope': {'has_cope': False, 'dc': 0, 'c': 0}
+                        }
+                        
+                        best_designs = run_optimization(
+                            V_design_kg, 0, # T_load=0 for basic optimization
+                            sel_mat_grade, bolt_grade_name, conn_type, 
+                            current_defaults
+                        )
+                        
+                        if best_designs is not None:
+                            st.session_state['opt_results'] = best_designs
+                            st.success("Done!")
+                        else:
+                            st.error("No valid design found.")
+            
+            with c_opt2:
+                if 'opt_results' in st.session_state:
+                    st.dataframe(
+                        st.session_state['opt_results'][['Bolt', 'Rows', 'Plate', 'Weight (kg)', 'Ratio']], 
+                        hide_index=True, use_container_width=True
+                    )
+
         # Thread Condition
         st.write("---")
         st.caption("⚙️ Bolt Condition")
@@ -353,10 +459,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
     # Report Gen
     st.markdown("---")
     if st.button("📄 Generate Calculation Report", type="primary", use_container_width=True):
-        # ... (Report generation code remains mostly same, just pass updated checks if needed) ...
-        # For simplicity, keeping the report call structure same as user has it working.
-        # Ideally, you'd pass the new failure modes to the report generator too.
-        
         V_kN = V_design_kg * 9.81 / 1000.0
         T_kN = T_design_kg * 9.81 / 1000.0
         is_sm520 = "SM520" in sel_mat_grade
@@ -386,84 +488,3 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                     st.markdown(report_md)
         except Exception as e:
             st.error(f"❌ Error generating report: {e}")
-
-
-# ==========================================
-# ⚡ 3. AUTO-OPTIMIZER LOGIC
-# ==========================================
-def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, current_inputs):
-    """
-    วนลูปหา Design ที่ประหยัดที่สุด (น้ำหนักน้อยสุด) ที่ผ่านการคำนวณ
-    """
-    import pandas as pd # ใช้จัดการข้อมูลตาราง
-
-    # 1. กำหนด Scope การค้นหา (Search Space)
-    candidate_bolts = [16, 20, 24, 27]    # ขนาดน็อตที่นิยมใช้
-    candidate_rows = range(2, 8)          # จำนวนแถว 2-7
-    candidate_thk = [6, 9, 12, 16, 20]    # ความหนาเพลทมาตรฐาน
-    
-    valid_designs = []
-    
-    # ดึงค่าคงที่จาก Database
-    bolt_db_data = BOLT_DB[bolt_grade_name]
-    
-    # 2. เริ่มวนลูป (Brute Force Search)
-    # ลูปนี้จะรันประมาณ 4*6*5 = 120 รอบ (ใช้เวลาเสี้ยววินาที)
-    for d in candidate_bolts:
-        for r in candidate_rows:
-            for t in candidate_thk:
-                
-                # Setup "Virtual" Inputs
-                # ใช้ระยะมาตรฐานในการ Optimize: Pitch=3d, Edge=1.5d
-                temp_inputs = current_inputs.copy()
-                temp_inputs.update({
-                    'd': d, 
-                    'rows': r, 
-                    'cols': 1, # สมมติ 1 col ก่อนเพื่อความประหยัด
-                    't': t,
-                    's_v': 3.0 * d,      # Standard Pitch
-                    'lv': 1.5 * d,       # Standard Edge V
-                    'leh': 1.5 * d,      # Standard Edge H
-                    's_h': 0,
-                    'weld_size': max(6, t-2) # เชื่อมตามความหนาโดยประมาณ
-                })
-
-                # คำนวณ Geometry
-                geom = calculate_plate_geometry(conn_type, temp_inputs)
-                
-                # Check Compliance (ข้ามถ้า geometry ผิดปกติ)
-                if check_geometry_compliance(temp_inputs): continue 
-
-                # ปรับ Fnv ตาม Logic (สมมติเป็น Type N - Included เพื่อความ Safe)
-                bolt_data_calc = bolt_db_data.copy() # ใช้ค่า Fnv เดิม (Type N)
-                
-                # คำนวณ Strength
-                res = calculate_quick_check(
-                    temp_inputs, geom, V_target, T_target, 
-                    mat_grade, bolt_data_calc
-                )
-                
-                # 3. ถ้าผ่าน (PASS) ให้เก็บเข้า List
-                if res['status'] == "PASS":
-                    # คำนวณน้ำหนักเหล็กแผ่นโดยประมาณ (Weight Estimation)
-                    # W = Volume * Density (7850 kg/m3)
-                    vol_mm3 = geom['h'] * geom['w'] * t
-                    weight = (vol_mm3 / 1e9) * 7850 
-                    
-                    valid_designs.append({
-                        'Bolt': f"M{d}",
-                        'Rows': r,
-                        'Plate': f"{t} mm",
-                        'Ratio': res['ratio'],
-                        'Weight (kg)': weight,
-                        'Params': temp_inputs # เก็บค่าไว้ส่งคืนเมื่อเลือก
-                    })
-
-    # 4. สรุปผล
-    if not valid_designs:
-        return None
-    
-    # แปลงเป็น DataFrame แล้ว Sort ตามน้ำหนักน้อยสุด
-    df = pd.DataFrame(valid_designs)
-    df = df.sort_values(by=['Weight (kg)', 'Ratio'], ascending=[True, False])
-    return df.head(3) # คืนค่า Top 3
