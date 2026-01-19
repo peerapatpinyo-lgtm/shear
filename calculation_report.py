@@ -14,7 +14,6 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
     def add_sub_header(text):
         lines.append(f"\n#### {text}\n")
 
-    # [FIX] ปรับแก้ฟังก์ชันนี้ให้รองรับ sub_text=None เพื่อไม่ให้โชว์บรรทัดซ้ำ
     def add_latex(symbol, eq_text, sub_text, result, unit):
         lines.append(f"**{symbol}**")
         lines.append("")      
@@ -22,7 +21,6 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
         lines.append("\\begin{aligned}")
         lines.append(f"{symbol} &= {eq_text} \\\\")
         
-        # ถ้ามีข้อความบรรทัดกลาง ให้แสดง (เช่น การแทนค่าตัวเลข)
         if sub_text:
             lines.append(f"&= {sub_text} \\\\")
             
@@ -61,8 +59,16 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
     n_rows = bolts['rows']; n_cols = bolts['cols']
     s_v = bolts['s_v']; s_h = bolts.get('s_h', 0)
     
+    # Plate & Dimensions
     t_pl = plate['t']; h_pl = plate['h']
+    w_pl = plate.get('w', 0) # [NEW] รับค่า width
     Fy_pl = plate['Fy']; Fu_pl = plate['Fu']
+    
+    # Edge Distances
+    e1 = plate.get('e1', 0)
+    lv = plate.get('lv', 0)
+    l_side = plate.get('l_side', 0) # This is leh
+
     t_web = beam['tw']; Fu_beam = beam['Fu']
     Fnv = bolts['Fnv']
     w_sz = plate['weld_size']
@@ -71,11 +77,18 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
     # 3. Build Report Content
     # ==========================================
     
-    # --- Header ---
+    # --- Header Summary ---
     lines.append(f"# 📐 Calculation Report ({method_str})")
     lines.append("---")
-    lines.append(f"- **Load ($V_u$):** {V_load:.2f} kN")
-    lines.append(f"- **Geometry:** Bolt M{d} ({n_rows}x{n_cols}), Plate {t_pl} mm")
+    
+    # [NEW] แสดงขนาด Plate และระยะต่างๆ ให้ครบ
+    lines.append("#### 🧱 Geometry & Material Summary")
+    lines.append(f"- **Plate Size ($H \\times W \\times t$):** {h_pl:.0f} x {w_pl:.0f} x {t_pl:.0f} mm")
+    lines.append(f"- **Bolt Config:** M{d} (Grade {bolt_grade}), {n_rows} Rows x {n_cols} Cols")
+    lines.append(f"- **Detailing:** Pitch $s_v={s_v}$, Gauge $s_h={s_h}$ mm")
+    lines.append(f"- **Edges:** Top/Bot $l_v={lv}$, Horizontal $l_h={l_side}$, $e_1={e1}$ mm")
+    lines.append(f"- **Weld Size:** {w_sz} mm (E70XX)")
+    lines.append(f"- **Design Load ($V_u$):** {V_load:.2f} kN")
     lines.append("---")
 
     # --- 1. Analysis ---
@@ -83,7 +96,7 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
     
     # Geometric Properties
     x_bar = ((n_cols - 1) * s_h) / 2 if n_cols > 1 else 0
-    eccentricity = plate['e1'] + x_bar
+    eccentricity = e1 + x_bar
     Mu_mm = V_load * eccentricity
     
     sum_r2 = 0
@@ -98,7 +111,7 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
             sum_r2 += r_sq
             if r_sq >= (crit_x**2 + crit_y**2): crit_x, crit_y = abs(dx), abs(dy)
 
-    # [FIX] ตรงนี้ส่ง None ไปที่ช่องกลาง เพื่อไม่ให้โชว์ตัวเลขซ้ำ
+    lines.append(f"Eccentricity $e = e_1 + x_{{bar}} = {e1:.1f} + {x_bar:.1f} = {eccentricity:.1f}$ mm")
     add_latex("J", "\\sum (x^2 + y^2)", None, sum_r2, "mm^2")
 
     # Force Demand
@@ -156,10 +169,10 @@ def generate_report(V_load, beam, plate, bolts, is_lrfd=True, material_grade="A3
 
     # 2.5 Block Shear
     add_sub_header("2.5 Block Shear Strength")
-    lv, l_side = plate['lv'], plate['l_side']
-    Agv = (lv + (n_rows - 1) * s_v) * t_pl
+    lv_val, leh_val = lv, l_side
+    Agv = (lv_val + (n_rows - 1) * s_v) * t_pl
     Anv = (Agv/t_pl - (n_rows - 0.5) * h_hole) * t_pl
-    Ant = (l_side - 0.5 * h_hole) * t_pl
+    Ant = (leh_val - 0.5 * h_hole) * t_pl
     
     Rn_blk_1 = (0.6 * Fu_pl * Anv + 1.0 * Fu_pl * Ant) / 1000.0
     Rn_blk_2 = (0.6 * Fy_pl * Agv + 1.0 * Fu_pl * Ant) / 1000.0
