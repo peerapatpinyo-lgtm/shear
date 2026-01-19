@@ -2,7 +2,7 @@ import streamlit as st
 import math
 import pandas as pd
 import drawing_utils as dw
-import calculation_report as cr 
+import calculation_report as cr
 
 # ==========================================
 # 🗄️ 0. DATABASES (THAI & STANDARDS)
@@ -18,11 +18,10 @@ BOLT_DB = {
 }
 
 # ตารางระยะขอบต่ำสุด (AISC Table J3.4) หน่วย mm
-# Key: Bolt Diameter, Value: Min Edge Distance
 AISC_MIN_EDGE = {12: 20, 16: 22, 20: 34, 22: 38, 24: 42, 27: 48, 30: 52}
 
 # ==========================================
-# 🧮 1. ENGINEERING LOGIC (ADVANCED)
+# 🧮 1. ENGINEERING LOGIC (CORE)
 # ==========================================
 
 def calculate_plate_geometry(conn_type, user_inputs):
@@ -46,7 +45,7 @@ def check_geometry_compliance(inputs):
     """ฟังก์ชันตรวจสอบระยะตามมาตรฐาน (Code Check)"""
     warnings = []
     d = inputs['d']
-    min_edge = AISC_MIN_EDGE.get(d, d * 1.75) # Fallback if not in table
+    min_edge = AISC_MIN_EDGE.get(d, d * 1.75)
     
     # 1. Edge Distance Check
     if inputs['lv'] < min_edge or inputs['leh'] < min_edge:
@@ -54,7 +53,6 @@ def check_geometry_compliance(inputs):
         
     # 2. Spacing Check (Min 2.67d, Preferred 3d)
     min_spacing = 2.67 * d
-    # pref_spacing = 3.0 * d
     if inputs['s_v'] < min_spacing:
         warnings.append(f"⚠️ ระยะห่างรูเจาะ (Pitch) ชิดเกินไป (Min {min_spacing:.1f} mm)")
     
@@ -64,37 +62,24 @@ def check_geometry_compliance(inputs):
     return warnings
 
 def calculate_advanced_checks(inputs, plate_geom, V_load, Fy, Fu, phi_factors):
-    """
-    คำนวณ Advanced Failure Modes:
-    1. Bearing & Tearout
-    2. Block Shear
-    3. Plate Flexure
-    """
+    """คำนวณ Advanced Failure Modes (Bearing, Block Shear, Flexure)"""
     phi_r = phi_factors['phi_r'] # 0.75 for LRFD
     phi_y = phi_factors['phi_y'] # 0.90 for LRFD
     
     d = inputs['d']
-    d_hole = d + 2.0 # Standard hole size
+    d_hole = d + 2.0 
     t = inputs['t']
     rows = inputs['rows']
     cols = inputs['cols']
     
     adv_results = {}
     
-    # --- 1. Bolt Bearing & Tearout (AISC J3.10) ---
-    # คำนวณระยะ Lc สำหรับน็อตตัวริมและตัวใน
+    # --- 1. Bolt Bearing & Tearout ---
     lc_edge = inputs['lv'] - (d_hole / 2.0)
     lc_inner = inputs['s_v'] - d_hole
-    
-    # กำลังรับแรงต่อตัว (Rn)
-    # Tearout Limit: 1.2 * Lc * t * Fu
-    # Bearing Limit: 2.4 * d * t * Fu
     rn_edge = min(1.2 * lc_edge * t * Fu, 2.4 * d * t * Fu)
     rn_inner = min(1.2 * lc_inner * t * Fu, 2.4 * d * t * Fu)
     
-    # รวมกำลังรับแรงทั้งหมด
-    # สมมติ Column เดียว: 2 ตัวริม (บน/ล่าง) + (Rows-2) ตัวใน
-    # ถ้ามีหลาย Column ก็คูณจำนวน Column
     if rows >= 2:
         total_rn_bearing = (2 * rn_edge + (rows - 2) * rn_inner) * cols
     else:
@@ -102,48 +87,31 @@ def calculate_advanced_checks(inputs, plate_geom, V_load, Fy, Fu, phi_factors):
         
     adv_results['Bolt Bearing'] = total_rn_bearing * phi_r
 
-    # --- 2. Block Shear (AISC J4.3) ---
-    # สมมติการวิบัติรูปตัว U หรือ L (Shear ตามแนวตั้ง + Tension ตามแนวนอน)
-    # Agv = Gross area in shear
-    # Anv = Net area in shear
-    # Ant = Net area in tension
-    
-    # Shear Length (ความยาวแนวเชื่อมถึงน็อตตัวสุดท้าย)
+    # --- 2. Block Shear ---
     L_shear = (rows - 1) * inputs['s_v'] + inputs['lv']
-    Agv = L_shear * t * cols # คิดทุก col (Simplified)
+    Agv = L_shear * t * cols 
     Anv = (L_shear - (rows - 0.5) * d_hole) * t * cols
-    
-    # Tension Length (ระยะขอบแนวนอน)
     Ant = (inputs['leh'] - 0.5 * d_hole) * t * cols
+    Ubs = 1.0 
     
-    Ubs = 1.0 # Uniform tension stress
-    
-    # Rn = min(0.6*Fu*Anv + Ubs*Fu*Ant, 0.6*Fy*Agv + Ubs*Fu*Ant)
     Rn_block_1 = 0.6 * Fu * Anv + Ubs * Fu * Ant
     Rn_block_2 = 0.6 * Fy * Agv + Ubs * Fu * Ant
-    
     adv_results['Block Shear'] = min(Rn_block_1, Rn_block_2) * phi_r
 
-    # --- 3. Plate Flexure (Gross Yielding due to Eccentricity) ---
-    # สำหรับ Fin Plate หรือแผ่นที่มีความเยื้องศูนย์
+    # --- 3. Plate Flexure ---
     if inputs['e1'] > 0:
-        Mu = V_load * inputs['e1'] # Moment = V * e
-        Z_gross = (t * plate_geom['h']**2) / 4.0 # Plastic Modulus of Plate
+        Z_gross = (t * plate_geom['h']**2) / 4.0 
         Mn = Fy * Z_gross
-        
-        # แปลงกลับเป็น V ที่รับได้เพื่อให้เทียบง่ายๆ (V_cap = Mn / e)
-        # ใช้ 0.90 สำหรับ Yielding
-        if inputs['e1'] > 0:
-            adv_results['Plate Flexure'] = (Mn * phi_y) / inputs['e1']
-        else:
-            adv_results['Plate Flexure'] = 999999
+        adv_results['Plate Flexure'] = (Mn * phi_y) / inputs['e1']
+    else:
+        adv_results['Plate Flexure'] = 999999
     
     return adv_results
 
 def calculate_quick_check(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade, bolt_data):
     """Main Logic รวม Basic + Advanced Checks"""
     
-    # 1. Setup Phi Factors
+    # Setup Phi Factors
     method_raw = st.session_state.get('design_method', 'LRFD (Limit State)')
     is_lrfd = "LRFD" in method_raw
     if is_lrfd:
@@ -151,12 +119,12 @@ def calculate_quick_check(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade, b
     else:
         factors = {'phi_y': 1/1.5, 'phi_r': 1/2.0, 'phi_w': 1/2.0}
 
-    # 2. Material
+    # Material Properties
     if "SS400" in mat_grade: Fy, Fu = 24.5, 41.0   
     elif "SM520" in mat_grade: Fy, Fu = 36.0, 53.0
     else: Fy, Fu = 25.0, 41.0 
 
-    # 3. Basic Checks
+    # Basic Checks
     Fnv_kg = bolt_data['Fnv'] / 9.81
     Fnt_kg = bolt_data['Fnt'] / 9.81
     d = inputs['d']
@@ -178,7 +146,7 @@ def calculate_quick_check(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade, b
     else:
         results['Bolt Shear'] = Rn_shear_total
 
-    # Plate Yield (Shear Yielding)
+    # Plate Yield
     h_p = plate_geom['h']
     results['Plate Yield (Shear)'] = 0.60 * Fy * (h_p * t) * factors['phi_y']
 
@@ -189,18 +157,16 @@ def calculate_quick_check(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade, b
     Rn_weld = 0.60 * Fexx * 0.707 * w_sz * L_weld * factors['phi_w']
     results['Weld Strength'] = Rn_weld
     
-    # --- 4. Call Advanced Checks ---
+    # Advanced Checks
     adv_checks = calculate_advanced_checks(inputs, plate_geom, V_load_kg, Fy, Fu, factors)
-    results.update(adv_checks) # รวมผลลัพธ์เข้าไป
+    results.update(adv_checks) 
 
-    # 5. Determine Final Status
+    # Determine Final Status
     if T_load_kg > 0:
-        limit_check = 1.0
         ratio = interaction if 'interaction' in locals() else 0
     else:
         min_cap = min(results.values())
         ratio = V_load_kg / min_cap if min_cap > 0 else 999
-        limit_check = 1.0
     
     return {
         'checks': results,
@@ -209,77 +175,80 @@ def calculate_quick_check(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade, b
     }
 
 # ==========================================
-# ⚡ 2. AUTO-OPTIMIZER LOGIC
+# ⚡ 2. SMART AUTO-OPTIMIZER (UPGRADED)
 # ==========================================
-def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, current_inputs):
+def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, current_inputs, 
+                     fixed_bolt=None, strategy="Min Weight"):
     """
-    วนลูปหา Design ที่ประหยัดที่สุด (น้ำหนักน้อยสุด) ที่ผ่านการคำนวณ
+    วนลูปหา Design ที่ดีที่สุดตาม Strategy
     """
-    # 1. กำหนด Scope การค้นหา (Search Space)
-    candidate_bolts = [16, 20, 24, 27]    # ขนาดน็อตที่นิยมใช้
-    candidate_rows = range(2, 8)          # จำนวนแถว 2-7
-    candidate_thk = [6, 9, 12, 16, 20]    # ความหนาเพลทมาตรฐาน
+    # 1. Scope การค้นหา
+    if fixed_bolt:
+        candidate_bolts = [fixed_bolt]
+    else:
+        candidate_bolts = [16, 20, 24, 27, 30]
+        
+    candidate_rows = range(2, 7)          # 2-6 แถว
+    candidate_thk = [6, 9, 10, 12, 16, 19, 20, 25] # ความหนาที่มีขายจริง
     
     valid_designs = []
-    
-    # ดึงค่าคงที่จาก Database
     bolt_db_data = BOLT_DB[bolt_grade_name]
     
-    # 2. เริ่มวนลูป (Brute Force Search)
+    # 2. Loop Check
     for d in candidate_bolts:
         for r in candidate_rows:
+            # Heuristic Cut: ถ้าจำนวนน็อตน้อยเกินไป ตัดทิ้งก่อนคำนวณ
+            approx_cap = (d**2/100) * 2.0 * r 
+            if approx_cap < (V_target/1000): continue
+
             for t in candidate_thk:
-                
-                # Setup "Virtual" Inputs
+                # Setup Inputs (Standardize Pitch/Edge)
                 temp_inputs = current_inputs.copy()
                 temp_inputs.update({
-                    'd': d, 
-                    'rows': r, 
-                    'cols': 1, # สมมติ 1 col ก่อนเพื่อความประหยัด
-                    't': t,
-                    's_v': 3.0 * d,      # Standard Pitch
-                    'lv': 1.5 * d,       # Standard Edge V
-                    'leh': 1.5 * d,      # Standard Edge H
-                    's_h': 0,
-                    'weld_size': max(6, t-2) # เชื่อมตามความหนาโดยประมาณ
+                    'd': d, 'rows': r, 'cols': 1, 't': t,
+                    's_v': 3.0 * d, 'lv': 1.5 * d, 'leh': 1.5 * d, 's_h': 0,
+                    'weld_size': max(5, t-2)
                 })
 
-                # คำนวณ Geometry
+                # Geometry & Compliance
                 geom = calculate_plate_geometry(conn_type, temp_inputs)
-                
-                # Check Compliance (ข้ามถ้า geometry ผิดปกติ)
                 if check_geometry_compliance(temp_inputs): continue 
 
-                # ปรับ Fnv ตาม Logic (สมมติเป็น Type N - Included เพื่อความ Safe)
+                # Calculation
                 bolt_data_calc = bolt_db_data.copy() 
+                res = calculate_quick_check(temp_inputs, geom, V_target, T_target, mat_grade, bolt_data_calc)
                 
-                # คำนวณ Strength
-                res = calculate_quick_check(
-                    temp_inputs, geom, V_target, T_target, 
-                    mat_grade, bolt_data_calc
-                )
-                
-                # 3. ถ้าผ่าน (PASS) ให้เก็บเข้า List
-                if res['status'] == "PASS":
+                if res['status'] == "PASS" and res['ratio'] >= 0.40: # กรองพวก Overdesign มากๆ ออก
+                    
+                    # Weight Calc
                     vol_mm3 = geom['h'] * geom['w'] * t
                     weight = (vol_mm3 / 1e9) * 7850 
                     
+                    # Score Calculation based on Strategy
+                    if strategy == "Min Weight (ประหยัดเหล็ก)":
+                        score = weight
+                    else: # Min Bolts
+                        score = r * 100 + weight # ให้ความสำคัญจำนวนน็อตมากสุด
+                    
                     valid_designs.append({
-                        'Bolt': f"M{d}",
+                        'Bolt': d,
                         'Rows': r,
-                        'Plate': f"{t} mm",
+                        'Thk': t,
+                        'Weight': weight,
+                        'Bolts_Qty': r,
                         'Ratio': res['ratio'],
-                        'Weight (kg)': weight,
+                        'Score': score,
                         'Params': temp_inputs 
                     })
 
-    # 4. สรุปผล
-    if not valid_designs:
-        return None
+    # 3. Sort & Select
+    if not valid_designs: return None
     
     df = pd.DataFrame(valid_designs)
-    df = df.sort_values(by=['Weight (kg)', 'Ratio'], ascending=[True, False])
-    return df.head(3) # คืนค่า Top 3
+    # Sort: เรียงตาม Score น้อยสุด -> ถ้าเท่ากันให้เลือก Ratio ที่สูงกว่า (ใช้คุ้ม)
+    df = df.sort_values(by=['Score', 'Ratio'], ascending=[True, False])
+    
+    return df.head(5) 
 
 # ==========================================
 # 🖥️ 3. UI RENDERING
@@ -309,70 +278,122 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         mat_options = ["SS400 (Fy 245)", "SM520 (Fy 355)", "A36 (Fy 250)"]
         sel_mat_grade = row_mat[1].selectbox("🛡️ Plate Grade", mat_options)
         
-        # --- OPTIMIZER UI ---
-        with st.expander("⚡ AI Auto-Optimizer (ช่วยออกแบบ)", expanded=False):
-            c_opt1, c_opt2 = st.columns([1, 2])
-            with c_opt1:
-                if st.button("🚀 Find Best Design", type="primary"):
-                    with st.spinner("Thinking..."):
-                        # สร้างค่า Default สำหรับส่งไป Optimize
-                        current_defaults = {
-                            'd': default_bolt_size, 'rows': 3, 'cols': 1, 's_v': 70, 's_h': 0,
-                            't': 9, 'weld_size': 6, 'lv': 35, 'leh': 35, 'e1': 40, 'setback': 10,
-                            'T_load': 0, 'cope': {'has_cope': False, 'dc': 0, 'c': 0}
-                        }
-                        
-                        best_designs = run_optimization(
-                            V_design_kg, 0, # T_load=0 for basic optimization
-                            sel_mat_grade, bolt_grade_name, conn_type, 
-                            current_defaults
-                        )
-                        
-                        if best_designs is not None:
-                            st.session_state['opt_results'] = best_designs
-                            st.success("Done!")
-                        else:
-                            st.error("No valid design found.")
+        # --- IMPROVED OPTIMIZER UI ---
+        with st.expander("⚡ AI Auto-Optimizer (ผู้ช่วยออกแบบ)", expanded=False):
+            st.caption("ระบบจะค้นหาแบบที่ประหยัดที่สุด โดยใช้ระยะมาตรฐาน")
             
-            with c_opt2:
-                if 'opt_results' in st.session_state:
-                    st.dataframe(
-                        st.session_state['opt_results'][['Bolt', 'Rows', 'Plate', 'Weight (kg)', 'Ratio']], 
-                        hide_index=True, use_container_width=True
+            c_fil1, c_fil2, c_fil3 = st.columns([1.5, 1.2, 1])
+            with c_fil1:
+                opt_strategy = st.radio("เป้าหมาย:", ["Min Weight (ประหยัดเหล็ก)", "Min Bolts (ประหยัดแรงงาน)"])
+            with c_fil2:
+                lock_bolt = st.checkbox("Lock Size?", value=False)
+                # เราใช้ default_bolt_size ถ้า user ยังไม่เลือกอะไร แต่ถ้าเลือกแล้วก็ใช้ค่าปัจจุบัน
+                curr_d = st.session_state.get('auto_d', default_bolt_size) 
+                if lock_bolt: st.caption(f"🔒 M{curr_d}")
+            with c_fil3:
+                st.write("") 
+                run_opt = st.button("🚀 RUN AI", type="primary")
+
+            if run_opt:
+                with st.spinner("🤖 AI Engineer is calculating..."):
+                    # Template defaults
+                    defaults = {
+                        'cols': 1, 's_h': 0, 'weld_size': 6, 
+                        'e1': 40, 'setback': 10, 'T_load': 0,
+                        'cope': {'has_cope': False, 'dc': 0, 'c': 0}
+                    }
+                    
+                    results_df = run_optimization(
+                        V_design_kg, 0, sel_mat_grade, bolt_grade_name, conn_type, 
+                        defaults, fixed_bolt=curr_d if lock_bolt else None, strategy=opt_strategy
                     )
+                    
+                    if results_df is not None:
+                        st.session_state['opt_results'] = results_df
+                        st.success(f"✅ Found {len(results_df)} valid designs!")
+                    else:
+                        st.warning("❌ ไม่พบแบบที่ผ่านเกณฑ์")
+
+            if 'opt_results' in st.session_state:
+                res_df = st.session_state['opt_results']
+                
+                st.markdown("#### 🏆 Top Recommendations")
+                
+                for index, row in res_df.iterrows():
+                    # Styling Card
+                    desc = f"M{row['Bolt']:.0f} x {row['Rows']:.0f} rows (Plt {row['Thk']:.0f}mm)"
+                    w_txt = f"{row['Weight']:.2f} kg"
+                    r_txt = f"{row['Ratio']:.2f}"
+                    
+                    card_color = "#f0fdf4" if index == res_df.index[0] else "#f9fafb"
+                    border_color = "#22c55e" if index == res_df.index[0] else "#e5e7eb"
+                    badge = "🥇 BEST" if index == res_df.index[0] else f"Opt {index+1}"
+                    
+                    st.markdown(f"""
+                    <div style="background-color:{card_color}; padding:8px; border-radius:6px; border:1px solid {border_color}; margin-bottom:5px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div><span style="font-weight:bold; color:#15803d; font-size:12px;">{badge}</span> <span style="font-size:16px; font-weight:700;">{desc}</span></div>
+                            <div style="text-align:right; font-size:12px; color:#555;">Wt: <b>{w_txt}</b> | Ratio: <b>{r_txt}</b></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if st.button(f"👉 Apply #{index+1}", key=f"btn_apply_{index}"):
+                        p = row['Params']
+                        st.session_state['auto_d'] = int(p['d'])
+                        st.session_state['auto_rows'] = int(p['rows'])
+                        st.session_state['auto_t'] = float(p['t'])
+                        st.session_state['auto_sv'] = float(p['s_v'])
+                        st.session_state['auto_lv'] = float(p['lv'])
+                        st.success("✅ Applied! Refreshing...")
+                        st.rerun()
 
         # Thread Condition
         st.write("---")
         st.caption("⚙️ Bolt Condition")
-        thread_cond = st.radio("Shear Plane Condition:", ["Threads Included (N)", "Threads Excluded (X)"], index=0, horizontal=True)
+        thread_cond = st.radio("Shear Plane:", ["Threads Included (N)", "Threads Excluded (X)"], horizontal=True)
 
-        # Fnv Logic
         final_Fnv = selected_bolt['Fnv'] 
         if "Excluded" in thread_cond:
-            if "Grade 8.8" in bolt_grade_name or "A325" in bolt_grade_name: final_Fnv = 457
-            elif "Grade 10.9" in bolt_grade_name or "A490" in bolt_grade_name: final_Fnv = 579
+            if "8.8" in bolt_grade_name or "A325" in bolt_grade_name: final_Fnv = 457
+            elif "10.9" in bolt_grade_name or "A490" in bolt_grade_name: final_Fnv = 579
             else: final_Fnv = final_Fnv * 1.25
+        
+        st.info(f"Strength: $F_{{nv}} = {final_Fnv}$ MPa")
 
-        st.info(f"ℹ️ **Design Strength:** $F_{{nv}} = {final_Fnv}$ MPa")
-
-        # Tabs
+        # Tabs with Session State Pop Logic
         in_tab1, in_tab2, in_tab3 = st.tabs(["📏 Geometry", "📐 Detailing", "⚙️ Advanced"])
 
         with in_tab1:
             c1, c2 = st.columns(2)
-            d_bolt = c1.selectbox("Bolt Size (mm)", [12, 16, 20, 22, 24, 27, 30], index=2)
-            t_plate = c2.number_input("Plate Thk (t)", 4.0, 50.0, 9.0, step=1.0)
+            # ดึงค่าจาก Auto-Optimizer ถ้ามี
+            def_d = st.session_state.pop('auto_d', 20)
+            def_t = st.session_state.pop('auto_t', 9.0)
+            def_rows = st.session_state.pop('auto_rows', 3)
+
+            # Match index for selectbox
+            bolt_opts = [12, 16, 20, 22, 24, 27, 30]
+            try: d_idx = bolt_opts.index(def_d)
+            except: d_idx = 2
+
+            d_bolt = c1.selectbox("Bolt Size (mm)", bolt_opts, index=d_idx)
+            t_plate = c2.number_input("Plate Thk (t)", 4.0, 50.0, float(def_t), step=1.0)
+            
             c3, c4 = st.columns(2)
-            rows = c3.number_input("Rows", 2, 20, 3)
+            rows = c3.number_input("Rows", 2, 20, int(def_rows))
             cols = 2 if "End" in conn_type else c4.number_input("Cols", 1, 4, 1)
 
         with in_tab2:
+            # ดึงค่า Pitch/Edge จาก Auto ถ้ามี
+            def_sv = st.session_state.pop('auto_sv', 70.0)
+            def_lv = st.session_state.pop('auto_lv', 35.0)
+
             c1, c2 = st.columns(2)
-            s_v = c1.number_input("Pitch (sv)", 30.0, 200.0, 70.0, step=5.0)
+            s_v = c1.number_input("Pitch (sv)", 30.0, 200.0, float(def_sv), step=5.0)
             s_h = c2.number_input("Gauge (sh)", 0.0, 200.0, 0.0 if cols==1 else 70.0, disabled=(cols==1), step=5.0)
             c3, c4 = st.columns(2)
-            lv = c3.number_input("Edge V (lv)", 20.0, 150.0, 35.0, step=5.0)
-            leh = c4.number_input("Edge H (leh)", 20.0, 150.0, 35.0, step=5.0)
+            lv = c3.number_input("Edge V (lv)", 20.0, 150.0, float(def_lv), step=5.0)
+            leh = c4.number_input("Edge H (leh)", 20.0, 150.0, float(def_lv), step=5.0)
             
             st.divider()
             k1, k2 = st.columns(2)
@@ -421,7 +442,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         st.divider()
         st.subheader("🏁 Quick Status")
         
-        # แยกหมวดหมู่การแสดงผล
         basic_keys = ['Bolt Shear', 'Plate Yield (Shear)', 'Weld Strength', 'Bolt Interaction']
         adv_keys = ['Bolt Bearing', 'Block Shear', 'Plate Flexure']
         
@@ -430,7 +450,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             if k in check_res['checks']:
                 val = check_res['checks'][k]
                 if k == 'Bolt Interaction':
-                     st.write(f"{'✅ PASS' if val >= 1.0 else '❌ FAIL'} **{k}**")
+                      st.write(f"{'✅ PASS' if val >= 1.0 else '❌ FAIL'} **{k}**")
                 else:
                     limit = math.sqrt(V_design_kg**2 + T_design_kg**2) if "Weld" in k else V_design_kg
                     icon = "✅" if val >= limit else "❌"
