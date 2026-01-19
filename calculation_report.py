@@ -4,312 +4,238 @@ def generate_report(V_load, T_load, beam, plate, bolts, cope, is_lrfd=True, mate
     
     lines = []
     
-    # --- HELPER FUNCTIONS ---
-    def h1(text): lines.append(f"\n# {text}\n")
+    # ==========================================
+    # 0. SETUP & HELPER FUNCTIONS
+    # ==========================================
+    
+    if is_lrfd:
+        method = "LRFD"
+        phi_y = 0.90; phi_r = 0.75; phi_w = 0.75; phi_b = 0.75
+        design_sym = "\\phi R_n"
+    else:
+        method = "ASD"
+        phi_y = 1/1.67; phi_r = 1/2.00; phi_w = 1/2.00; phi_b = 1/2.00
+        design_sym = "R_n / \\Omega"
+
     def h2(text): lines.append(f"\n## {text}\n")
     def h3(text): lines.append(f"\n### {text}\n")
     def divider(): lines.append("---")
-    
-    def latex_eq(symbol, formula, sub, result, unit, ref=""):
-        # Display math block with substitution and reference
-        lines.append(f"**{symbol}** &nbsp; <span style='font-size:0.8em; color:gray'>({ref})</span>")
+
+    # 🔥 ฟังก์ชันพระเอก: แสดง สูตร -> แทนค่า -> คำตอบ
+    def show_calc(title, symbol, formula, sub_str, result_val, unit, phi_factor=None, note=""):
+        lines.append(f"**{title}** {note}")
         lines.append("$$")
         lines.append("\\begin{aligned}")
         lines.append(f"{symbol} &= {formula} \\\\")
-        if sub: lines.append(f"&= {sub} \\\\")
-        lines.append(f"&= \\mathbf{{{result:,.2f}}} \\text{{ {unit} }}")
+        lines.append(f"&= {sub_str} \\\\")
+        lines.append(f"&= \\mathbf{{{result_val:,.2f}}} \\text{{ {unit} }}")
+        
+        if phi_factor:
+            design_val = result_val * phi_factor
+            phi_str = "0.90" if phi_factor == 0.90 else "0.75" # Display string
+            if not is_lrfd: phi_str = "1/\\Omega" # ASD display
+            
+            lines.append(f"\\\\ \\therefore {design_sym} &= {phi_str} \\times {result_val:,.2f} \\\\")
+            lines.append(f"&= \\mathbf{{{design_val:,.2f}}} \\text{{ {unit} }}")
+            
         lines.append("\\end{aligned}")
         lines.append("$$")
+        return result_val * (phi_factor if phi_factor else 1.0)
 
-    def check_box(label, demand, capacity, note=""):
+    def check_ratio(demand, capacity, label):
         ratio = demand / capacity if capacity > 0 else 999
-        status = "✅ OK" if ratio <= 1.0 else "❌ FAIL"
-        color = "#dcfce7" if ratio <= 1.0 else "#fee2e2" # light green / light red
-        border = "#166534" if ratio <= 1.0 else "#991b1b"
-        
-        lines.append(f"""
-<div style="background-color:{color}; padding:10px; border-radius:5px; border-left:5px solid {border}; margin-bottom:10px;">
-    <div style="display:flex; justify-content:space-between;">
-        <span style="font-weight:bold;">{label}</span>
-        <span style="font-weight:bold;">{status}</span>
-    </div>
-    <div style="font-family:monospace; margin-top:5px;">
-        Demand ({demand:.2f}) / Capacity ({capacity:.2f}) = <b>{ratio:.2f}</b>
-    </div>
-    <div style="font-size:0.85em; color:#555; margin-top:3px;">{note}</div>
-</div>
-""")
+        status = "✅ PASS" if ratio <= 1.0 else "❌ FAIL"
+        color = "green" if ratio <= 1.0 else "red"
+        lines.append(f"> **Check {label}:** ${demand:.2f} / {capacity:.2f} = {ratio:.2f}$ ... <span style='color:{color}; font-weight:bold'>{status}</span>")
+        lines.append("")
 
-    # --- 1. PARAMETERS & FACTORS ---
-    if is_lrfd:
-        code_name = "AISC 360-16 (LRFD)"
-        phi_y, phi_r, phi_w, phi_b = 0.90, 0.75, 0.75, 0.75
-        factor_tag = "\\phi"
-    else:
-        code_name = "AISC 360-16 (ASD)"
-        # Note: Code logic below is primarily LRFD based structure converted via simple factors for display
-        # For true ASD, we divide by Omega. For simplicity here, we stick to LRFD logic for internal calculation
-        phi_y, phi_r, phi_w, phi_b = 0.90, 0.75, 0.75, 0.75 
-        lines.append("> **Note:** This report currently displays LRFD methodology.")
-
-    # Unpack Inputs
+    # ==========================================
+    # 1. INPUT PARAMETERS
+    # ==========================================
+    lines.append(f"# 🏗️ Detailed Calculation Report ({method})")
+    lines.append("---")
+    
+    # Unpack Data
     d = bolts['d']
-    h_hole = d + 2 # Standard hole
-    rows, cols = bolts['rows'], bolts['cols']
+    Ab = (math.pi * d**2)/4
+    rows = bolts['rows']; cols = bolts['cols']
     n_bolts = rows * cols
-    sv, sh = bolts['s_v'], bolts.get('s_h', 0)
     
     t_pl = plate['t']; h_pl = plate['h']
-    Fy_pl, Fu_pl = plate['Fy'], plate['Fu']
-    e1 = plate.get('e1', 0); lv = plate.get('lv', 0); leh = plate.get('l_side', 35)
+    Fy_pl = plate['Fy']; Fu_pl = plate['Fu']
     
-    t_web = beam['tw']
-    Fy_bm, Fu_bm = beam['Fy'], beam['Fu']
+    # Header Info
+    lines.append("#### 1. Design Inputs")
+    lines.append(f"- **Loads:** $V_u = {V_load:.2f}$ kN, $T_u = {T_load:.2f}$ kN")
+    lines.append(f"- **Plate Material:** $F_y = {Fy_pl}$ MPa, $F_u = {Fu_pl}$ MPa, $t = {t_pl}$ mm")
+    lines.append(f"- **Bolts:** {n_bolts} x M{d} ({bolt_grade}), Area $A_b = {Ab:.1f}$ mm²")
     
-    # --- REPORT START ---
-    h1(f"📑 Detailed Calculation Report")
-    lines.append(f"**Design Code:** {code_name} | **Connection:** Shear Plate / End Plate")
-    divider()
-
-    # Section 1: Design Input
-    h2("1. Design Parameters")
+    # ==========================================
+    # 2. BOLT FORCES (ELASTIC ANALYSIS)
+    # ==========================================
+    h2("2. Bolt Force Analysis (Elastic Method)")
     
-    col1 = f"""
-    - **Loads:** $V_u = {V_load:.2f}$ kN, $T_u = {T_load:.2f}$ kN
-    - **Plate:** {h_pl}x{t_pl} mm ({material_grade})
-    - **Bolts:** {n_bolts} x M{d} ({bolt_grade})
-    """
-    col2 = f"""
-    - **Beam Web:** $t_w = {t_web}$ mm
-    - **Material:** $F_y={Fy_pl}, F_u={Fu_pl}$ MPa
-    - **Weld Size:** {plate['weld_size']} mm
-    """
-    lines.append(col1 + col2)
-
-    # Section 2: Geometric Checks
-    h2("2. Geometric Constraints (AISC Ch. J)")
-    
-    # 2.1 Spacing
-    min_spacing = 2.67 * d
-    pref_spacing = 3.0 * d
-    lines.append(f"- **Min Spacing (J3.3):** $2.67d = {min_spacing:.1f}$ mm (Pref. $3d = {pref_spacing:.1f}$)")
-    lines.append(f"  - Actual Pitch ($s_v$): {sv} mm {'✅' if sv >= min_spacing else '❌'}")
-    if cols > 1:
-        lines.append(f"  - Actual Gauge ($s_h$): {sh} mm {'✅' if sh >= min_spacing else '❌'}")
-    
-    # 2.2 Edge Distance
-    # Simplified Table J3.4
-    min_edge = d * 1.25 # Approximation
-    lines.append(f"- **Min Edge Distance (J3.4):** Approx ${min_edge:.1f}$ mm")
-    lines.append(f"  - Actual Edge ($l_v$): {lv} mm {'✅' if lv >= min_edge else '❌'}")
-    lines.append(f"  - Actual Edge ($l_h$): {leh} mm {'✅' if leh >= min_edge else '❌'}")
-    
-    divider()
-
-    # Section 3: Bolt Force Analysis
-    h2("3. Bolt Group Analysis (Elastic Method)")
-    
-    # Calculate Eccentricity
+    # Eccentricity
+    sv = bolts['s_v']; sh = bolts.get('s_h', 0)
+    e1 = plate.get('e1', 0)
     x_bar = ((cols - 1) * sh) / 2 if cols > 1 else 0
     e_total = e1 + x_bar
-    Mu = V_load * (e_total / 1000.0) # kN-m
     
-    lines.append(f"- Eccentricity $e = {e1} + {x_bar:.1f} = {e_total:.1f}$ mm")
-    lines.append(f"- Moment $M_u = V_u \\times e = {Mu:.2f}$ kN-m")
+    show_calc("Eccentricity ($e$)", "e", "e_1 + x_{bar}", f"{e1} + {x_bar}", e_total, "mm")
     
-    # Polar Moment of Inertia (Ip)
-    sum_r2 = 0; r_max = 0
-    row_start = -((rows - 1) * sv) / 2
+    # Moment
+    Mu = V_load * e_total / 1000.0
+    show_calc("Moment ($M_u$)", "M_u", "V_u \\times e", f"{V_load:.2f} \\times {e_total}/1000", Mu, "kN-m")
+    
+    # Inertia Sum r^2
+    sum_r2 = 0; r_max_val = 0
     col_start = -x_bar
+    row_start = -((rows - 1) * sv) / 2
     
+    # Loop to calculate r^2
+    r_details = []
     for c in range(cols):
         for r in range(rows):
             dx = col_start + (c * sh)
             dy = row_start + (r * sv)
-            r_sq = dx**2 + dy**2
-            sum_r2 += r_sq
-            r_max = max(r_max, math.sqrt(r_sq))
+            r2 = dx**2 + dy**2
+            sum_r2 += r2
+            if math.sqrt(r2) > r_max_val: r_max_val = math.sqrt(r2)
+            
+    show_calc("Polar Inertia ($\\Sigma r^2$)", "\\Sigma (x^2 + y^2)", "\\text{sum of all bolts}", f"{sum_r2:,.0f}", sum_r2, "mm^2")
 
-    # Force Components
-    F_shear_dir = V_load / n_bolts
-    F_tension_dir = T_load / n_bolts
+    # Forces
+    Rv_direct = V_load / n_bolts
+    Rv_moment = (Mu * 1000 * x_bar) / sum_r2 if sum_r2 > 0 else 0 # Simplified component for corner bolt
+    Rh_moment = (Mu * 1000 * ((rows-1)*sv)/2) / sum_r2 if sum_r2 > 0 else 0
     
-    # Forces due to Moment (Elastic)
-    # R = M * r / sum(r^2)
-    # Max force is at furthest bolt
-    R_moment = (Mu * 1000 * r_max) / sum_r2 if sum_r2 > 0 else 0
+    lines.append("**Resultant Shear per Bolt ($V_{ub}$):**")
+    lines.append("$$ V_{ub} = \\sqrt{(V/n + R_{ym})^2 + (R_{xm})^2} $$")
     
-    # Vector Sum (Simplified conservative: assume worst direction overlap)
-    # Ideally we decompose x,y components.
-    # Let's do simplified component summation for the critical bolt (Corner)
-    crit_x = x_bar # approx
-    crit_y = ((rows-1)*sv)/2
+    V_ub = math.sqrt((Rv_direct + Rv_moment)**2 + Rh_moment**2)
+    show_calc("Max Bolt Shear", "V_{ub}", "\\text{Vector Sum}", 
+              f"\\sqrt{{({Rv_direct:.2f}+{Rv_moment:.2f})^2 + {Rh_moment:.2f}^2}}", V_ub, "kN")
     
-    Rv_mom = (Mu * 1000 * crit_x) / sum_r2 # Vertical component from moment
-    Rh_mom = (Mu * 1000 * crit_y) / sum_r2 # Horizontal component from moment
-    
-    Vu_bolt = math.sqrt((F_shear_dir + Rv_mom)**2 + Rh_mom**2)
-    Tu_bolt = F_tension_dir 
-    
-    lines.append(f"- $\\Sigma r^2 = {sum_r2:.0f}$ mm²")
-    lines.append(f"- Max Shear per Bolt ($V_{{ub}}$): **{Vu_bolt:.2f} kN**")
+    T_ub = T_load / n_bolts
     if T_load > 0:
-        lines.append(f"- Tension per Bolt ($T_{{ub}}$): **{Tu_bolt:.2f} kN**")
+        show_calc("Max Bolt Tension", "T_{ub}", "T_u / n", f"{T_load:.2f} / {n_bolts}", T_ub, "kN")
 
-    divider()
-
-    # Section 4: Bolt Strength
-    h2("4. Bolt Capacity Checks")
+    # ==========================================
+    # 3. BOLT CAPACITY
+    # ==========================================
+    h2("3. Bolt Capacity Checks")
     
-    Ab = (math.pi * d**2) / 4
+    # 3.1 Shear
     Fnv = bolts['Fnv']
-    Fnt = bolts.get('Fnt', Fnv * 1.3)
-    
-    # 4.1 Shear
     Rn_shear = Fnv * Ab / 1000.0
-    phi_Rn_shear = phi_r * Rn_shear
-    check_box("Bolt Shear", Vu_bolt, phi_Rn_shear, f"AISC J3.6: $\\phi F_{{nv}} A_b$")
-    
-    # 4.2 Tension & Interaction
+    cap_shear = show_calc("Bolt Shear Strength", "R_n", "F_{nv} \\times A_b", 
+                          f"{Fnv} \\times {Ab:.1f} / 1000", Rn_shear, "kN", phi_r)
+    check_ratio(V_ub, cap_shear, "Bolt Shear")
+
+    # 3.2 Tension Interaction (if applicable)
     if T_load > 0:
-        h3("Combined Tension & Shear (AISC J3.7)")
-        frv = (Vu_bolt * 1000) / Ab
+        h3("Combined Tension & Shear")
+        frv = (V_ub * 1000) / Ab
+        show_calc("Shear Stress", "f_{rv}", "V_{ub} / A_b", f"{V_ub:.2f} \\times 1000 / {Ab:.1f}", frv, "MPa")
         
-        # F'nt Calculation
+        Fnt = bolts.get('Fnt', Fnv*1.3)
         Fnt_prime = 1.3 * Fnt - (Fnt / (phi_r * Fnv)) * frv
         Fnt_prime = min(max(Fnt_prime, 0), Fnt)
         
+        show_calc("Reduced Tension Stress", "F'_{nt}", 
+                  "1.3F_{nt} - \\frac{F_{nt}}{\\phi F_{nv}}f_{rv}",
+                  f"1.3({Fnt}) - \\frac{{{Fnt}}}{{0.75 \\times {Fnv}}}({frv:.1f})",
+                  Fnt_prime, "MPa")
+        
         Rn_tens = Fnt_prime * Ab / 1000.0
-        phi_Rn_tens = phi_r * Rn_tens
-        
-        latex_eq("f_{rv}", "\\frac{V_{ub}}{A_b}", "", frv, "MPa")
-        latex_eq("F'_{nt}", "1.3F_{nt} - \\frac{F_{nt}}{\\phi F_{nv}}f_{rv}", f"\\le {Fnt}", Fnt_prime, "MPa", ref="Eq. J3-3a")
-        
-        check_box("Bolt Tension (Interaction)", Tu_bolt, phi_Rn_tens, "Based on reduced stress F'nt")
-        
-        # 4.3 Prying Action
-        h3("Prying Action Check (AISC Manual Pt.9)")
-        # Simplified: t_min to eliminate prying
-        # b' = distance from bolt centerline to face of connection
-        b_prime = 30 # Assumed approximate for calculation if not detailed
-        p = sv / rows # Tributary
-        
-        # Avoid division by zero
-        if p * Fy_pl > 0:
-            t_req = math.sqrt((4.44 * Tu_bolt * 1000 * b_prime) / (p * Fy_pl))
-        else:
-            t_req = 999
-            
-        lines.append(f"- Assumed lever arm $b' = {b_prime}$ mm")
-        lines.append(f"- Required thickness $t_{{req}} = {t_req:.2f}$ mm")
-        
-        if t_pl < t_req:
-            lines.append(f"⚠️ **Prying Forces Exist!** (Provided {t_pl} < {t_req:.2f})")
-            lines.append("-> Bolt tension capacity should be reduced by factor $Q$.")
-            # For this report, we flag it as a warning
-        else:
-            lines.append("✅ **No Prying Action** (Plate is thick enough)")
+        cap_tens = show_calc("Bolt Tension Strength", "R_n", "F'_{nt} \\times A_b",
+                             f"{Fnt_prime:.1f} \\times {Ab:.1f} / 1000", Rn_tens, "kN", phi_r)
+        check_ratio(T_ub, cap_tens, "Bolt Tension")
 
-    # 4.4 Bearing
-    h3("Bearing Strength at Bolt Holes (J3.10)")
-    # Check both Plate and Beam Web
-    # Lc calculation (Clear distance)
-    lc_edge = lv - (h_hole/2)
-    lc_inner = sv - h_hole
+    # 3.3 Bearing
+    h3("Bearing Strength (Plate)")
+    lv = plate.get('lv', 35)
+    Lc = lv - (d+2)/2.0
+    show_calc("Clear Distance ($L_c$)", "L_c", "l_v - d_h/2", f"{lv} - {(d+2)}/2", Lc, "mm")
     
-    # Plate Bearing
-    Rn_br_pl_edge = 1.2 * lc_edge * t_pl * Fu_pl / 1000.0
-    Rn_br_pl_inner = 1.2 * lc_inner * t_pl * Fu_pl / 1000.0
-    Rn_br_max = 2.4 * d * t_pl * Fu_pl / 1000.0
+    Rn_br1 = (1.2 * Lc * t_pl * Fu_pl) / 1000.0
+    Rn_br2 = (2.4 * d * t_pl * Fu_pl) / 1000.0
+    Rn_br = min(Rn_br1, Rn_br2)
     
-    Rn_plate = min(Rn_br_pl_edge, Rn_br_max) # Critical usually edge
-    phi_Rn_plate = phi_b * Rn_plate
+    show_calc("Bearing (Tearout)", "R_{n1}", "1.2 L_c t F_u", f"1.2({Lc:.1f})({t_pl})({Fu_pl})/1000", Rn_br1, "kN")
+    show_calc("Bearing (Deformation)", "R_{n2}", "2.4 d t F_u", f"2.4({d})({t_pl})({Fu_pl})/1000", Rn_br2, "kN")
     
-    check_box("Bearing on Plate", Vu_bolt, phi_Rn_plate, f"Based on $L_c = {lc_edge:.1f}$ mm")
+    cap_br = Rn_br * phi_b
+    lines.append(f"$\\therefore \\phi R_n = {phi_b} \\times \\min({Rn_br1:.1f}, {Rn_br2:.1f}) = \\mathbf{{{cap_br:.2f}}}$ **kN**")
+    check_ratio(V_ub, cap_br, "Bolt Bearing")
 
-    divider()
-
-    # Section 5: Connecting Plate Checks
-    h2("5. Plate Capacity Checks")
+    # ==========================================
+    # 4. PLATE CAPACITY
+    # ==========================================
+    h2("4. Plate Capacity Checks")
     
-    # 5.1 Yielding
+    # 4.1 Yielding
     Ag = h_pl * t_pl
     Rn_yld = Fy_pl * Ag / 1000.0
-    check_box("Plate Shear Yield (J4.2)", V_load, phi_y * Rn_yld)
+    show_calc("Gross Area ($A_g$)", "A_g", "h \\times t", f"{h_pl} \\times {t_pl}", Ag, "mm^2")
+    cap_yld = show_calc("Shear Yielding", "R_n", "0.60 F_y A_g", 
+                        f"0.60({Fy_pl})({Ag}) / 1000", Rn_yld, "kN", phi_y)
+    check_ratio(V_load, cap_yld, "Plate Yield")
     
-    # 5.2 Rupture
-    An = (h_pl - (rows * h_hole)) * t_pl
-    Rn_rup = 0.6 * Fu_pl * An / 1000.0
-    check_box("Plate Shear Rupture (J4.2)", V_load, phi_r * Rn_rup, f"$A_n = {An:.0f}$ mm²")
+    # 4.2 Rupture
+    An = (h_pl - (rows * (d+2))) * t_pl
+    Rn_rup = 0.60 * Fu_pl * An / 1000.0
+    show_calc("Net Area ($A_n$)", "A_n", "(h - n_{row} d_h) t", 
+              f"({h_pl} - {rows}\\times{d+2})({t_pl})", An, "mm^2")
+    cap_rup = show_calc("Shear Rupture", "R_n", "0.60 F_u A_n", 
+                        f"0.60({Fu_pl})({An}) / 1000", Rn_rup, "kN", phi_r)
+    check_ratio(V_load, cap_rup, "Plate Rupture")
     
-    # 5.3 Block Shear
-    h3("Block Shear on Plate (J4.3)")
-    # Pattern: L-shape failure
-    Agv = (lv + (rows - 1) * sv) * t_pl
-    Anv = (Agv/t_pl - (rows - 0.5) * h_hole) * t_pl
-    Ant = (leh - 0.5 * h_hole) * t_pl
+    # 4.3 Block Shear
+    h3("Block Shear (Plate)")
+    # Areas
+    Agv = (lv + (rows-1)*sv) * t_pl
+    Anv = Agv - ((rows-0.5)*(d+2)*t_pl)
+    Ant = (plate.get('l_side', 35) - 0.5*(d+2)) * t_pl
     
-    Ubs = 1.0
-    Rn_bs1 = (0.6 * Fu_pl * Anv + Ubs * Fu_pl * Ant) / 1000.0
-    Rn_bs2 = (0.6 * Fy_pl * Agv + Ubs * Fu_pl * Ant) / 1000.0
+    lines.append(f"- $A_{{gv}} = ({lv} + {rows-1}\\times{sv})({t_pl}) = {Agv:.0f}$ mm²")
+    lines.append(f"- $A_{{nv}} = {Agv:.0f} - ({rows}-0.5)({d+2})({t_pl}) = {Anv:.0f}$ mm²")
+    lines.append(f"- $A_{{nt}} = ({plate.get('l_side',35)} - 0.5({d+2}))({t_pl}) = {Ant:.0f}$ mm²")
+    
+    term1 = 0.6 * Fu_pl * Anv
+    term2 = 1.0 * Fu_pl * Ant
+    Rn_bs1 = (term1 + term2)/1000.0
+    
+    term3 = 0.6 * Fy_pl * Agv
+    Rn_bs2 = (term3 + term2)/1000.0
+    
+    show_calc("Case 1 (Rupture+Rupture)", "R_{n1}", "0.6 F_u A_{nv} + U_{bs} F_u A_{nt}", 
+              f"(0.6 \\times {Fu_pl} \\times {Anv:.0f} + 1.0 \\times {Fu_pl} \\times {Ant:.0f})/1000", Rn_bs1, "kN")
+              
+    show_calc("Case 2 (Yield+Rupture)", "R_{n2}", "0.6 F_y A_{gv} + U_{bs} F_u A_{nt}", 
+              f"(0.6 \\times {Fy_pl} \\times {Agv:.0f} + 1.0 \\times {Fu_pl} \\times {Ant:.0f})/1000", Rn_bs2, "kN")
+    
     Rn_bs = min(Rn_bs1, Rn_bs2)
+    cap_bs = Rn_bs * phi_r
+    lines.append(f"$\\therefore \\phi R_n = {phi_r} \\times {Rn_bs:.2f} = \\mathbf{{{cap_bs:.2f}}}$ **kN**")
+    check_ratio(V_load, cap_bs, "Block Shear")
     
-    lines.append(f"- Shear Areas: $A_{{gv}}={Agv:.0f}, A_{{nv}}={Anv:.0f}$ mm²")
-    lines.append(f"- Tension Area: $A_{{nt}}={Ant:.0f}$ mm²")
-    check_box("Plate Block Shear", V_load, phi_r * Rn_bs, f"Min($R_{{n1}}, R_{{n2}}$)")
+    # ==========================================
+    # 5. WELD CHECK
+    # ==========================================
+    h2("5. Weld Capacity")
+    w_sz = plate['weld_size']
+    Lw = h_pl * 2
+    Fw = 0.60 * 480 # E70 electrode strength approx
     
-    # 5.4 Weld
-    h3("Weld Strength (J2.4)")
-    # Linear weld approx
-    D = plate['weld_size']
-    Lw = h_pl * 2 # Two sides
-    Fnw = 0.6 * 480 # E70xx
-    Aw = 0.707 * D * Lw
-    Rn_weld = Fnw * Aw / 1000.0
+    show_calc("Weld Area ($A_w$)", "A_w", "0.707 \\times w \\times L", 
+              f"0.707 \\times {w_sz} \\times {Lw}", 0.707*w_sz*Lw, "mm^2")
+              
+    Rn_weld = Fw * (0.707 * w_sz * Lw) / 1000.0
+    cap_weld = show_calc("Weld Strength", "R_n", "0.60 F_{exx} A_w",
+                         f"0.60(480)({0.707*w_sz*Lw:.1f}) / 1000", Rn_weld, "kN", phi_w)
     
     R_resultant = math.sqrt(V_load**2 + T_load**2)
-    check_box("Fillet Weld", R_resultant, phi_w * Rn_weld, f"Size {D}mm, Length {Lw}mm")
-
-    divider()
-
-    # Section 6: Beam Web Checks
-    h2("6. Beam Web Checks")
-    
-    if cope['has_cope']:
-        h3("🛑 Coped Beam Analysis")
-        dc = cope['dc']
-        c_len = cope['c']
-        
-        # 6.1 Block Shear (Beam Web)
-        # Assuming failure path along the bolts
-        # Vertical Edge on beam = lv (approx matched)
-        # Horiz End Dist on beam = 35mm (standard assumption if not input)
-        eh_bm = 35 
-        
-        Agv_bm = (lv + (rows-1)*sv) * t_web
-        Anv_bm = Agv_bm - ((rows-0.5)*h_hole*t_web)
-        Ant_bm = (eh_bm - 0.5*h_hole) * t_web
-        
-        Rn_bs_bm1 = (0.6 * Fu_bm * Anv_bm + 1.0 * Fu_bm * Ant_bm) / 1000.0
-        Rn_bs_bm2 = (0.6 * Fy_bm * Agv_bm + 1.0 * Fu_bm * Ant_bm) / 1000.0
-        Rn_bs_bm = min(Rn_bs_bm1, Rn_bs_bm2)
-        
-        check_box("Beam Web Block Shear", V_load, phi_r * Rn_bs_bm, "Critical for Coped Beams")
-        
-        # 6.2 Local Web Buckling (simplified for cope)
-        # J4.4 checks? Usually extensive. 
-        # Checking Shear Yield on remaining net section
-        h_remain = (h_pl) # Approx connection depth
-        Rn_yld_bm = 0.6 * Fy_bm * h_remain * t_web / 1000.0
-        check_box("Coped Web Shear Yield", V_load, phi_y * Rn_yld_bm)
-        
-    else:
-        lines.append("Beam is Uncoped. Web capacity is governed by Bearing (checked above) and base shear.")
-        # Simple base shear check
-        Rn_web_shear = 0.6 * Fy_bm * (rows*sv*1.5 * t_web) / 1000.0 # Rough approx of engaging area
-        # Not displaying to avoid confusion with Beam global shear
-
-    divider()
-    lines.append("\n_End of Calculation Report_")
+    check_ratio(R_resultant, cap_weld, "Weld Group")
 
     return "\n".join(lines)
