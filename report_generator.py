@@ -2,7 +2,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 def get_connection_logic(res, p):
-    # มาตรฐานวิศวกรรมสากล
     v_act = res.get('v_act', 0)
     rows = max(2, int(v_act / 4400) + 1)
     pitch, edge_v, edge_h = 75, 40, 50
@@ -20,102 +19,94 @@ def render_report_tab(method, is_lrfd, sec_name, steel_grade, p, res, bolt):
     util = (v_act / v_cap) * 100
     
     # SVG Configuration
-    c_w, c_h = 900, 800
-    p_x, p_y = 350, 200 # Main Plate Start
+    c_w, c_h = 950, 850
+    p_x, p_y = 380, 220 
     bolt_x = p_x + conn['edge_h']
     
     # ---------------------------------------------------------
-    # Building SVG Components
+    # SVG Components Engine
     # ---------------------------------------------------------
     
-    # 1. Bolts and Vertical Pitch Dimensions (Architecture Ticks)
+    # 1. Bolts and Extension Lines
     bolt_svg = ""
     v_dim_svg = ""
     for i in range(conn['rows']):
         by = p_y + conn['edge_v'] + (i * conn['pitch'])
-        # Bolt Symbol
         bolt_svg += f'<g transform="translate({bolt_x}, {by})"><circle r="7" fill="white" stroke="#000" stroke-width="1.5"/><path d="M-5-5L5 5M5-5L-5 5" stroke="#000" stroke-width="1.2"/></g>'
         
-        # Vertical Pitch Lines (Far Right)
+        # Extension lines from bolts to dimension line
+        v_dim_svg += f'<line x1="{bolt_x + 15}" y1="{by}" x2="{bolt_x + 85}" y2="{by}" stroke="#94a3b8" stroke-width="0.5" stroke-dasharray="2,2"/>'
+        
         if i < conn['rows'] - 1:
             mid_y = by + (conn['pitch']/2)
             v_dim_svg += f"""
                 <line x1="{bolt_x + 80}" y1="{by}" x2="{bolt_x + 80}" y2="{by+conn['pitch']}" stroke="#000" stroke-width="1"/>
-                <line x1="{bolt_x + 75}" y1="{by+5}" x2="{bolt_x + 85}" y2="{by-5}" stroke="#000" stroke-width="1.5"/> <line x1="{bolt_x + 75}" y1="{by+conn['pitch']+5}" x2="{bolt_x + 85}" y2="{by+conn['pitch']-5}" stroke="#000" stroke-width="1.5"/> <text x="{bolt_x + 90}" y="{mid_y + 5}" font-size="12" font-family="monospace" font-weight="bold">{conn['pitch']}</text>
+                <line x1="{bolt_x + 75}" y1="{by+5}" x2="{bolt_x + 85}" y2="{by-5}" stroke="#000" stroke-width="1.5"/>
+                <line x1="{bolt_x + 75}" y1="{by+conn['pitch']+5}" x2="{bolt_x + 85}" y2="{by+conn['pitch']-5}" stroke="#000" stroke-width="1.5"/>
+                <text x="{bolt_x + 95}" y="{mid_y + 5}" font-size="12" font-family="monospace" font-weight="bold">{conn['pitch']}</text>
             """
 
-    # 2. Complete Plate Dimensions (All Edges)
-    plate_dims = f"""
-        <line x1="{p_x}" y1="{p_y - 60}" x2="{bolt_x}" y2="{p_y - 60}" stroke="#000" stroke-width="1"/>
-        <line x1="{p_x-5}" y1="{p_y-55}" x2="{p_x+5}" y2="{p_y-65}" stroke="#000" stroke-width="1.5"/> <line x1="{bolt_x-5}" y1="{p_y-55}" x2="{bolt_x+5}" y2="{p_y-65}" stroke="#000" stroke-width="1.5"/> <text x="{(p_x+bolt_x)/2}" y="{p_y-70}" font-size="12" font-weight="bold" text-anchor="middle">e_h={conn['edge_h']}</text>
-
-        <line x1="{p_x}" y1="{p_y - 100}" x2="{p_x + conn['plate_w']}" y2="{p_y - 100}" stroke="#000" stroke-width="1"/>
-        <line x1="{p_x-5}" y1="{p_y-95}" x2="{p_x+5}" y2="{p_y-105}" stroke="#000" stroke-width="1.5"/>
-        <line x1="{p_x+conn['plate_w']-5}" y1="{p_y-95}" x2="{p_x+conn['plate_w']+5}" y2="{p_y-105}" stroke="#000" stroke-width="1.5"/>
-        <text x="{p_x + conn['plate_w']/2}" y="{p_y-110}" font-size="12" font-weight="900" text-anchor="middle">PLATE WIDTH: {conn['plate_w']}</text>
-
-        <line x1="{bolt_x + 80}" y1="{p_y}" x2="{bolt_x + 80}" y2="{p_y + conn['edge_v']}" stroke="#000" stroke-width="1"/>
-        <line x1="{bolt_x+75}" y1="{p_y+5}" x2="{bolt_x+85}" y2="{p_y-5}" stroke="#000" stroke-width="1.5"/>
-        <line x1="{bolt_x+75}" y1="{p_y+conn['edge_v']+5}" x2="{bolt_x+85}" y2="{p_y+conn['edge_v']-5}" stroke="#000" stroke-width="1.5"/>
-        <text x="{bolt_x + 90}" y="{p_y + conn['edge_v']/2 + 5}" font-size="11">e_v={conn['edge_v']}</text>
+    # 2. Advanced Welding Symbol (AWS Standard)
+    # เราจะใช้ Leader Line แบบซิกแซ็กและ Tail เพื่อความโปร่งใส
+    weld_symbol = f"""
+        <g transform="translate({p_x}, {p_y + 60})">
+            <path d="M 0 0 L -80 -40 L -180 -40" fill="none" stroke="#ef4444" stroke-width="1.5"/>
+            <path d="M 0 0 L -12 -8 L -10 0 L -12 8 Z" fill="#ef4444"/> <text x="-175" y="-50" font-size="14" font-weight="900" fill="#ef4444">△ {conn['weld_size']}</text>
+            <path d="M -180 -40 L -195 -55 M -180 -40 L -195 -25" fill="none" stroke="#ef4444" stroke-width="1.5"/> <text x="-240" y="-35" font-size="11" font-weight="bold" fill="#ef4444">TYP. BOTH SIDES</text>
+        </g>
     """
 
     html_content = f"""
     <div style="background:#f1f5f9; padding:50px; font-family:'Inter', sans-serif;">
-        <div style="max-width:1000px; margin:auto; background:white; padding:60px; border-radius:2px; box-shadow:0 50px 100px rgba(0,0,0,0.1); border:1px solid #e2e8f0;">
+        <div style="max-width:1000px; margin:auto; background:white; padding:60px; border:1px solid #000; box-shadow:0 10px 30px rgba(0,0,0,0.05);">
             
-            <div style="border-bottom:4px solid #0f172a; padding-bottom:20px; margin-bottom:40px; display:flex; justify-content:space-between; align-items:flex-end;">
+            <div style="border:2px solid #000; padding:20px; margin-bottom:40px; display:flex; justify-content:space-between; align-items:center;">
                 <div>
-                    <h1 style="margin:0; font-size:28px; font-weight:900; color:#0f172a; letter-spacing:-1px;">SHOP DRAWING: FIN-PLATE DETAIL</h1>
-                    <p style="margin:5px 0; color:#64748b; font-weight:bold;">AISC 360-22 LRFD METHOD | FOR CONSTRUCTION</p>
+                    <h1 style="margin:0; font-size:24px; font-weight:900; text-transform:uppercase;">Technical Shop Drawing: Steel Connection</h1>
+                    <p style="margin:5px 0; font-size:12px; font-weight:bold; color:#475569;">AISC 360-22 | CALCULATION ID: GI-2026-B1</p>
                 </div>
-                <div style="text-align:right; font-family:monospace;">
-                    <div style="font-size:14px; color:#94a3b8;">UTILIZATION RATIO</div>
-                    <div style="font-size:35px; font-weight:900; color:{'#059669' if util <= 100 else '#dc2626'};">{util:.1f}%</div>
+                <div style="background:#0f172a; color:white; padding:15px; text-align:center; min-width:120px;">
+                    <div style="font-size:10px;">UTILIZATION</div>
+                    <div style="font-size:24px; font-weight:900;">{util:.1f}%</div>
                 </div>
             </div>
 
-            <div style="position:relative; background:#fff; padding:20px; border:1px solid #f1f5f9;">
+            <div style="border:1px solid #cbd5e1; padding:10px; background:#fff;">
                 <svg width="100%" height="{c_h}" viewBox="0 0 {c_w} {c_h}">
-                    <rect x="{p_x - 20}" y="50" width="20" height="{c_h-100}" fill="#f8fafc" stroke="#cbd5e1"/>
+                    <line x1="{p_x}" y1="{p_y}" x2="{p_x - 120}" y2="{p_y}" stroke="#94a3b8" stroke-width="0.5" stroke-dasharray="4,2"/>
+                    <line x1="{p_x}" y1="{p_y + conn['plate_h']}" x2="{p_x - 120}" y2="{p_y + conn['plate_h']}" stroke="#94a3b8" stroke-width="0.5" stroke-dasharray="4,2"/>
                     
                     <rect x="{p_x}" y="{p_y}" width="{conn['plate_w']}" height="{conn['plate_h']}" fill="none" stroke="#000" stroke-width="2.5"/>
 
-                    <line x1="{p_x - 100}" y1="{p_y}" x2="{p_x - 100}" y2="{p_y + conn['plate_h']}" stroke="#000" stroke-width="1.2"/>
-                    <line x1="{p_x-105}" y1="{p_y+5}" x2="{p_x-95}" y2="{p_y-5}" stroke="#000" stroke-width="2"/> <line x1="{p_x-105}" y1="{p_y+conn['plate_h']+5}" x2="{p_x-95}" y2="{p_y+conn['plate_h']-5}" stroke="#000" stroke-width="2"/> <text x="{p_x - 115}" y="{p_y + conn['plate_h']/2}" font-weight="900" font-size="15" transform="rotate(-90 {p_x - 115},{p_y + conn['plate_h']/2})" text-anchor="middle">PL HEIGHT: {conn['plate_h']} mm</text>
+                    <line x1="{p_x - 110}" y1="{p_y}" x2="{p_x - 110}" y2="{p_y + conn['plate_h']}" stroke="#000" stroke-width="1.2"/>
+                    <line x1="{p_x-115}" y1="{p_y+5}" x2="{p_x-105}" y2="{p_y-5}" stroke="#000" stroke-width="2"/>
+                    <line x1="{p_x-115}" y1="{p_y+conn['plate_h']+5}" x2="{p_x-105}" y2="{p_y+conn['plate_h']-5}" stroke="#000" stroke-width="2"/>
+                    <text x="{p_x - 125}" y="{p_y + conn['plate_h']/2}" font-weight="900" font-size="14" transform="rotate(-90 {p_x - 125},{p_y + conn['plate_h']/2})" text-anchor="middle">TOTAL PLATE HT: {conn['plate_h']} mm</text>
 
-                    {plate_dims}
-                    {bolt_svg}
                     {v_dim_svg}
-
-                    <path d="M{bolt_x} {p_y + conn['edge_v']} L{bolt_x + 220} {p_y - 20} L{bolt_x + 300} {p_y - 20}" fill="none" stroke="#64748b" stroke-width="1"/>
-                    <text x="{bolt_x + 220}" y="{p_y - 30}" font-size="13" font-weight="900">{conn['rows']} x M{conn['bolt_dia']} BOLTS (GRADE {conn['bolt_grade']})</text>
-
-                    <path d="M{p_x + conn['plate_w']} {p_y + conn['plate_h'] - 20} L{p_x + 250} {p_y + conn['plate_h'] + 40} L{p_x + 350} {p_y + conn['plate_h'] + 40}" fill="none" stroke="#64748b" stroke-width="1"/>
-                    <text x="{p_x + 255}" y="{p_y + conn['plate_h'] + 55}" font-size="13" font-weight="900">PLATE: PL {conn['plate_t']}mm (SS400 / A36)</text>
-
-                    <path d="M{p_x} {p_y + 40} L{p_x - 120} {p_y + 40}" fill="none" stroke="#ef4444" stroke-width="2"/>
-                    <text x="{p_x - 120}" y="{p_y + 30}" font-size="14" font-weight="900" fill="#ef4444">△ {conn['weld_size']} (TYP)</text>
+                    {bolt_svg}
                     
-                    <text x="20" y="{c_h-20}" font-size="12" font-weight="bold" fill="#94a3b8">SCALE: N.T.S | DIMENSIONS IN MM</text>
+                    <line x1="{p_x}" y1="{p_y-20}" x2="{p_x}" y2="{p_y-80}" stroke="#94a3b8" stroke-width="0.5" stroke-dasharray="2,2"/>
+                    <line x1="{bolt_x}" y1="{p_y+conn['edge_v']}" x2="{bolt_x}" y2="{p_y-80}" stroke="#94a3b8" stroke-width="0.5" stroke-dasharray="2,2"/>
+                    
+                    <line x1="{p_x}" y1="{p_y-75}" x2="{bolt_x}" y2="{p_y-75}" stroke="#000" stroke-width="1"/>
+                    <line x1="{p_x-5}" y1="{p_y-70}" x2="{p_x+5}" y2="{p_y-80}" stroke="#000" stroke-width="1.5"/>
+                    <line x1="{bolt_x-5}" y1="{p_y-70}" x2="{bolt_x+5}" y2="{p_y-80}" stroke="#000" stroke-width="1.5"/>
+                    <text x="{(p_x+bolt_x)/2}" y="{p_y-85}" font-size="12" font-weight="bold" text-anchor="middle">e_h={conn['edge_h']}</text>
+
+                    {weld_symbol}
+
+                    <text x="{p_x + conn['plate_w'] + 20}" y="{p_y + 10}" font-size="12" font-weight="bold" fill="#64748b">MATERIAL SPECIFICATION:</text>
+                    <text x="{p_x + conn['plate_w'] + 20}" y="{p_y + 35}" font-size="14" font-weight="900">- FIN PL: {conn['plate_t']}mm (SS400)</text>
+                    <text x="{p_x + conn['plate_w'] + 20}" y="{p_y + 55}" font-size="14" font-weight="900">- {conn['rows']}xM{conn['bolt_dia']} (GRADE 8.8)</text>
                 </svg>
             </div>
-
-            <div style="margin-top:40px; display:grid; grid-size: 1fr 1fr; grid-template-columns: 1fr 1fr; gap:30px;">
-                <div style="border:1.5px solid #0f172a; padding:25px;">
-                    <h4 style="margin:0 0 15px; background:#0f172a; color:white; padding:5px 10px; display:inline-block;">BILL OF MATERIALS</h4>
-                    <table style="width:100%; font-size:13px; line-height:1.8;">
-                        <tr><td>Plate Thickness:</td><td style="text-align:right;"><b>{conn['plate_t']} mm</b></td></tr>
-                        <tr><td>Bolt Size/Grade:</td><td style="text-align:right;"><b>M{conn['bolt_dia']} / 8.8</b></td></tr>
-                        <tr><td>Weld Size:</td><td style="text-align:right; color:#ef4444;"><b>{conn['weld_size']} mm Fillet</b></td></tr>
-                    </table>
-                </div>
-                <div style="background:#f8fafc; padding:25px; border:1px solid #e2e8f0;">
-                    <h4 style="margin:0 0 15px; color:#64748b; font-size:12px; letter-spacing:1px; text-transform:uppercase;">Engineering Note</h4>
-                    <p style="font-size:12px; color:#475569; margin:0;">1. All holes shall be standard size (Dia + 2mm) unless noted.<br>2. Welders must be certified for 2G position.<br>3. Verify all dimensions at shop before cutting.</p>
-                </div>
+            
+            <div style="margin-top:20px; font-size:11px; color:#94a3b8; display:flex; justify-content:space-between; border-top:1px solid #eee; padding-top:10px;">
+                <span>* ALL DIMENSIONS ARE IN MILLIMETERS (MM)</span>
+                <span>ENGINEERED BY GEMINI 3 FLASH (WEB MODE)</span>
             </div>
         </div>
     </div>
     """
-    components.html(html_content, height=1500, scrolling=True)
+    components.html(html_content, height=1400, scrolling=True)
