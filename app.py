@@ -172,8 +172,6 @@ else:
     fact_p = p_load
 
 # --- 4.4 Result Processing based on Mode ---
-
-# [FIX] Calculate d_allow globally before the if/else check
 d_allow = L_cm / defl_denom
 
 if is_check_mode:
@@ -213,6 +211,11 @@ else:
     d_act = d_allow * 0.1
     gov_ratio = 0.0 # Always PASS in capacity mode
     gov_cause = "Capacity Mode"
+    
+    # [FIXED] Define ratios here too (dummy values) to prevent NameError
+    ratio_v = 0.1
+    ratio_m = 0.1
+    ratio_d = 0.1
     
     if w_safe == w_safe_shear: gov_cause = "Shear Control"
     elif w_safe == w_safe_moment: gov_cause = "Moment Control"
