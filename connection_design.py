@@ -23,7 +23,6 @@ AISC_MIN_EDGE = {12: 20, 16: 22, 20: 34, 22: 38, 24: 42, 27: 48, 30: 52}
 # ==========================================
 
 def calculate_plate_geometry(conn_type, user_inputs):
-    """คำนวณ Geometry ของแผ่นเหล็ก"""
     rows, cols = user_inputs['rows'], user_inputs['cols']
     sv, sh = user_inputs['s_v'], user_inputs['s_h']
     lv, leh = user_inputs['lv'], user_inputs['leh']
@@ -55,12 +54,12 @@ def check_geometry_compliance(inputs):
 
 def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade, bolt_data):
     """
-    ฟังก์ชันคำนวณที่แม่นยำ 100% ตาม AISC (หน่วยหลักคือ N และ mm)
-    แล้วแปลงกลับเป็น kg เพื่อให้ตรงกับ Report
+    คำนวณ Capacity ตามมาตรฐาน AISC (หน่วย N) แล้วแปลงกลับเป็น kg
+    เพื่อให้ค่าตรงกับ Report (Engineering Note) 100%
     """
     
     # --- 1. Constants & Factors ---
-    g = 9.81  # Gravity
+    g = 9.81  # Gravity constant used in Report
     method_raw = st.session_state.get('design_method', 'LRFD')
     is_lrfd = "LRFD" in method_raw
     
@@ -71,17 +70,16 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
         phi_w = 0.75  # Weld
         phi_b = 0.75  # Bolt Shear/Tension
     else:
-        # ASD Safety Factors converted to Phi equivalent for display consistency
+        # Map ASD Safety Factors to Phi equivalents for consistent display
         phi_y, phi_r, phi_w, phi_b = 1/1.67, 1/2.00, 1/2.00, 1/2.00
 
-    # Material Strength
     if "SS400" in mat_grade: Fy, Fu = 245, 400   
     elif "SM520" in mat_grade: Fy, Fu = 355, 520
     else: Fy, Fu = 250, 400 # A36
 
     # Geometry Vars
     d = inputs['d']
-    d_hole = d + 2.0 # Standard hole size
+    d_hole = d + 2.0 
     t = inputs['t']
     rows, cols = inputs['rows'], inputs['cols']
     n_bolts = rows * cols
@@ -94,40 +92,29 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     Ab = (math.pi * d**2) / 4
     Fnv = bolt_data['Fnv']
     
-    # Nominal Strength (Newtons)
     Rn_shear_N = Fnv * Ab * n_bolts 
     Design_Shear_N = Rn_shear_N * phi_b
-    
-    # Convert to kg
     Cap_Shear_kg = Design_Shear_N / g
     
     check_list.append({
-        "Item": "1. Bolt Shear",
-        "Capacity": Cap_Shear_kg,
-        "Demand": V_load_kg,
+        "Check Item": "1. Bolt Shear",
+        "Capacity (kg)": Cap_Shear_kg,
+        "Demand (kg)": V_load_kg,
         "Status": "PASS" if Cap_Shear_kg >= V_load_kg else "FAIL"
     })
 
     # ----------------------------------------
     # 2. Bolt Bearing (Teartout)
     # ----------------------------------------
-    # Lc calculation (Clear distance)
     lc_edge = inputs['lv'] - (d_hole / 2.0)
     lc_inner = inputs['s_v'] - d_hole
     
-    # Bearing per bolt (AISC J3.10)
-    # Rn = 1.2 * Lc * t * Fu <= 2.4 * d * t * Fu
+    # Rn per bolt (AISC J3.10)
     rn_edge_N = min(1.2 * lc_edge * t * Fu, 2.4 * d * t * Fu)
     rn_inner_N = min(1.2 * lc_inner * t * Fu, 2.4 * d * t * Fu)
     
     if rows >= 2:
-        # 2 Edge bolts (Top/Bottom) + (Rows-2) Inner bolts * Cols
-        # NOTE: Usually strictly it's top edge only for gravity, but for generic connection usually check both
-        # Simplified: If load is vertical, only bottom bolt bears against edge distance? 
-        # Standard Conservative: Assume all bolts share load, check weakest link.
-        # Let's use Summation as per standard design aids
         Rn_bearing_total_N = (rn_edge_N + (rows - 1) * rn_inner_N) * cols
-        # Note: Often top bolt has large edge distance, bottom has 'lv'. Conservative is to use lv for edge.
     else:
         Rn_bearing_total_N = rn_edge_N * cols
         
@@ -135,9 +122,9 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     Cap_Bearing_kg = Design_Bearing_N / g
     
     check_list.append({
-        "Item": "2. Bolt Bearing",
-        "Capacity": Cap_Bearing_kg,
-        "Demand": V_load_kg,
+        "Check Item": "2. Bolt Bearing",
+        "Capacity (kg)": Cap_Bearing_kg,
+        "Demand (kg)": V_load_kg,
         "Status": "PASS" if Cap_Bearing_kg >= V_load_kg else "FAIL"
     })
 
@@ -150,42 +137,36 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     Cap_Yield_kg = Design_Yield_N / g
     
     check_list.append({
-        "Item": "3. Plate Shear Yielding",
-        "Capacity": Cap_Yield_kg,
-        "Demand": V_load_kg,
+        "Check Item": "3. Plate Yielding",
+        "Capacity (kg)": Cap_Yield_kg,
+        "Demand (kg)": V_load_kg,
         "Status": "PASS" if Cap_Yield_kg >= V_load_kg else "FAIL"
     })
 
     # ----------------------------------------
     # 4. Plate Shear Rupture
     # ----------------------------------------
-    # Anv = Net Area subject to shear
     Anv = (plate_geom['h'] - (rows * d_hole)) * t
     Rn_rup_N = 0.60 * Fu * Anv
     Design_Rup_N = Rn_rup_N * phi_r
     Cap_Rup_kg = Design_Rup_N / g
     
     check_list.append({
-        "Item": "4. Plate Shear Rupture",
-        "Capacity": Cap_Rup_kg,
-        "Demand": V_load_kg,
+        "Check Item": "4. Plate Rupture",
+        "Capacity (kg)": Cap_Rup_kg,
+        "Demand (kg)": V_load_kg,
         "Status": "PASS" if Cap_Rup_kg >= V_load_kg else "FAIL"
     })
 
     # ----------------------------------------
     # 5. Block Shear (AISC J4.3)
     # ----------------------------------------
-    # Shear Areas
-    L_gv = inputs['lv'] + (rows - 1) * inputs['s_v'] # Gross Shear Length
+    L_gv = inputs['lv'] + (rows - 1) * inputs['s_v'] 
     Agv_bs = L_gv * t * cols
     Anv_bs = (L_gv - (rows - 0.5) * d_hole) * t * cols
-    
-    # Tension Areas
     Ant_bs = (inputs['leh'] - 0.5 * d_hole) * t * cols
+    Ubs = 1.0 
     
-    Ubs = 1.0 # Uniform tension stress
-    
-    # Formula: Rn = min(0.6Fu Anv + Ubs Fu Ant, 0.6Fy Agv + Ubs Fu Ant)
     term1 = (0.6 * Fu * Anv_bs) + (Ubs * Fu * Ant_bs)
     term2 = (0.6 * Fy * Agv_bs) + (Ubs * Fu * Ant_bs)
     Rn_bs_N = min(term1, term2)
@@ -194,9 +175,9 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     Cap_Block_kg = Design_Block_N / g
     
     check_list.append({
-        "Item": "5. Block Shear",
-        "Capacity": Cap_Block_kg,
-        "Demand": V_load_kg,
+        "Check Item": "5. Block Shear",
+        "Capacity (kg)": Cap_Block_kg,
+        "Demand (kg)": V_load_kg,
         "Status": "PASS" if Cap_Block_kg >= V_load_kg else "FAIL"
     })
 
@@ -204,23 +185,21 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     # 6. Weld Strength
     # ----------------------------------------
     w_sz = inputs['weld_size']
-    L_weld = plate_geom['h'] * 2 # Two sides
-    Fexx = 480 # E70xx (approx 70ksi = 483 MPa, use 480 conservative or 490)
-    
-    # Rn = 0.60 * Fexx * Throat * L
+    L_weld = plate_geom['h'] * 2 
+    Fexx = 480 # E70xx 
     Rn_weld_N = 0.60 * Fexx * (0.707 * w_sz) * L_weld
     Design_Weld_N = Rn_weld_N * phi_w
     Cap_Weld_kg = Design_Weld_N / g
     
     check_list.append({
-        "Item": "6. Weld Strength",
-        "Capacity": Cap_Weld_kg,
-        "Demand": V_load_kg,
+        "Check Item": "6. Weld Strength",
+        "Capacity (kg)": Cap_Weld_kg,
+        "Demand (kg)": V_load_kg,
         "Status": "PASS" if Cap_Weld_kg >= V_load_kg else "FAIL"
     })
 
     # ----------------------------------------
-    # 7. Bolt Tension & Interaction (Optional)
+    # 7. Bolt Tension & Interaction
     # ----------------------------------------
     if T_load_kg > 0:
         Fnt = bolt_data['Fnt']
@@ -229,27 +208,20 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
         Cap_Ten_kg = Design_Ten_N / g
         
         check_list.append({
-            "Item": "7. Bolt Tension",
-            "Capacity": Cap_Ten_kg,
-            "Demand": T_load_kg,
+            "Check Item": "7. Bolt Tension",
+            "Capacity (kg)": Cap_Ten_kg,
+            "Demand (kg)": T_load_kg,
             "Status": "PASS" if Cap_Ten_kg >= T_load_kg else "FAIL"
         })
         
-        # Interaction
         r_v = V_load_kg / Cap_Shear_kg
         r_t = T_load_kg / Cap_Ten_kg
-        # AISC Elliptical: (rat_v)^2 + (rat_t)^2 <= 1.0
-        # Or Linear depending on code, here use Elliptical for combined shear/tension
-        # Simplified AISC J3.7 uses modified stress, but interaction ratio is good proxy
-        
-        # Let's use Modified Fnt' (AISC Eq J3-3a) for exactness if needed, 
-        # but interaction square sum is standard approximation
         inter_val = r_v**2 + r_t**2
         
         check_list.append({
-            "Item": "8. Interaction Ratio",
-            "Capacity": 1.00, # Limit
-            "Demand": inter_val,
+            "Check Item": "8. Interaction",
+            "Capacity (kg)": 1.00, 
+            "Demand (kg)": inter_val,
             "Status": "PASS" if inter_val <= 1.0 else "FAIL",
             "IsRatio": True
         })
@@ -257,11 +229,10 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     # --- Summary ---
     df_res = pd.DataFrame(check_list)
     
-    # Find Max Ratio
     def get_ratio(row):
-        if row.get('IsRatio'): return row['Demand']
-        if row['Capacity'] == 0: return 999.0
-        return row['Demand'] / row['Capacity']
+        if row.get('IsRatio'): return row['Demand (kg)']
+        if row['Capacity (kg)'] == 0: return 999.0
+        return row['Demand (kg)'] / row['Capacity (kg)']
 
     df_res['Ratio'] = df_res.apply(get_ratio, axis=1)
     max_r = df_res['Ratio'].max()
@@ -273,7 +244,7 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     }
 
 # ==========================================
-# ⚡ 2. SMART OPTIMIZER (Updated to use Exact Func)
+# ⚡ 2. SMART OPTIMIZER
 # ==========================================
 def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, current_inputs, 
                      fixed_bolt=None, strategy="Min Weight"):
@@ -289,7 +260,6 @@ def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, 
     
     for d in candidate_bolts:
         for r in candidate_rows:
-            # Quick Pre-filter
             if (d**2 * r * 2.0 / 100) < (V_target/1000): continue
 
             for t in candidate_thk:
@@ -303,7 +273,6 @@ def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, 
                 geom = calculate_plate_geometry(conn_type, temp_inputs)
                 if check_geometry_compliance(temp_inputs): continue 
 
-                # Use the EXACT calculation function
                 res = calculate_exact_capacity(temp_inputs, geom, V_target, T_target, mat_grade, bolt_db_data)
                 
                 if res['status'] == "PASS" and res['ratio'] >= 0.40:
@@ -381,7 +350,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
             if 'opt_results' in st.session_state:
                 res_df = st.session_state['opt_results']
-                # Safety Check
                 if not pd.api.types.is_numeric_dtype(res_df['Bolt']): 
                     del st.session_state['opt_results']
                     st.rerun()
@@ -467,7 +435,6 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         bolt_data_for_calc = selected_bolt.copy()
         bolt_data_for_calc['Fnv'] = final_Fnv
         
-        # 🔥 EXACT CHECK 🔥
         check_res = calculate_exact_capacity(
             user_inputs, plate_geom, V_design_kg, T_design_kg, 
             sel_mat_grade, bolt_data_for_calc
@@ -475,13 +442,13 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         
         # --- Display Table ---
         st.divider()
-        st.subheader("📊 Design Summary (Synced with Report)")
+        st.subheader("📊 Design Summary (Verified Units)")
 
-        df_show = check_res['df'][['Item', 'Capacity', 'Demand', 'Ratio', 'Status']].copy()
+        df_show = check_res['df'][['Check Item', 'Capacity (kg)', 'Demand (kg)', 'Ratio', 'Status']].copy()
         
-        # Formatting
-        df_show['Capacity'] = df_show['Capacity'].apply(lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) and x < 99999 else "-")
-        df_show['Demand'] = df_show['Demand'].apply(lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) else "-")
+        # Format numbers with comma
+        df_show['Capacity (kg)'] = df_show['Capacity (kg)'].apply(lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) and x < 999999 else "-")
+        df_show['Demand (kg)'] = df_show['Demand (kg)'].apply(lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) else "-")
         
         def highlight_status(val):
             color = '#ffcccb' if val == 'FAIL' else '#d1fae5'
