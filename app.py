@@ -172,6 +172,10 @@ else:
     fact_p = p_load
 
 # --- 4.4 Result Processing based on Mode ---
+
+# [FIX] Calculate d_allow globally before the if/else check
+d_allow = L_cm / defl_denom
+
 if is_check_mode:
     # Check Design Mode
     v_act = (fact_w * user_span / 2) + (fact_p / 2)
@@ -181,7 +185,6 @@ if is_check_mode:
     d_unif = (5 * (w_load/100) * (L_cm**4)) / (384 * E * Ix)
     d_point = (p_load * (L_cm**3)) / (48 * E * Ix)
     d_act = d_unif + d_point
-    d_allow = L_cm / defl_denom
     
     ratio_v = v_act / V_cap
     ratio_m = m_act / M_cap
