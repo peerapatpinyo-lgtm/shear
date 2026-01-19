@@ -1,90 +1,68 @@
-# connection_design.py
 import streamlit as st
 import math
 import drawing_utils as dw
-import calculation_report  # ✅ ต้องมีไฟล์ calculation_report.py อยู่ใน folder เดียวกัน
+import calculation_report as cr # เรียกใช้ไฟล์ Report ที่คุณเพิ่งส่งมา
 
 # ==========================================
-# 🧮 ENGINEERING CALCULATION LOGIC (BASIC)
+# 🧮 1. ENGINEERING LOGIC (QUICK CHECK)
 # ==========================================
-
-def calculate_capacity(inputs, plate_geom, V_load, mat_grade):
+def calculate_quick_check(inputs, plate_geom, V_load_kg, mat_grade):
     """
-    คำนวณกำลังรับน้ำหนักจริง (เบื้องต้นสำหรับแสดง Quick Status)
-    โดยอ้างอิง Method (ASD/LRFD) จาก Tab 1
+    คำนวณเบื้องต้นสำหรับแสดง Status Bar ด้านซ้าย (หน่วย kg)
     """
-    # 1. ดึง Method จาก Session State (Link กับ Tab 1)
+    # Design Method Factors
     method_raw = st.session_state.get('design_method', 'LRFD (Limit State)')
     is_lrfd = "LRFD" in method_raw
     
-    results = {}
-    
-    # 2. กำหนดค่าตัวคูณความปลอดภัย (Factors) ตามมาตรฐาน AISC 360
     if is_lrfd:
-        phi_y = 0.90   # Yielding
-        phi_r = 0.75   # Rupture / Bolt / Weld
-        phi_b = 0.75   # Bearing
-        method_name = "LRFD"
+        phi_y, phi_r, phi_b, phi_w = 0.90, 0.75, 0.75, 0.75
     else:
-        # สำหรับ ASD ใช้ 1/Omega
-        phi_y = 1.0 / 1.50   # Ω = 1.50
-        phi_r = 1.0 / 2.00   # Ω = 2.00
-        phi_b = 1.0 / 2.00    
-        method_name = "ASD"
+        # ASD Equivalent Phi
+        phi_y, phi_r, phi_b, phi_w = 1/1.50, 1/2.00, 1/2.00, 1/2.00
 
-    # 3. Material Properties
-    if "SS400" in mat_grade: Fy, Fu = 245, 400
-    elif "SM520" in mat_grade: Fy, Fu = 355, 520
-    else: Fy, Fu = 250, 400 
+    # Material (Estimated ksc -> kg/mm2)
+    if "SS400" in mat_grade: Fy, Fu = 24.5, 41.0
+    elif "SM520" in mat_grade: Fy, Fu = 36.0, 53.0
+    else: Fy, Fu = 25.0, 41.0 # A36 Default
 
-    # 4. BOLT SHEAR (Single Shear)
     d = inputs['d']
-    Ab = (math.pi * d**2) / 4
     n_bolts = inputs['rows'] * inputs['cols']
-    # Fnv = 372 MPa (A325 Threads included approx)
-    Rn_bolt = (372 * Ab * n_bolts) / 1000.0 
-    Cap_Bolt = (Rn_bolt * phi_r) * 1000 / 9.81 
-    results['Bolt Shear'] = Cap_Bolt
-
-    # 5. PLATE SHEAR (ใช้ค่า s_v เป็นระยะเรียง)
-    s = inputs['s_v']    
-    lv = inputs['lv']    
     t = inputs['t']
-    h_p = plate_geom['h']
     
-    # Shear Yielding
-    Agv = h_p * t
-    Rn_y = (0.60 * Fy * Agv) / 1000.0
-    results['Plate Yielding'] = (Rn_y * phi_y) * 1000 / 9.81
+    results = {}
 
-    # Shear Rupture (Net Area หักรูเจาะ d+2mm)
-    Anv = (h_p - (inputs['rows'] * (d + 2))) * t
-    Rn_r = (0.60 * Fu * Anv) / 1000.0
-    results['Plate Rupture'] = (Rn_r * phi_r) * 1000 / 9.81
+    # 1. Bolt Shear (Simple) - kg
+    Ab = (math.pi * d**2) / 4
+    Fnv = 38.0 # Approx A325 (kg/mm2)
+    Rn_bolt = Fnv * Ab * n_bolts
+    results['Bolt Shear'] = Rn_bolt * phi_r
 
-    # 6. BLOCK SHEAR
-    # ระยะทางเดินแรงเฉือนแนวดิ่ง
-    shear_path = ((inputs['rows'] - 1) * s) + lv
-    Anv_block = (shear_path - (inputs['rows'] - 0.5) * (d + 2)) * t
-    Rn_block = (0.6 * Fu * Anv_block) / 1000.0 
-    results['Block Shear'] = (Rn_block * phi_r) * 1000 / 9.81
+    # 2. Plate Shear Yielding - kg
+    h_p = plate_geom['h']
+    Rn_yld = 0.60 * Fy * (h_p * t)
+    results['Plate Yielding'] = Rn_yld * phi_y
 
-    # 7. WELD CAPACITY
+    # 3. Plate Rupture - kg
+    h_hole = d + 2
+    An = (h_p - (inputs['rows'] * h_hole)) * t
+    Rn_rup = 0.60 * Fu * An
+    results['Plate Rupture'] = Rn_rup * phi_r
+    
+    # 4. Weld - kg
     w_sz = inputs['weld_size']
-    L_weld = h_p * 2 
-    Rn_weld = (0.60 * 480 * 0.707 * w_sz * L_weld) / 1000.0
-    results['Weld Strength'] = (Rn_weld * phi_r) * 1000 / 9.81
+    L_weld = h_p * 2
+    Fexx = 49.0 # E70xx
+    Rn_weld = 0.60 * Fexx * 0.707 * w_sz * L_weld
+    results['Weld Strength'] = Rn_weld * phi_w
 
-    # 8. Summary
     min_cap = min(results.values())
-    ratio = V_load / min_cap if min_cap > 0 else 0
+    ratio = V_load_kg / min_cap if min_cap > 0 else 999
     
     return {
         'checks': results,
         'capacity': min_cap,
         'ratio': ratio,
-        'status': "PASS" if ratio <= 1.0 else "FAIL",
-        'method_used': method_name
+        'status': "PASS" if ratio <= 1.0 else "FAIL"
     }
 
 def calculate_plate_geometry(conn_type, user_inputs):
@@ -98,154 +76,151 @@ def calculate_plate_geometry(conn_type, user_inputs):
     if "Fin" in conn_type:
         calc_w = setback + e1 + ((cols - 1) * sh) + leh
     elif "End" in conn_type:
-        calc_w = (2 * leh) + sh
-    else: # Double Angle
+         calc_w = (2 * leh) + sh
+    else: 
         calc_w = e1 + leh 
 
     return {'h': calc_h, 'w': calc_w, 'type': conn_type}
 
 # ==========================================
-# 🖥️ UI RENDERING
+# 🖥️ 2. UI RENDERING
 # ==========================================
-
-def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
+def render_connection_tab(V_design_kg, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
     
     current_method = st.session_state.get('design_method', method)
     
-    st.markdown(f"### 🔩 Detail Design: {conn_type}")
-    st.caption(f"Linked Method: **{current_method}**")
-
-    col_input, col_draw = st.columns([1, 2])
+    # --- Layout ---
+    col_input, col_draw = st.columns([1, 1.8])
     
     with col_input:
+        # Header Box
         st.markdown(f"""
-        <div style="background-color:#f0f7ff; padding:15px; border-radius:10px; border-left:5px solid #2563eb;">
-            <small>DESIGN SHEAR LOAD:</small><br>
-            <strong style="font-size:20px; color:#1e40af;">{V_design_from_tab1:,.0f} kg</strong>
+        <div style="background-color:#eff6ff; padding:15px; border-radius:8px; border-left:5px solid #3b82f6; margin-bottom:15px;">
+            <div style="font-size:12px; color:#6b7280; font-weight:bold;">DESIGN LOAD ({current_method})</div>
+            <div style="font-size:26px; font-weight:800; color:#1e3a8a;">{V_design_kg:,.0f} kg</div>
         </div>
         """, unsafe_allow_html=True)
         
-        with st.expander("1. Bolt Configuration", expanded=True):
+        # 1. Inputs
+        with st.expander("⚙️ 1. Bolt Configuration", expanded=True):
             c1, c2 = st.columns(2)
-            d_bolt = c1.selectbox("Bolt Size (mm)", [12, 16, 20, 22, 24, 27, 30], index=2)
-            rows = c2.number_input("Rows", 2, 15, 3)
+            d_bolt = c1.selectbox("Size (mm)", [12, 16, 20, 22, 24, 27, 30], index=2)
+            rows = c2.number_input("Rows", 2, 20, 3)
             
-            if "End" in conn_type or "Double" in conn_type:
+            if "End" in conn_type:
                 cols = 2
-                st.info("Columns: 2 (Fixed)")
+                st.info("Cols: 2 (End Plate)")
             else:
                 cols = st.number_input("Cols", 1, 4, 1)
 
             c3, c4 = st.columns(2)
-            s_v = c3.number_input("Pitch s (mm)", 30, 200, 75)
-            
-            # --- FIX StreamlitValueBelowMinError ---
-            if cols > 1:
-                s_h = c4.number_input("Gauge g (mm)", 30, 200, 75)
-            else:
-                s_h = 0
-                c4.number_input("Gauge g (mm)", 0, 0, 0, disabled=True)
+            s_v = c3.number_input("Pitch (sv)", 30, 200, 70)
+            s_h = c4.number_input("Gauge (sh)", 0, 200, 0 if cols==1 else 70, disabled=(cols==1))
 
-        with st.expander("2. Plate & Weld", expanded=True):
+        with st.expander("🛡️ 2. Plate & Details", expanded=True):
             c1, c2 = st.columns(2)
-            t_plate = c1.number_input("Plate t (mm)", 4, 40, 9)
-            weld_sz = c2.number_input("Weld Size (mm)", 3, 20, 6)
+            t_plate = c1.number_input("Plate t (mm)", 4, 50, 9)
+            weld_sz = c2.number_input("Weld (mm)", 3, 20, 6)
             
             st.divider()
             k1, k2 = st.columns(2)
-            lv = k1.number_input("lv (Edge Vert.)", 25, 150, 40)
-            leh = k2.number_input("leh (Edge Horiz.)", 25, 150, 40)
+            lv = k1.number_input("Edge V (lv)", 20, 150, 35)
+            leh = k2.number_input("Edge H (leh)", 20, 150, 35)
             
             k3, k4 = st.columns(2)
-            e1 = k3.number_input("e1 (Bolt to Beam)", 30, 150, 40, disabled=("End" in conn_type))
-            setback = k4.number_input("Setback", 0, 50, 10, disabled=("End" in conn_type))
+            is_end = "End" in conn_type
+            e1 = k3.number_input("Bolt-to-Beam (e1)", 30, 150, 40, disabled=is_end)
+            setback = k4.number_input("Setback", 0, 50, 10, disabled=is_end)
 
+        # 2. Gather Inputs
         user_inputs = {
             'd': d_bolt, 'rows': rows, 'cols': cols, 's_v': s_v, 's_h': s_h,
             't': t_plate, 'weld_size': weld_sz,
             'lv': lv, 'leh': leh, 'e1': e1, 'setback': setback
         }
-        
         plate_geom = calculate_plate_geometry(conn_type, user_inputs)
         
-        # คำนวณเบื้องต้นเพื่อโชว์ Status Bar ด้านซ้าย
-        calc_res = calculate_capacity(user_inputs, plate_geom, V_design_from_tab1, default_mat_grade)
+        # 3. Quick Check (Status Bar)
+        check_res = calculate_quick_check(user_inputs, plate_geom, V_design_kg, default_mat_grade)
         
         st.divider()
-        status_color = "green" if calc_res['status'] == "PASS" else "red"
-        st.markdown(f"#### Status: :{status_color}[{calc_res['status']}]")
-        st.write(f"**Capacity:** {calc_res['capacity']:,.0f} kg")
-        st.write(f"**Ratio:** {calc_res['ratio']:.2f}")
-
-    with col_draw:
-        t_front, t_side, t_plan = st.tabs(["Front", "Side", "Plan"])
-        with t_front:
-            st.plotly_chart(dw.create_front_view(section_data, plate_geom, user_inputs), use_container_width=True)
-        with t_side:
-            st.plotly_chart(dw.create_side_view(section_data, plate_geom, user_inputs), use_container_width=True)
-        with t_plan:
-            st.plotly_chart(dw.create_plan_view(section_data, plate_geom, user_inputs), use_container_width=True)
-    
-    # =========================================================================
-    # ✅ INTEGRATION: เรียกใช้ Calculation Report (Markdown) ด้านล่าง
-    # =========================================================================
-    st.divider()
-    
-    # 1. Prepare Data for calculation_report.py
-    # Load Conversion (kg -> kN)
-    V_kN = V_design_from_tab1 * 9.81 / 1000.0
-    
-    # Determine Strength from Grade string
-    is_sm520 = "SM520" in default_mat_grade
-    fy_val = 355 if is_sm520 else 245
-    fu_val = 520 if is_sm520 else 400
-    
-    beam_tw = section_data.get('tw', 6)
-    
-    # Bolt Shear Strength (approx)
-    fnv_val = 372 if "A325" in default_bolt_grade else 188
-
-    # Construct Dictionaries
-    beam_dict = {'tw': beam_tw, 'Fu': fu_val}
-    
-    plate_dict = {
-        't': t_plate,
-        'h': plate_geom['h'],
-        'e1': e1,
-        'Fy': fy_val,
-        'Fu': fu_val,
-        'lv': lv,
-        'l_side': leh,
-        'weld_size': weld_sz
-    }
-    
-    bolt_dict = {
-        'd': d_bolt,
-        'rows': rows,
-        'cols': cols,
-        's_v': s_v,
-        's_h': s_h,
-        'Fnv': fnv_val
-    }
-
-    # 2. Generate Report String
-    try:
-        report_md = calculation_report.generate_report(
-            V_load=V_kN,
-            beam=beam_dict,
-            plate=plate_dict,
-            bolts=bolt_dict,
-            is_lrfd=is_lrfd,
-            material_grade=default_mat_grade,
-            bolt_grade=default_bolt_grade
-        )
+        st.subheader("🏁 Quick Status")
+        for k, v in check_res['checks'].items():
+            icon = "✅" if v >= V_design_kg else "❌"
+            st.write(f"{icon} **{k}:** {v:,.0f} kg")
         
-        # 3. Display in Expander
-        st.subheader("📋 รายการคำนวณจุดต่อ (Calculation Note)")
-        with st.expander("📄 Click to show detailed calculation", expanded=True):
-            st.markdown(report_md)
-            
-    except Exception as e:
-        st.error(f"Error generating report: {e}")
+        ratio_color = "red" if check_res['ratio'] > 1.0 else "green"
+        st.markdown(f"**Ratio:** :{ratio_color}[{check_res['ratio']:.2f}]")
 
-    return plate_geom, user_inputs
+    # --- Drawing Area ---
+    with col_draw:
+        t1, t2, t3 = st.tabs(["🖼️ Front View", "📐 Side View", "🔝 Plan View"])
+        with t1: st.plotly_chart(dw.create_front_view(section_data, plate_geom, user_inputs), use_container_width=True)
+        with t2: st.plotly_chart(dw.create_side_view(section_data, plate_geom, user_inputs), use_container_width=True)
+        with t3: st.plotly_chart(dw.create_plan_view(section_data, plate_geom, user_inputs), use_container_width=True)
+
+    # --- GENERATE REPORT SECTION ---
+    st.markdown("---")
+    col_btn, col_info = st.columns([1, 2])
+    
+    if col_btn.button("📄 Generate Calculation Report", type="primary", use_container_width=True):
+        
+        # 1. Prepare Data for Report (Unit Conversion: kg -> kN, MPa)
+        # Load
+        V_kN = V_design_kg * 9.81 / 1000.0
+        
+        # Material
+        is_sm520 = "SM520" in default_mat_grade
+        Fy_val = 355 if is_sm520 else 245  # MPa
+        Fu_val = 520 if is_sm520 else 400  # MPa
+        
+        # Beam Data
+        beam_dict = {
+            'tw': section_data.get('tw', 6),
+            'Fu': Fu_val # Assume same grade
+        }
+        
+        # Plate Data
+        plate_dict = {
+            't': t_plate,
+            'h': plate_geom['h'],
+            'Fy': Fy_val,
+            'Fu': Fu_val,
+            'weld_size': weld_sz,
+            'e1': e1,       # For eccentricity
+            'lv': lv,       # For Block Shear
+            'l_side': leh   # For Block Shear
+        }
+        
+        # Bolt Data
+        # Fnv for A325 approx 372 MPa (Threads included)
+        fnv_val = 372 
+        bolt_dict = {
+            'd': d_bolt,
+            'rows': rows,
+            'cols': cols,
+            's_v': s_v,
+            's_h': s_h,
+            'Fnv': fnv_val 
+        }
+
+        # 2. Call the external report generator
+        try:
+            report_md = cr.generate_report(
+                V_load=V_kN,
+                beam=beam_dict,
+                plate=plate_dict,
+                bolts=bolt_dict,
+                is_lrfd=is_lrfd,
+                material_grade=default_mat_grade,
+                bolt_grade=default_bolt_grade
+            )
+            
+            # 3. Display Result
+            with st.container():
+                st.success("✅ Report Generated Successfully!")
+                with st.expander("📜 View Calculation Note", expanded=True):
+                    st.markdown(report_md)
+                    
+        except Exception as e:
+            st.error(f"❌ Error Generating Report: {e}")
