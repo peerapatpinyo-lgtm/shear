@@ -5,6 +5,17 @@ import numpy as np
 import plotly.graph_objects as go
 
 # ==========================================
+# 0. SYSTEM PATCH (CRITICAL FIX)
+# ==========================================
+# Patch: บังคับให้ st.markdown รองรับ HTML เสมอ 
+# (แก้ปัญหา report_generator แสดงผลเป็น code ดิบ)
+_original_markdown = st.markdown
+def _patched_markdown(body, unsafe_allow_html=False, **kwargs):
+    # Force unsafe_allow_html to True regardless of what was passed
+    return _original_markdown(body, unsafe_allow_html=True, **kwargs)
+st.markdown = _patched_markdown
+
+# ==========================================
 # 1. IMPORT MODULES
 # ==========================================
 try:
@@ -88,13 +99,13 @@ L_cm = user_span * 100
 
 if is_lrfd:
     phi_v, phi_b = 1.00, 0.90
-    V_cap = phi_v * 0.60 * Fy * Aw      # kg
-    M_cap = (phi_b * Fy * Zx) / 100    # kg-m
+    V_cap = phi_v * 0.60 * Fy * Aw       # kg
+    M_cap = (phi_b * Fy * Zx) / 100     # kg-m
     label_load = "Factored Load (Wu)"
 else:
     omg_v, omg_b = 1.50, 1.67
-    V_cap = (0.60 * Fy * Aw) / omg_v    # kg
-    M_cap = (Fy * Zx) / (omg_b * 100)  # kg-m
+    V_cap = (0.60 * Fy * Aw) / omg_v     # kg
+    M_cap = (Fy * Zx) / (omg_b * 100)   # kg-m
     label_load = "Allowable Load (Wa)"
 
 # คำนวณขีดจำกัด Load (w) จากแต่ละเกณฑ์ (kg/m)
