@@ -19,7 +19,7 @@ BOLT_DB = {
 AISC_MIN_EDGE = {12: 20, 16: 22, 20: 34, 22: 38, 24: 42, 27: 48, 30: 52}
 
 # ==========================================
-# 🧮 1. CORE ENGINEERING LOGIC (MATCH REPORT)
+# 🧮 1. CORE LOGIC (FORCE UNIT: kN)
 # ==========================================
 
 def calculate_plate_geometry(conn_type, user_inputs):
@@ -52,25 +52,20 @@ def check_geometry_compliance(inputs):
     
     return warnings
 
-def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade, bolt_data):
+def calculate_exact_capacity_kN(inputs, plate_geom, V_load_kN, T_load_kN, mat_grade, bolt_data):
     """
-    คำนวณ Capacity ตามมาตรฐาน AISC (หน่วย N) แล้วแปลงกลับเป็น kg
-    เพื่อให้ค่าตรงกับ Report (Engineering Note) 100%
+    คำนวณ Capacity ทั้งหมดในหน่วย kN เพื่อให้ตรงกับ Report 100%
     """
     
     # --- 1. Constants & Factors ---
-    g = 9.81  # Gravity constant used in Report
     method_raw = st.session_state.get('design_method', 'LRFD')
     is_lrfd = "LRFD" in method_raw
     
     # Phi Factors (AISC 360-16)
     if is_lrfd:
-        phi_y = 0.90  # Yielding
-        phi_r = 0.75  # Rupture
-        phi_w = 0.75  # Weld
-        phi_b = 0.75  # Bolt Shear/Tension
+        phi_y, phi_r, phi_w, phi_b = 0.90, 0.75, 0.75, 0.75
     else:
-        # Map ASD Safety Factors to Phi equivalents for consistent display
+        # Convert ASD Omega to Phi equivalent for display consistency
         phi_y, phi_r, phi_w, phi_b = 1/1.67, 1/2.00, 1/2.00, 1/2.00
 
     if "SS400" in mat_grade: Fy, Fu = 245, 400   
@@ -93,14 +88,13 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     Fnv = bolt_data['Fnv']
     
     Rn_shear_N = Fnv * Ab * n_bolts 
-    Design_Shear_N = Rn_shear_N * phi_b
-    Cap_Shear_kg = Design_Shear_N / g
+    Design_Shear_kN = (Rn_shear_N * phi_b) / 1000.0  # Convert N -> kN
     
     check_list.append({
         "Check Item": "1. Bolt Shear",
-        "Capacity (kg)": Cap_Shear_kg,
-        "Demand (kg)": V_load_kg,
-        "Status": "PASS" if Cap_Shear_kg >= V_load_kg else "FAIL"
+        "Capacity (kN)": Design_Shear_kN,
+        "Demand (kN)": V_load_kN,
+        "Status": "PASS" if Design_Shear_kN >= V_load_kN else "FAIL"
     })
 
     # ----------------------------------------
@@ -109,7 +103,6 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     lc_edge = inputs['lv'] - (d_hole / 2.0)
     lc_inner = inputs['s_v'] - d_hole
     
-    # Rn per bolt (AISC J3.10)
     rn_edge_N = min(1.2 * lc_edge * t * Fu, 2.4 * d * t * Fu)
     rn_inner_N = min(1.2 * lc_inner * t * Fu, 2.4 * d * t * Fu)
     
@@ -118,14 +111,13 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     else:
         Rn_bearing_total_N = rn_edge_N * cols
         
-    Design_Bearing_N = Rn_bearing_total_N * phi_r
-    Cap_Bearing_kg = Design_Bearing_N / g
+    Design_Bearing_kN = (Rn_bearing_total_N * phi_r) / 1000.0
     
     check_list.append({
         "Check Item": "2. Bolt Bearing",
-        "Capacity (kg)": Cap_Bearing_kg,
-        "Demand (kg)": V_load_kg,
-        "Status": "PASS" if Cap_Bearing_kg >= V_load_kg else "FAIL"
+        "Capacity (kN)": Design_Bearing_kN,
+        "Demand (kN)": V_load_kN,
+        "Status": "PASS" if Design_Bearing_kN >= V_load_kN else "FAIL"
     })
 
     # ----------------------------------------
@@ -133,14 +125,13 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     # ----------------------------------------
     Agv = plate_geom['h'] * t
     Rn_yield_N = 0.60 * Fy * Agv
-    Design_Yield_N = Rn_yield_N * phi_y
-    Cap_Yield_kg = Design_Yield_N / g
+    Design_Yield_kN = (Rn_yield_N * phi_y) / 1000.0
     
     check_list.append({
         "Check Item": "3. Plate Yielding",
-        "Capacity (kg)": Cap_Yield_kg,
-        "Demand (kg)": V_load_kg,
-        "Status": "PASS" if Cap_Yield_kg >= V_load_kg else "FAIL"
+        "Capacity (kN)": Design_Yield_kN,
+        "Demand (kN)": V_load_kN,
+        "Status": "PASS" if Design_Yield_kN >= V_load_kN else "FAIL"
     })
 
     # ----------------------------------------
@@ -148,14 +139,13 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     # ----------------------------------------
     Anv = (plate_geom['h'] - (rows * d_hole)) * t
     Rn_rup_N = 0.60 * Fu * Anv
-    Design_Rup_N = Rn_rup_N * phi_r
-    Cap_Rup_kg = Design_Rup_N / g
+    Design_Rup_kN = (Rn_rup_N * phi_r) / 1000.0
     
     check_list.append({
         "Check Item": "4. Plate Rupture",
-        "Capacity (kg)": Cap_Rup_kg,
-        "Demand (kg)": V_load_kg,
-        "Status": "PASS" if Cap_Rup_kg >= V_load_kg else "FAIL"
+        "Capacity (kN)": Design_Rup_kN,
+        "Demand (kN)": V_load_kN,
+        "Status": "PASS" if Design_Rup_kN >= V_load_kN else "FAIL"
     })
 
     # ----------------------------------------
@@ -171,14 +161,13 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     term2 = (0.6 * Fy * Agv_bs) + (Ubs * Fu * Ant_bs)
     Rn_bs_N = min(term1, term2)
     
-    Design_Block_N = Rn_bs_N * phi_r
-    Cap_Block_kg = Design_Block_N / g
+    Design_Block_kN = (Rn_bs_N * phi_r) / 1000.0
     
     check_list.append({
         "Check Item": "5. Block Shear",
-        "Capacity (kg)": Cap_Block_kg,
-        "Demand (kg)": V_load_kg,
-        "Status": "PASS" if Cap_Block_kg >= V_load_kg else "FAIL"
+        "Capacity (kN)": Design_Block_kN,
+        "Demand (kN)": V_load_kN,
+        "Status": "PASS" if Design_Block_kN >= V_load_kN else "FAIL"
     })
 
     # ----------------------------------------
@@ -188,40 +177,38 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     L_weld = plate_geom['h'] * 2 
     Fexx = 480 # E70xx 
     Rn_weld_N = 0.60 * Fexx * (0.707 * w_sz) * L_weld
-    Design_Weld_N = Rn_weld_N * phi_w
-    Cap_Weld_kg = Design_Weld_N / g
+    Design_Weld_kN = (Rn_weld_N * phi_w) / 1000.0
     
     check_list.append({
         "Check Item": "6. Weld Strength",
-        "Capacity (kg)": Cap_Weld_kg,
-        "Demand (kg)": V_load_kg,
-        "Status": "PASS" if Cap_Weld_kg >= V_load_kg else "FAIL"
+        "Capacity (kN)": Design_Weld_kN,
+        "Demand (kN)": V_load_kN,
+        "Status": "PASS" if Design_Weld_kN >= V_load_kN else "FAIL"
     })
 
     # ----------------------------------------
     # 7. Bolt Tension & Interaction
     # ----------------------------------------
-    if T_load_kg > 0:
+    if T_load_kN > 0:
         Fnt = bolt_data['Fnt']
         Rn_ten_N = Fnt * Ab * n_bolts
-        Design_Ten_N = Rn_ten_N * phi_b
-        Cap_Ten_kg = Design_Ten_N / g
+        Design_Ten_kN = (Rn_ten_N * phi_b) / 1000.0
         
         check_list.append({
             "Check Item": "7. Bolt Tension",
-            "Capacity (kg)": Cap_Ten_kg,
-            "Demand (kg)": T_load_kg,
-            "Status": "PASS" if Cap_Ten_kg >= T_load_kg else "FAIL"
+            "Capacity (kN)": Design_Ten_kN,
+            "Demand (kN)": T_load_kN,
+            "Status": "PASS" if Design_Ten_kN >= T_load_kN else "FAIL"
         })
         
-        r_v = V_load_kg / Cap_Shear_kg
-        r_t = T_load_kg / Cap_Ten_kg
+        r_v = V_load_kN / Design_Shear_kN
+        r_t = T_load_kN / Design_Ten_kN
         inter_val = r_v**2 + r_t**2
         
         check_list.append({
             "Check Item": "8. Interaction",
-            "Capacity (kg)": 1.00, 
-            "Demand (kg)": inter_val,
+            "Capacity (kN)": 1.00, 
+            "Demand (kN)": inter_val,
             "Status": "PASS" if inter_val <= 1.0 else "FAIL",
             "IsRatio": True
         })
@@ -230,9 +217,9 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     df_res = pd.DataFrame(check_list)
     
     def get_ratio(row):
-        if row.get('IsRatio'): return row['Demand (kg)']
-        if row['Capacity (kg)'] == 0: return 999.0
-        return row['Demand (kg)'] / row['Capacity (kg)']
+        if row.get('IsRatio'): return row['Demand (kN)']
+        if row['Capacity (kN)'] == 0: return 999.0
+        return row['Demand (kN)'] / row['Capacity (kN)']
 
     df_res['Ratio'] = df_res.apply(get_ratio, axis=1)
     max_r = df_res['Ratio'].max()
@@ -244,9 +231,9 @@ def calculate_exact_capacity(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade
     }
 
 # ==========================================
-# ⚡ 2. SMART OPTIMIZER
+# ⚡ 2. SMART OPTIMIZER (Based on kN)
 # ==========================================
-def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, current_inputs, 
+def run_optimization(V_target_kN, T_target_kN, mat_grade, bolt_grade_name, conn_type, current_inputs, 
                      fixed_bolt=None, strategy="Min Weight"):
     
     if fixed_bolt: candidate_bolts = [fixed_bolt]
@@ -260,7 +247,8 @@ def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, 
     
     for d in candidate_bolts:
         for r in candidate_rows:
-            if (d**2 * r * 2.0 / 100) < (V_target/1000): continue
+            # Approx Check (Quick Filter)
+            if (d**2 * r * 2.0 / 100) * 9.81 < V_target_kN: continue
 
             for t in candidate_thk:
                 temp_inputs = current_inputs.copy()
@@ -273,7 +261,7 @@ def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, 
                 geom = calculate_plate_geometry(conn_type, temp_inputs)
                 if check_geometry_compliance(temp_inputs): continue 
 
-                res = calculate_exact_capacity(temp_inputs, geom, V_target, T_target, mat_grade, bolt_db_data)
+                res = calculate_exact_capacity_kN(temp_inputs, geom, V_target_kN, T_target_kN, mat_grade, bolt_db_data)
                 
                 if res['status'] == "PASS" and res['ratio'] >= 0.40:
                     vol_mm3 = geom['h'] * geom['w'] * t
@@ -297,18 +285,23 @@ def run_optimization(V_target, T_target, mat_grade, bolt_grade_name, conn_type, 
 # 🖥️ 3. UI RENDERING
 # ==========================================
 
-def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
+def render_connection_tab(V_design_kg, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
     
-    V_design_kg = V_design_from_tab1
+    # 🔴 CRITICAL: Convert Input kg to kN immediately for all calculations
+    # This ensures consistency with the report which uses kN
+    V_design_kN = V_design_kg * 9.81 / 1000.0
+    
     current_method = st.session_state.get('design_method', method)
     
     col_input, col_draw = st.columns([1, 1.8])
     
     with col_input:
+        # Show both units to user
         st.markdown(f"""
         <div style="background-color:#eff6ff; padding:15px; border-radius:8px; border-left:5px solid #3b82f6; margin-bottom:15px;">
             <div style="font-size:12px; color:#6b7280; font-weight:bold;">DESIGN SHEAR ({current_method})</div>
-            <div style="font-size:26px; font-weight:800; color:#1e3a8a;">{V_design_kg:,.0f} kg</div>
+            <div style="font-size:24px; font-weight:800; color:#1e3a8a;">{V_design_kg:,.0f} kg</div>
+            <div style="font-size:16px; color:#3b82f6;">( = {V_design_kN:,.2f} kN)</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -334,13 +327,13 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                 run_opt = st.button("🚀 RUN AI", type="primary")
 
             if run_opt:
-                with st.spinner("Calculating exact capacities..."):
+                with st.spinner("Calculating optimal design (kN basis)..."):
                     defaults = {
                         'cols': 1, 's_h': 0, 'weld_size': 6, 
                         'e1': 40, 'setback': 10, 'T_load': 0,
                         'cope': {'has_cope': False, 'dc': 0, 'c': 0}
                     }
-                    results_df = run_optimization(V_design_kg, 0, sel_mat_grade, bolt_grade_name, conn_type, 
+                    results_df = run_optimization(V_design_kN, 0, sel_mat_grade, bolt_grade_name, conn_type, 
                         defaults, fixed_bolt=curr_d if lock_bolt else None, strategy=opt_strategy)
                     
                     if results_df is not None:
@@ -411,6 +404,9 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         with in_tab3:
             st.info("Additional Forces")
             T_design_kg = st.number_input("Axial Tension (kg)", 0.0, 50000.0, 0.0, step=100.0)
+            # CRITICAL: Convert T to kN immediately
+            T_design_kN = T_design_kg * 9.81 / 1000.0
+            
             has_cope = st.checkbox("Coped Beam?", value=False)
             if has_cope:
                 cc1, cc2 = st.columns(2)
@@ -423,7 +419,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             'd': d_bolt, 'rows': rows, 'cols': cols, 's_v': s_v, 's_h': s_h,
             't': t_plate, 'weld_size': weld_sz,
             'lv': lv, 'leh': leh, 'e1': e1, 'setback': setback,
-            'T_load': T_design_kg, 
+            'T_load': T_design_kg, # Store original kg for report param
             'cope': {'has_cope': has_cope, 'dc': cope_d, 'c': cope_c}
         }
         
@@ -435,20 +431,21 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         bolt_data_for_calc = selected_bolt.copy()
         bolt_data_for_calc['Fnv'] = final_Fnv
         
-        check_res = calculate_exact_capacity(
-            user_inputs, plate_geom, V_design_kg, T_design_kg, 
+        # 🔥 USE kN Function 🔥
+        check_res = calculate_exact_capacity_kN(
+            user_inputs, plate_geom, V_design_kN, T_design_kN, 
             sel_mat_grade, bolt_data_for_calc
         )
         
-        # --- Display Table ---
+        # --- Display Table in kN ---
         st.divider()
-        st.subheader("📊 Design Summary (Verified Units)")
+        st.subheader("📊 Design Summary (Verified Units: kN)")
 
-        df_show = check_res['df'][['Check Item', 'Capacity (kg)', 'Demand (kg)', 'Ratio', 'Status']].copy()
+        df_show = check_res['df'][['Check Item', 'Capacity (kN)', 'Demand (kN)', 'Ratio', 'Status']].copy()
         
-        # Format numbers with comma
-        df_show['Capacity (kg)'] = df_show['Capacity (kg)'].apply(lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) and x < 999999 else "-")
-        df_show['Demand (kg)'] = df_show['Demand (kg)'].apply(lambda x: f"{x:,.0f}" if isinstance(x, (int, float)) else "-")
+        # Format numbers to match Report style (2 decimal places)
+        df_show['Capacity (kN)'] = df_show['Capacity (kN)'].apply(lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) and x < 999999 else "-")
+        df_show['Demand (kN)'] = df_show['Demand (kN)'].apply(lambda x: f"{x:,.2f}" if isinstance(x, (int, float)) else "-")
         
         def highlight_status(val):
             color = '#ffcccb' if val == 'FAIL' else '#d1fae5'
@@ -474,9 +471,12 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
 
     # Report Gen
     st.markdown("---")
-    if st.button("📄 Generate Calculation Report", type="primary", use_container_width=True):
-        V_kN = V_design_kg * 9.81 / 1000.0
-        T_kN = T_design_kg * 9.81 / 1000.0
+    if st.button("📄 Generate Calculation Report (Verify Match)", type="primary", use_container_width=True):
+        
+        # USE THE EXACT SAME V_kN as displayed in table
+        V_kN_Report = V_design_kN 
+        T_kN_Report = T_design_kN
+        
         is_sm520 = "SM520" in sel_mat_grade
         Fy_plate = 355 if is_sm520 else 245
         Fu_plate = 520 if is_sm520 else 400
@@ -494,7 +494,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         
         try:
             report_md = cr.generate_report(
-                V_load=V_kN, T_load=T_kN, beam=beam_dict, plate=plate_dict,
+                V_load=V_kN_Report, T_load=T_kN_Report, beam=beam_dict, plate=plate_dict,
                 bolts=bolt_dict, cope=user_inputs['cope'], is_lrfd=is_lrfd,
                 material_grade=sel_mat_grade, bolt_grade=bolt_grade_name 
             )
