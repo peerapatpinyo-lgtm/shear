@@ -57,7 +57,7 @@ def calculate_quick_check(inputs, plate_geom, V_load_kg, T_load_kg, mat_grade, b
     elif "SM520" in mat_grade: Fy, Fu = 36.0, 53.0
     else: Fy, Fu = 25.0, 41.0 # Default A36
 
-    # 3. Bolt Properties (From DB)
+    # 3. Bolt Properties (From DB & Condition)
     # Convert MPa to kg/mm2 roughly for Quick Check (MPa / 9.81)
     Fnv_kg = bolt_data['Fnv'] / 9.81
     Fnt_kg = bolt_data['Fnt'] / 9.81
@@ -144,6 +144,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         
         # 1. Section & Material Inputs
         row_mat = st.columns(2)
+        
         # Bolt Grade Selection (Thai Database)
         bolt_grade_name = row_mat[0].selectbox("🔩 Bolt Grade", list(BOLT_DB.keys()), index=0)
         selected_bolt = BOLT_DB[bolt_grade_name]
@@ -155,8 +156,32 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         elif "A36" in default_mat_grade: def_idx = 2
         sel_mat_grade = row_mat[1].selectbox("🛡️ Plate Grade", mat_options, index=def_idx)
         
-        # Show Bolt Info
-        st.caption(f"ℹ️ {selected_bolt['Desc']} ($F_u={selected_bolt['Fu']}$ MPa)")
+        # ---------------------------------------------------------
+        # ⚙️ Thread Condition Logic (รวม/ไม่รวมเกลียว)
+        # ---------------------------------------------------------
+        st.write("---")
+        st.caption("⚙️ Bolt Condition (เงื่อนไขเกลียว)")
+        thread_cond = st.radio(
+            "Shear Plane Condition:",
+            ["Threads Included (N) - เกลียวอยู่ในระนาบตัด", 
+             "Threads Excluded (X) - เกลียวอยู่นอกระนาบตัด"],
+            index=0, # Default เป็น N (Safe ไว้ก่อน)
+            horizontal=True
+        )
+
+        # คำนวณ Fnv จริง
+        final_Fnv = selected_bolt['Fnv'] 
+        if "Excluded" in thread_cond:
+            # เพิ่ม Strength กรณีเกลียวอยู่นอกระนาบ (Type X)
+            if "Grade 8.8" in bolt_grade_name or "A325" in bolt_grade_name:
+                final_Fnv = 457 # (372 -> 457 MPa)
+            elif "Grade 10.9" in bolt_grade_name or "A490" in bolt_grade_name:
+                final_Fnv = 579 # (469 -> 579 MPa)
+            else:
+                final_Fnv = final_Fnv * 1.25 # เผื่อไว้สำหรับเกรดอื่น
+
+        st.info(f"ℹ️ **Design Strength:** $F_{{nv}} = {final_Fnv}$ MPa ({'Type X' if 'Excluded' in thread_cond else 'Type N'})")
+        # ---------------------------------------------------------
 
         # 2. Tabs for Configuration
         in_tab1, in_tab2, in_tab3 = st.tabs(["📏 Geometry", "📐 Detailing", "⚙️ Advanced"])
@@ -214,10 +239,14 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         # Calculate Geometry
         plate_geom = calculate_plate_geometry(conn_type, user_inputs)
         
+        # Prepare Bolt Data with *Modified* Fnv for Quick Check
+        bolt_data_for_calc = selected_bolt.copy()
+        bolt_data_for_calc['Fnv'] = final_Fnv
+
         # Run Quick Check
         check_res = calculate_quick_check(
             user_inputs, plate_geom, V_design_kg, T_design_kg, 
-            sel_mat_grade, selected_bolt
+            sel_mat_grade, bolt_data_for_calc
         )
         
         # --- Display Quick Results ---
@@ -266,14 +295,14 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         Fy_plate = 355 if is_sm520 else 245
         Fu_plate = 520 if is_sm520 else 400
         
-        # 3. Bolt Parsing (Use Data from DB)
+        # 3. Bolt Parsing (ส่งค่าที่ปรับ Fnv แล้ว)
         bolt_dict = {
             'd': d_bolt, 
             'rows': rows, 
             'cols': cols, 
             's_v': s_v, 
             's_h': s_h,
-            'Fnv': selected_bolt['Fnv'], # Critical: Send specific grade strength
+            'Fnv': final_Fnv,        # <--- Critical: ใช้ค่า Fnv ที่ผ่าน Logic เกลียวแล้ว
             'Fnt': selected_bolt['Fnt'],
             'Fu':  selected_bolt['Fu']
         }
@@ -281,7 +310,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         # 4. Beam & Plate Data
         beam_dict = { 
             'tw': section_data.get('tw', 6), 
-            'Fy': section_data.get('Fy', 245), # Assuming beam matches generic or passed in
+            'Fy': section_data.get('Fy', 245), 
             'Fu': section_data.get('Fu', 400)
         }
         
@@ -302,7 +331,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
                 cope=user_inputs['cope'],
                 is_lrfd=is_lrfd,
                 material_grade=sel_mat_grade, 
-                bolt_grade=bolt_grade_name # Pass name for header
+                bolt_grade=bolt_grade_name 
             )
             
             with st.container():
