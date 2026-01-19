@@ -2,14 +2,16 @@
 import streamlit as st
 import math
 import drawing_utils as dw
+import calculation_report  # ✅ ต้องมีไฟล์ calculation_report.py อยู่ใน folder เดียวกัน
 
 # ==========================================
-# 🧮 ENGINEERING CALCULATION LOGIC
+# 🧮 ENGINEERING CALCULATION LOGIC (BASIC)
 # ==========================================
 
 def calculate_capacity(inputs, plate_geom, V_load, mat_grade):
     """
-    คำนวณกำลังรับน้ำหนักจริง โดยอ้างอิง Method (ASD/LRFD) จาก Tab 1
+    คำนวณกำลังรับน้ำหนักจริง (เบื้องต้นสำหรับแสดง Quick Status)
+    โดยอ้างอิง Method (ASD/LRFD) จาก Tab 1
     """
     # 1. ดึง Method จาก Session State (Link กับ Tab 1)
     method_raw = st.session_state.get('design_method', 'LRFD (Limit State)')
@@ -39,7 +41,7 @@ def calculate_capacity(inputs, plate_geom, V_load, mat_grade):
     d = inputs['d']
     Ab = (math.pi * d**2) / 4
     n_bolts = inputs['rows'] * inputs['cols']
-    # Fnv = 372 MPa (A325 Threads included)
+    # Fnv = 372 MPa (A325 Threads included approx)
     Rn_bolt = (372 * Ab * n_bolts) / 1000.0 
     Cap_Bolt = (Rn_bolt * phi_r) * 1000 / 9.81 
     results['Bolt Shear'] = Cap_Bolt
@@ -165,6 +167,8 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         }
         
         plate_geom = calculate_plate_geometry(conn_type, user_inputs)
+        
+        # คำนวณเบื้องต้นเพื่อโชว์ Status Bar ด้านซ้าย
         calc_res = calculate_capacity(user_inputs, plate_geom, V_design_from_tab1, default_mat_grade)
         
         st.divider()
@@ -181,5 +185,67 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
             st.plotly_chart(dw.create_side_view(section_data, plate_geom, user_inputs), use_container_width=True)
         with t_plan:
             st.plotly_chart(dw.create_plan_view(section_data, plate_geom, user_inputs), use_container_width=True)
+    
+    # =========================================================================
+    # ✅ INTEGRATION: เรียกใช้ Calculation Report (Markdown) ด้านล่าง
+    # =========================================================================
+    st.divider()
+    
+    # 1. Prepare Data for calculation_report.py
+    # Load Conversion (kg -> kN)
+    V_kN = V_design_from_tab1 * 9.81 / 1000.0
+    
+    # Determine Strength from Grade string
+    is_sm520 = "SM520" in default_mat_grade
+    fy_val = 355 if is_sm520 else 245
+    fu_val = 520 if is_sm520 else 400
+    
+    beam_tw = section_data.get('tw', 6)
+    
+    # Bolt Shear Strength (approx)
+    fnv_val = 372 if "A325" in default_bolt_grade else 188
+
+    # Construct Dictionaries
+    beam_dict = {'tw': beam_tw, 'Fu': fu_val}
+    
+    plate_dict = {
+        't': t_plate,
+        'h': plate_geom['h'],
+        'e1': e1,
+        'Fy': fy_val,
+        'Fu': fu_val,
+        'lv': lv,
+        'l_side': leh,
+        'weld_size': weld_sz
+    }
+    
+    bolt_dict = {
+        'd': d_bolt,
+        'rows': rows,
+        'cols': cols,
+        's_v': s_v,
+        's_h': s_h,
+        'Fnv': fnv_val
+    }
+
+    # 2. Generate Report String
+    try:
+        report_md = calculation_report.generate_report(
+            V_load=V_kN,
+            beam=beam_dict,
+            plate=plate_dict,
+            bolts=bolt_dict,
+            is_lrfd=is_lrfd,
+            material_grade=default_mat_grade,
+            bolt_grade=default_bolt_grade
+        )
+        
+        # 3. Display in Expander
+        st.subheader("📋 รายการคำนวณจุดต่อ (Calculation Note)")
+        with st.expander("📄 Click to show detailed calculation", expanded=True):
+            st.markdown(report_md)
             
+    except Exception as e:
+        st.error(f"Error generating report: {e}")
+
     return plate_geom, user_inputs
