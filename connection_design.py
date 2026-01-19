@@ -84,7 +84,6 @@ def calculate_plate_geometry(conn_type, user_inputs):
 # ==========================================
 # 🖥️ 2. UI RENDERING
 # ==========================================
-# [FIX] เปลี่ยนชื่อ parameter แรกเป็น V_design_from_tab1 เพื่อให้ตรงกับ app.py
 def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd, section_data, conn_type, default_bolt_grade, default_mat_grade):
     
     # [FIX] Assign ค่ากลับเข้าตัวแปร local
@@ -198,6 +197,7 @@ def render_connection_tab(V_design_from_tab1, default_bolt_size, method, is_lrfd
         plate_dict = {
             't': t_plate,
             'h': plate_geom['h'],
+            'w': plate_geom['w'],  # <--- [ADDED] เพิ่มบรรทัดนี้แล้วครับ
             'Fy': Fy_val,
             'Fu': Fu_val,
             'weld_size': weld_sz,
