@@ -44,7 +44,6 @@ st.markdown("""
     .big-num { color: #1e40af; font-size: 42px; font-weight: 800; font-family: 'Roboto Mono', monospace; }
     .sub-text { color: #6b7280; font-size: 14px; font-weight: 600; text-transform: uppercase; }
     
-    /* Calculation Sheet Style */
     .calc-sheet { background-color: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px; margin-top: 10px; box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05); }
     .calc-header { border-bottom: 2px solid #334155; padding-bottom: 10px; margin-bottom: 15px; font-weight: bold; color: #1e293b; display: flex; justify-content: space-between; }
     .calc-row { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px dashed #e2e8f0; padding-bottom: 8px; font-family: 'Sarabun', sans-serif; }
@@ -53,7 +52,8 @@ st.markdown("""
     .calc-formula { background: #f1f5f9; padding: 8px; border-radius: 4px; font-family: 'Roboto Mono', monospace; font-size: 0.9em; color: #334155; margin: 5px 0; }
     
     /* Sidebar Info Box */
-    .sidebar-info { background: #f1f5f9; padding: 10px; border-radius: 6px; font-size: 0.85em; margin-bottom: 10px; border: 1px solid #cbd5e1; }
+    .sidebar-info { background: #f8fafc; padding: 12px; border-radius: 8px; font-size: 0.9em; margin-bottom: 15px; border: 1px solid #cbd5e1; }
+    .sidebar-note { font-size: 0.8em; color: #64748b; margin-top: 5px; line-height: 1.4; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -139,25 +139,40 @@ with st.sidebar:
     st.divider()
     st.subheader("🔩 Connection Design")
     
-    # 1. Toggle Linkage
-    link_conn = st.checkbox("🔗 Link with Beam Capacity", value=True, help="ถ้าเลือก จะคำนวณแรงจาก % ของหน้าตัดคาน")
-    
-    # 2. Show Info Box
+    # 1. Info Box
     st.markdown(f"""
     <div class="sidebar-info">
-        <div><b>Beam Span:</b> {user_span} m</div>
-        <div><b>Max Shear ({v_label}):</b> {V_cap_disp:,.0f} kg</div>
+        <div><b>Max Shear Capacity ({v_label}):</b> <br><span style="font-size:1.2em; color:#1e40af;">{V_cap_disp:,.0f} kg</span></div>
+        <div style="margin-top:5px; border-top:1px dashed #cbd5e1; padding-top:5px;">
+            <small>Current Span: {user_span} m</small>
+        </div>
     </div>
     """, unsafe_allow_html=True)
+    
+    # 2. Toggle Linkage
+    link_conn = st.checkbox("🔗 Link with Beam Capacity", value=True)
 
     if link_conn:
         conn_shear_pct = st.slider("% of Shear Capacity", 10, 100, 50, step=5)
         v_conn_design = V_cap_disp * (conn_shear_pct / 100.0)
-        st.markdown(f"👉 **Design Force:** `{v_conn_design:,.0f} kg`")
+        
+        # --- NEW: Equivalent Load Calculation ---
+        # Shear V = w * L / 2  -->  w = 2 * V / L
+        w_equiv = (2 * v_conn_design) / user_span
+        
+        st.markdown(f"""
+        <div class="sidebar-note">
+            👉 <b>Design Force:</b> {v_conn_design:,.0f} kg<br>
+            💡 <b>Interpretation:</b> เทียบเท่ากับคานยาว {user_span}m รับ Uniform Load <b>{w_equiv:,.0f} kg/m</b>
+        </div>
+        """, unsafe_allow_html=True)
+        
     else:
         v_conn_design = st.number_input("Design Shear Force (kg)", value=float(int(V_cap_disp*0.5)), step=100.0)
         conn_shear_pct = (v_conn_design / V_cap_disp) * 100 if V_cap_disp > 0 else 0
+        w_equiv = (2 * v_conn_design) / user_span
         st.caption(f"(Equivalent to {conn_shear_pct:.1f}% of Capacity)")
+        st.caption(f"Same as Uniform Load: {w_equiv:,.0f} kg/m on this span")
 
     # --- Loads (Check Mode Only) ---
     w_load, p_load = 0.0, 0.0
