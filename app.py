@@ -408,3 +408,10 @@ with tab4:
         )
     else:
         st.warning("Please complete analysis first.")
+# ภายใน tab5 (สร้างใหม่)
+with tab5:
+    if st.session_state.cal_success:
+        # ส่งแรงปฏิกิริยา (v_at_bolt หรือ v_support_design) ไปคำนวณ
+        tab5_baseplate.render(results_context, v_conn_final)
+    else:
+        st.warning("Please complete analysis first.")
