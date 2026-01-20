@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 27.0 (Full TIS Database - All Standard Sections)
+# Version: 28.0 (Full Table with Plate Size & %)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,7 +11,6 @@ import math
 # 🏗️ 1. FULL DATABASE (TIS Standard Wide Flange)
 # =========================================================
 def get_standard_sections():
-    # ข้อมูลเหล็ก Wide Flange มาตรฐาน มอก. (ครบถ้วน)
     return [
         # Series 100
         {"name": "H-100x50x5x7",    "h": 100, "b": 50,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
@@ -206,7 +205,6 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
         sec_names = [s['name'] for s in all_sections]
         
         with c1:
-            # เลือกเหล็ก (Default เลือกตัวที่ 10 เพื่อให้เห็นภาพ)
             selected_sec_name = st.selectbox("🏗️ Select Steel Section", sec_names, index=10)
         with c2:
             load_pct = st.number_input("Load %", 10, 100, 75, step=5)
@@ -276,7 +274,7 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
     st.divider()
 
     # -------------------------------------------
-    # 📊 3. THE "CLASSIC" TABLE (Batch)
+    # 📊 3. THE "CLASSIC" TABLE (Full Option)
     # -------------------------------------------
     st.subheader("📊 ตารางเปรียบเทียบทุกหน้าตัด (Classic Table)")
     
@@ -284,11 +282,18 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
         batch_results = []
         for sec in all_sections:
             r = calculate_connection(sec, load_pct, bolt_dia, factor)
+            
+            # คำนวณ % Utilization
+            actual_cap = r['Bolt Qty'] * r['phiRn_bolt']
+            util = (r['V_target'] / actual_cap) * 100 if actual_cap > 0 else 0
+            
             batch_results.append({
                 "Steel Section": r['Section'],
                 "Design Vu (Ton)": r['V_target']/1000,
                 "Max Span (m)": r['L_crit'],
                 "Bolt Qty": r['Bolt Qty'],
+                "Plate Size (mm)": f"100x{int(r['Plate Len']*10)}x10", # เอากลับมาแล้ว!
+                "Utilization": util, # เอากลับมาแล้ว!
                 "Control By": r['Control By']
             })
             
@@ -301,6 +306,8 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
                 "Design Vu (Ton)": st.column_config.NumberColumn("Vu (Ton)", format="%.2f"),
                 "Max Span (m)": st.column_config.NumberColumn("Max Span (m)", format="%.2f", help="ความยาววิกฤต"),
                 "Bolt Qty": st.column_config.NumberColumn("Bolt Qty", format="%d"),
+                "Utilization": st.column_config.ProgressColumn("Efficiency", format="%.0f%%", min_value=0, max_value=100),
+                "Plate Size (mm)": st.column_config.TextColumn("Plate Size", help="กว้าง x ยาว x หนา"),
             },
             hide_index=True,
             height=500
