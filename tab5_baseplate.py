@@ -1,30 +1,24 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import math
-import steel_db  # ดึงฐานข้อมูลหน้าตัดเหล็กมาใช้
+import steel_db 
 
 def render(res_ctx, v_design):
-    st.markdown("### 🧱 Detailed Column Base Plate Design")
-    
     # --- 1. SELECTION & INPUTS ---
     with st.container(border=True):
         col_main1, col_main2 = st.columns([1, 1.5])
-        
         with col_main1:
             st.markdown("##### 📦 Column Section")
             sec_list = steel_db.get_section_list()
-            # เลือกขนาดเสา (Default เป็นขนาดเดียวกับคานที่คำนวณมา)
             col_name = st.selectbox("Select Column Size", sec_list, index=sec_list.index(res_ctx['sec_name']) if res_ctx['sec_name'] in sec_list else 13)
             props = steel_db.get_properties(col_name)
             ch, cb, ctw, ctf = float(props['h']), float(props['b']), float(props['tw']), float(props['tf'])
             
-            st.info(f"Column: {col_name} ({int(ch)}x{int(cb)} mm)")
-
         with col_main2:
-            st.markdown("##### 📐 Plate & Bolt Geometry")
+            st.markdown("##### 📐 Detailed Offsets")
             c1, c2, c3 = st.columns(3)
             clr_x = c1.number_input("Clearance X (mm)", value=50.0, help="ระยะจากขอบปีกเสาถึงรูโบลต์")
-            clr_y = c2.number_input("Clearance Y (mm)", value=60.0, help="ระยะจากเอวเสาถึงรูโบลต์")
+            clr_y = c2.number_input("Clearance Y (mm)", value=60.0, help="ระยะจากด้านในปีกเสาถึงรูโบลต์")
             tp = c3.number_input("Plate Thickness (mm)", value=25.0)
             
             c4, c5, c6 = st.columns(3)
@@ -32,85 +26,95 @@ def render(res_ctx, v_design):
             edge_y = c5.number_input("Edge Dist Y (mm)", value=50.0)
             bolt_d = c6.selectbox("Bolt Size", [16, 20, 24, 30], index=1)
 
-    # --- 2. CALCULATION LOGIC ---
-    # Sx, Sy = Bolt Spacing (ระยะห่างระหว่างรูเจาะ)
+    # --- 2. CALCULATE ALL COORDINATES (mm) ---
     sx = cb + (2 * clr_x)
-    sy = ch - (2 * ctf) + (2 * clr_y) # อ้างอิงจากระยะเอวเสา
-    
-    # B, N = Plate Dimensions (ขนาดแผ่นรวม)
+    sy = ch - (2 * ctf) + (2 * clr_y)
     B = sx + (2 * edge_x)
     N = sy + (2 * edge_y)
-    
-    hole_d = bolt_d + 4  # มาตรฐานรูเจาะ Base Plate (Oversized)
+    hole_d = bolt_d + 4
 
-    # --- 3. SVG DRAWING LOGIC ---
-    cv_w, cv_h = 950, 900
-    cx, cy = cv_w/2, cv_h/2 - 50
-    sc = 550 / max(N, B) # Scaling Factor
+    # --- 3. SVG DRAWING CONFIG ---
+    cv_w, cv_h = 1000, 950
+    cx, cy = cv_w/2, cv_h/2 - 20
+    sc = 520 / max(N, B) # Scaling Factor
 
-    # SVG Components Construction
+    # Helper function for CAD Ticks
+    def draw_tick(x, y, vertical=False):
+        if vertical: return f'<line x1="{x-5}" y1="{y+5}" x2="{x+5}" y2="{y-5}" stroke="black" stroke-width="1.5"/>'
+        return f'<line x1="{x-5}" y1="{y+5}" x2="{x+5}" y2="{y-5}" stroke="black" stroke-width="1.5"/>'
+
     svg = f"""
     <svg width="{cv_w}" height="{cv_h}" viewBox="0 0 {cv_w} {cv_h}" xmlns="http://www.w3.org/2000/svg">
         <rect width="100%" height="100%" fill="#ffffff" />
-        
-        <text x="40" y="50" font-family="sans-serif" font-size="22" font-weight="bold" fill="#1e293b">BASE PLATE SHOP DRAWING (BP-01)</text>
-        <line x1="40" y1="65" x2="500" y2="65" stroke="#1e293b" stroke-width="3"/>
+        <text x="40" y="45" font-family="sans-serif" font-size="20" font-weight="bold">DETAILED BASE PLATE LAYOUT (BP-01)</text>
         
         <g transform="translate({cx}, {cy})">
-            <rect x="{-B*sc/2}" y="{-N*sc/2}" width="{B*sc}" height="{N*sc}" fill="#f8fafc" stroke="#000" stroke-width="3"/>
+            <rect x="{-B*sc/2}" y="{-N*sc/2}" width="{B*sc}" height="{N*sc}" fill="#fcfcfc" stroke="#000" stroke-width="2.5"/>
             
-            <g fill="#cbd5e1" stroke="#000" stroke-width="1.5">
-                <rect x="{-cb/2*sc}" y="{-ch/2*sc}" width="{cb*sc}" height="{ctf*sc}"/> <rect x="{-cb/2*sc}" y="{(ch/2-ctf)*sc}" width="{cb*sc}" height="{ctf*sc}"/> <rect x="{-ctw/2*sc}" y="{-ch/2*sc+ctf*sc}" width="{ctw*sc}" height="{(ch-2*ctf)*sc}"/> </g>
+            <g fill="#e2e8f0" stroke="#1e293b" stroke-width="1.5">
+                <rect x="{-cb/2*sc}" y="{-ch/2*sc}" width="{cb*sc}" height="{ctf*sc}"/> 
+                <rect x="{-cb/2*sc}" y="{(ch/2-ctf)*sc}" width="{cb*sc}" height="{ctf*sc}"/>
+                <rect x="{-ctw/2*sc}" y="{-ch/2*sc+ctf*sc}" width="{ctw*sc}" height="{(ch-2*ctf)*sc}"/>
+            </g>
 
-            <g fill="white" stroke="#2563eb" stroke-width="2">
+            <g fill="#ffffff" stroke="#2563eb" stroke-width="2">
                 <circle cx="{-sx/2*sc}" cy="{-sy/2*sc}" r="{hole_d*sc/2}"/>
                 <circle cx="{sx/2*sc}"  cy="{-sy/2*sc}" r="{hole_d*sc/2}"/>
                 <circle cx="{-sx/2*sc}" cy="{sy/2*sc}"  r="{hole_d*sc/2}"/>
                 <circle cx="{sx/2*sc}"  cy="{sy/2*sc}"  r="{hole_d*sc/2}"/>
             </g>
 
-            <g font-family="monospace" font-size="14" font-weight="bold">
-                <line x1="{-B*sc/2}" y1="{N*sc/2 + 60}" x2="{B*sc/2}" y2="{N*sc/2 + 60}" stroke="black" />
-                <line x1="{-B*sc/2}" y1="{N*sc/2 + 50}" x2="{-B*sc/2}" y2="{N*sc/2 + 70}" stroke="black" />
-                <line x1="{B*sc/2}" y1="{N*sc/2 + 50}" x2="{B*sc/2}" y2="{N*sc/2 + 70}" stroke="black" />
-                <text x="0" y="{N*sc/2 + 85}" text-anchor="middle">WIDTH (B) = {int(B)} mm</text>
-
-                <line x1="{-sx/2*sc}" y1="{N*sc/2 + 30}" x2="{sx/2*sc}" y2="{N*sc/2 + 30}" stroke="#2563eb" />
-                <text x="0" y="{N*sc/2 + 25}" text-anchor="middle" fill="#2563eb" font-size="12">Sx = {int(sx)}</text>
-
-                <line x1="{B*sc/2 + 60}" y1="{-N*sc/2}" x2="{B*sc/2 + 60}" y2="{N*sc/2}" stroke="black" />
-                <text x="{B*sc/2 + 80}" y="0" transform="rotate(90, {B*sc/2 + 80}, 0)" text-anchor="middle">LENGTH (N) = {int(N)} mm</text>
+            <g transform="translate(0, {N*sc/2 + 60})" font-family="monospace" font-size="12">
+                <line x1="{-B*sc/2}" y1="0" x2="{B*sc/2}" y2="0" stroke="black" stroke-width="1"/>
                 
-                <line x1="{B*sc/2 + 30}" y1="{-sy/2*sc}" x2="{B*sc/2 + 30}" y2="{sy/2*sc}" stroke="#2563eb" />
-                <text x="{B*sc/2 + 45}" y="0" transform="rotate(90, {B*sc/2 + 45}, 0)" text-anchor="middle" fill="#2563eb" font-size="12">Sy = {int(sy)}</text>
+                {draw_tick(-B*sc/2, 0)} {draw_tick(-sx*sc/2, 0)} {draw_tick(-cb*sc/2, 0)}
+                {draw_tick(cb*sc/2, 0)} {draw_tick(sx*sc/2, 0)} {draw_tick(B*sc/2, 0)}
+                
+                <text x="{-B*sc/2 + (edge_x*sc/2)}" y="15" text-anchor="middle" fill="green">{int(edge_x)}</text>
+                <text x="{-sx*sc/2 + (clr_x*sc/2)}" y="15" text-anchor="middle" fill="red">{int(clr_x)}</text>
+                <text x="0" y="15" text-anchor="middle" font-weight="bold">COL WIDTH: {int(cb)}</text>
+                <text x="{sx*sc/2 - (clr_x*sc/2)}" y="15" text-anchor="middle" fill="red">{int(clr_x)}</text>
+                <text x="{B*sc/2 - (edge_x*sc/2)}" y="15" text-anchor="middle" fill="green">{int(edge_x)}</text>
+                
+                <line x1="{-sx*sc/2}" y1="35" x2="{sx*sc/2}" y2="35" stroke="#2563eb" stroke-width="1" stroke-dasharray="4"/>
+                <text x="0" y="50" text-anchor="middle" fill="#2563eb" font-weight="bold">Sx = {int(sx)}</text>
+                
+                <line x1="{-B*sc/2}" y1="70" x2="{B*sc/2}" y2="70" stroke="black" stroke-width="2"/>
+                <text x="0" y="85" text-anchor="middle" font-size="14" font-weight="bold">B = {int(B)} mm</text>
             </g>
 
-            <g transform="translate({-cb/2*sc - 40}, {-ch/2*sc + 20})">
-                <path d="M 0 0 L -40 -40 L -100 -40" fill="none" stroke="#dc2626" stroke-width="1.5"/>
-                <text x="-100" y="-45" fill="#dc2626" font-size="14" font-weight="bold">△ 6 mm (Typical)</text>
+            <g transform="translate({B*sc/2 + 60}, 0)" font-family="monospace" font-size="12">
+                <line x1="0" y1="{-N*sc/2}" x2="0" y2="{N*sc/2}" stroke="black" stroke-width="1"/>
+                {draw_tick(0, -N*sc/2)} {draw_tick(0, -sy*sc/2)} {draw_tick(0, -(ch/2-ctf)*sc)}
+                {draw_tick(0, (ch/2-ctf)*sc)} {draw_tick(0, sy*sc/2)} {draw_tick(0, N*sc/2)}
+                
+                <text x="15" y="{-N*sc/2 + (edge_y*sc/2)}" text-anchor="middle" transform="rotate(90, 15, {-N*sc/2 + (edge_y*sc/2)})" fill="green">{int(edge_y)}</text>
+                <text x="15" y="{-sy*sc/2 + (clr_y*sc/2)}" text-anchor="middle" transform="rotate(90, 15, {-sy*sc/2 + (clr_y*sc/2)})" fill="red">{int(clr_y)}</text>
+                <text x="15" y="0" text-anchor="middle" transform="rotate(90, 15, 0)" font-weight="bold">WEB HT: {int(ch-2*ctf)}</text>
+                <text x="15" y="{sy*sc/2 - (clr_y*sc/2)}" text-anchor="middle" transform="rotate(90, 15, {sy*sc/2 - (clr_y*sc/2)})" fill="red">{int(clr_y)}</text>
+                <text x="15" y="{N*sc/2 - (edge_y*sc/2)}" text-anchor="middle" transform="rotate(90, 15, {N*sc/2 - (edge_y*sc/2)})" fill="green">{int(edge_y)}</text>
+
+                <line x1="35" y1="{-sy*sc/2}" x2="35" y2="{sy*sc/2}" stroke="#2563eb" stroke-width="1" stroke-dasharray="4"/>
+                <text x="50" y="0" text-anchor="middle" transform="rotate(90, 50, 0)" fill="#2563eb" font-weight="bold">Sy = {int(sy)}</text>
+
+                <line x1="75" y1="{-N*sc/2}" x2="75" y2="{N*sc/2}" stroke="black" stroke-width="2"/>
+                <text x="90" y="0" text-anchor="middle" transform="rotate(90, 90, 0)" font-size="14" font-weight="bold">N = {int(N)} mm</text>
+            </g>
+
+            <g stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="10,5">
+                <line x1="{-B*sc/2 - 20}" y1="0" x2="{B*sc/2 + 20}" y2="0"/>
+                <line x1="0" y1="{-N*sc/2 - 20}" x2="0" y2="{N*sc/2 + 20}"/>
             </g>
         </g>
 
-        <g transform="translate(600, 680)">
-            <rect width="320" height="180" fill="#f1f5f9" stroke="#1e293b" rx="10"/>
-            <text x="20" y="35" font-family="sans-serif" font-weight="bold" font-size="16">MATERIAL SPECIFICATIONS</text>
-            <line x1="20" y1="45" x2="300" y2="45" stroke="#1e293b"/>
-            <text x="20" y="75" font-family="monospace" font-size="13">COLUMN   : {col_name}</text>
-            <text x="20" y="100" font-family="monospace" font-size="13">PLATE    : PL {int(tp)}x{int(B)}x{int(N)} mm</text>
-            <text x="20" y="125" font-family="monospace" font-size="13">ANCHOR   : 4-M{bolt_d} GR 8.8 (J-Bolt)</text>
-            <text x="20" y="150" font-family="monospace" font-size="13" fill="#2563eb">HOLE DIA : Ø{int(hole_d)} mm (Oversized)</text>
+        <g transform="translate(40, {cv_h - 180})">
+            <rect width="250" height="140" fill="#f8fafc" stroke="#1e293b" rx="5"/>
+            <text x="15" y="25" font-family="sans-serif" font-weight="bold" font-size="14" fill="#1e293b">DIMENSION KEY</text>
+            <circle cx="20" cy="45" r="5" fill="green"/><text x="35" y="50" font-family="monospace" font-size="12">Edge Distance (e)</text>
+            <circle cx="20" cy="70" r="5" fill="red"/><text x="35" y="75" font-family="monospace" font-size="12">Clearance Offset</text>
+            <circle cx="20" cy="95" r="5" fill="#2563eb"/><text x="35" y="100" font-family="monospace" font-size="12">Bolt Spacing (S)</text>
+            <text x="15" y="125" font-family="monospace" font-size="12" font-weight="bold">ALL DIMENSIONS IN MM</text>
         </g>
     </svg>
     """
-    components.html(svg, height=920)
-
-    # --- 4. STRUCTURAL CHECKS (Summary) ---
-    st.divider()
-    st.markdown("##### 🔍 Structural Check Summary")
-    area = B * N / 100 # cm2
-    bearing_stress = v_design / area if area > 0 else 0
-    
-    c_res1, c_res2, c_res3 = st.columns(3)
-    c_res1.metric("Bearing Area", f"{area:,.1f} cm²")
-    c_res2.metric("Bearing Stress", f"{bearing_stress:,.2f} kg/cm²")
-    c_res3.info("Check against Concrete f'c in next update.")
+    components.html(svg, height=950)
