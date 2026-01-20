@@ -5,7 +5,7 @@ import steel_db
 def render(res_ctx, v_design):
     # --- 1. CONFIGURATION & INPUTS ---
     with st.container(border=True):
-        st.markdown("##### 📐 Design Control & Shop Drawing")
+        st.markdown("##### 📐 Comprehensive Shop Drawing (Section A-A Focus)")
         c_m1, c_m2, c_m3 = st.columns([1, 1, 1])
         with c_m1:
             sec_list = steel_db.get_section_list()
@@ -62,20 +62,12 @@ def render(res_ctx, v_design):
             <circle cx="{sx/2*sc}"  cy="{-sy/2*sc}" r="9" fill="white" stroke="#2563eb" stroke-width="2.5"/>
             <circle cx="{-sx/2*sc}" cy="{sy/2*sc}"  r="9" fill="white" stroke="#2563eb" stroke-width="2.5"/>
             <circle cx="{sx/2*sc}"  cy="{sy/2*sc}"  r="9" fill="white" stroke="#2563eb" stroke-width="2.5"/>
-            
-            <g transform="translate(0, {N*sc/2 + 50})" font-family="Arial" font-size="13" font-weight="bold">
-                <line x1="{-B*sc/2}" y1="0" x2="{B*sc/2}" y2="0" stroke="black"/>
-                {tick(-B*sc/2,0)} {tick(-sx/2*sc,0)} {tick(-cb/2*sc,0)} {tick(cb/2*sc,0)} {tick(sx/2*sc,0)} {tick(B*sc/2,0)}
-                <text x="{-sx/2*sc - edge_x*sc/2}" y="18" text-anchor="middle" fill="green">{int(edge_x)}</text>
-                <text x="{-cb/2*sc - clr_x*sc/2}" y="18" text-anchor="middle" fill="red">{int(clr_x)}</text>
-                <text x="0" y="18" text-anchor="middle">{int(cb)}</text>
-                <text x="{cb/2*sc + clr_x*sc/2}" y="18" text-anchor="middle" fill="red">{int(clr_x)}</text>
-                <text x="{sx/2*sc + edge_x*sc/2}" y="18" text-anchor="middle" fill="green">{int(edge_x)}</text>
-            </g>
         </g>
 
         <g transform="translate({ax}, {ay})">
             <text x="0" y="-180" text-anchor="middle" font-weight="bold" font-size="20">SECTION A-A (FRONT VIEW)</text>
+            
+            <rect x="{-B*sc/2 - 50}" y="{tp*sc + grout_h*sc}" width="{B*sc + 100}" height="80" fill="#e2e8f0" stroke="black" stroke-dasharray="2,2"/>
             
             <rect x="{-B*sc/2}" y="{tp*sc}" width="{B*sc}" height="{grout_h*sc}" fill="#f1f5f9" stroke="black"/>
             <rect x="{-B*sc/2}" y="0" width="{B*sc}" height="{tp*sc}" fill="white" stroke="black" stroke-width="2.5"/>
@@ -85,7 +77,7 @@ def render(res_ctx, v_design):
             <line x1="{-sx/2*sc}" y1="-30" x2="{-sx/2*sc}" y2="180" stroke="#2563eb" stroke-width="3"/>
             <line x1="{sx/2*sc}" y1="-30" x2="{sx/2*sc}" y2="180" stroke="#2563eb" stroke-width="3"/>
 
-            <g transform="translate(0, 130)" font-family="Arial" font-size="13" font-weight="bold">
+            <g transform="translate(0, 140)" font-family="Arial" font-size="13" font-weight="bold">
                 <line x1="{-B*sc/2}" y1="0" x2="{B*sc/2}" y2="0" stroke="black"/>
                 {tick(-B*sc/2,0)} {tick(-sx/2*sc,0)} {tick(-cb/2*sc,0)} {tick(cb/2*sc,0)} {tick(sx/2*sc,0)} {tick(B*sc/2,0)}
                 <text x="{-sx/2*sc - edge_x*sc/2}" y="18" text-anchor="middle" fill="green">e:{int(edge_x)}</text>
@@ -93,19 +85,19 @@ def render(res_ctx, v_design):
                 <text x="0" y="18" text-anchor="middle">COL:{int(cb)}</text>
                 <text x="{cb/2*sc + clr_x*sc/2}" y="18" text-anchor="middle" fill="red">c:{int(clr_x)}</text>
                 <text x="{sx/2*sc + edge_x*sc/2}" y="18" text-anchor="middle" fill="green">e:{int(edge_x)}</text>
+            </g>
+
+            <g transform="translate({B*sc/2 + 50}, 0)" font-family="Arial" font-size="12" font-weight="bold">
+                <line x1="0" y1="-150" x2="0" y2="{tp*sc + grout_h*sc}" stroke="black" stroke-width="1.5"/>
+                {tick(0,-150)} {tick(0,0)} {tick(0,tp*sc)} {tick(0,tp*sc + grout_h*sc)}
                 
-                <line x1="{-B*sc/2}" y1="45" x2="{B*sc/2}" y2="45" stroke="black" stroke-width="2"/>
-                <text x="0" y="65" text-anchor="middle" font-size="16">TOTAL B = {int(B)}</text>
+                <text x="15" y="-75" transform="rotate(90, 15, -75)" text-anchor="middle">COL HEIGHT</text>
+                <text x="15" y="{tp*sc/2}" transform="rotate(90, 15, {tp*sc/2})" text-anchor="middle" fill="#1e40af">tp:{int(tp)}</text>
+                <text x="15" y="{tp*sc + grout_h*sc/2}" transform="rotate(90, 15, {tp*sc + grout_h*sc/2})" text-anchor="middle" fill="#64748b">GRT:{int(grout_h)}</text>
             </g>
 
-            <g transform="translate({-B*sc/2 - 40}, 0)" font-family="Arial" font-size="12" font-weight="bold">
-                <line x1="0" y1="0" x2="0" y2="{tp*sc}" stroke="black"/>
-                {tick(0,0)} {tick(0,tp*sc)}
-                <text x="-15" y="{tp*sc/2}" text-anchor="middle" transform="rotate(-90, -15, {tp*sc/2})">tp:{int(tp)}</text>
-            </g>
-
-            <path d="M {-cb/4*sc} -100 L -250 -100" fill="none" stroke="red" marker-end="url(#arrow)"/>
-            <text x="-255" y="-95" text-anchor="end" fill="red" font-size="14" font-weight="bold">COLUMN: {col_name}</text>
+            <path d="M {-cb/4*sc} -80 L -250 -80" fill="none" stroke="red" marker-end="url(#arrow)"/>
+            <text x="-255" y="-75" text-anchor="end" fill="red" font-size="14" font-weight="bold">COLUMN: {col_name}</text>
         </g>
 
         <defs>
