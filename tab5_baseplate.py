@@ -1,108 +1,116 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import math
+import steel_db  # ดึงฐานข้อมูลหน้าตัดเหล็กมาใช้
 
 def render(res_ctx, v_design):
-    # --- 1. GEOMETRY DATA (mm) ---
-    h, b = res_ctx['h'], res_ctx['b']
-    tw, tf = res_ctx['tw'], res_ctx['tf']
+    st.markdown("### 🧱 Detailed Column Base Plate Design")
     
-    # --- 2. INPUT INTERFACE ---
+    # --- 1. SELECTION & INPUTS ---
     with st.container(border=True):
-        st.markdown("##### 📐 Base Plate Configuration")
-        c1, c2, c3 = st.columns(3)
-        clr_x = c1.number_input("Clearance X (Side) mm", value=50.0)
-        clr_y = c2.number_input("Clearance Y (Top/Bot) mm", value=60.0)
-        bolt_d = c3.selectbox("Bolt Size (mm)", [16, 20, 24, 30], index=1)
+        col_main1, col_main2 = st.columns([1, 1.5])
         
-        c4, c5, c6 = st.columns(3)
-        edge_x = c4.number_input("Edge Distance X (mm)", value=50.0)
-        edge_y = c5.number_input("Edge Distance Y (mm)", value=50.0)
-        tp = c6.number_input("Plate Thickness (mm)", value=25.0)
+        with col_main1:
+            st.markdown("##### 📦 Column Section")
+            sec_list = steel_db.get_section_list()
+            # เลือกขนาดเสา (Default เป็นขนาดเดียวกับคานที่คำนวณมา)
+            col_name = st.selectbox("Select Column Size", sec_list, index=sec_list.index(res_ctx['sec_name']) if res_ctx['sec_name'] in sec_list else 13)
+            props = steel_db.get_properties(col_name)
+            ch, cb, ctw, ctf = float(props['h']), float(props['b']), float(props['tw']), float(props['tf'])
+            
+            st.info(f"Column: {col_name} ({int(ch)}x{int(cb)} mm)")
 
-    # --- 3. CALCULATE PLATE DIMENSIONS ---
-    # B = Width (ตามแนวปีก b), N = Height (ตามแนวความลึก h)
-    B = b + (2 * clr_x) + (2 * edge_x)
-    N = h + (2 * clr_y) + (2 * edge_y)
+        with col_main2:
+            st.markdown("##### 📐 Plate & Bolt Geometry")
+            c1, c2, c3 = st.columns(3)
+            clr_x = c1.number_input("Clearance X (mm)", value=50.0, help="ระยะจากขอบปีกเสาถึงรูโบลต์")
+            clr_y = c2.number_input("Clearance Y (mm)", value=60.0, help="ระยะจากเอวเสาถึงรูโบลต์")
+            tp = c3.number_input("Plate Thickness (mm)", value=25.0)
+            
+            c4, c5, c6 = st.columns(3)
+            edge_x = c4.number_input("Edge Dist X (mm)", value=50.0)
+            edge_y = c5.number_input("Edge Dist Y (mm)", value=50.0)
+            bolt_d = c6.selectbox("Bolt Size", [16, 20, 24, 30], index=1)
+
+    # --- 2. CALCULATION LOGIC ---
+    # Sx, Sy = Bolt Spacing (ระยะห่างระหว่างรูเจาะ)
+    sx = cb + (2 * clr_x)
+    sy = ch - (2 * ctf) + (2 * clr_y) # อ้างอิงจากระยะเอวเสา
     
-    # ระยะห่างระหว่างโบลต์ (Bolt Spacing)
-    sx = b + (2 * clr_x)
-    sy = h + (2 * clr_y)
-
-    # --- 4. SVG SETTINGS ---
-    cv_w, cv_h = 800, 800
-    cx, cy = cv_w/2, cv_h/2
+    # B, N = Plate Dimensions (ขนาดแผ่นรวม)
+    B = sx + (2 * edge_x)
+    N = sy + (2 * edge_y)
     
-    # Dynamic Scaling: ให้รูปพอดีกับ Canvas เสมอ (เผื่อที่ว่างสำหรับ Dimension 150px)
-    draw_area = 500 
-    sc = draw_area / max(N, B)
+    hole_d = bolt_d + 4  # มาตรฐานรูเจาะ Base Plate (Oversized)
 
-    # สไตล์เส้น
-    dim_style = 'stroke="#64748b" stroke-width="1"'
-    tick_style = 'stroke="#000" stroke-width="1.5"'
-    beam_style = 'fill="#cbd5e1" stroke="#1e293b" stroke-width="1.5"'
-    bolt_style = 'fill="white" stroke="#2563eb" stroke-width="2"'
+    # --- 3. SVG DRAWING LOGIC ---
+    cv_w, cv_h = 950, 900
+    cx, cy = cv_w/2, cv_h/2 - 50
+    sc = 550 / max(N, B) # Scaling Factor
 
-    # --- 5. GENERATE SVG ---
-    svg_content = f"""
+    # SVG Components Construction
+    svg = f"""
     <svg width="{cv_w}" height="{cv_h}" viewBox="0 0 {cv_w} {cv_h}" xmlns="http://www.w3.org/2000/svg">
         <rect width="100%" height="100%" fill="#ffffff" />
-        <text x="20" y="40" font-family="sans-serif" font-size="18" font-weight="bold" fill="#1e293b">BASE PLATE DRAWING: {int(B)}x{int(N)} mm</text>
+        
+        <text x="40" y="50" font-family="sans-serif" font-size="22" font-weight="bold" fill="#1e293b">BASE PLATE SHOP DRAWING (BP-01)</text>
+        <line x1="40" y1="65" x2="500" y2="65" stroke="#1e293b" stroke-width="3"/>
         
         <g transform="translate({cx}, {cy})">
+            <rect x="{-B*sc/2}" y="{-N*sc/2}" width="{B*sc}" height="{N*sc}" fill="#f8fafc" stroke="#000" stroke-width="3"/>
             
-            <rect x="{-B*sc/2}" y="{-N*sc/2}" width="{B*sc}" height="{N*sc}" fill="#f1f5f9" stroke="#000" stroke-width="2.5"/>
+            <g fill="#cbd5e1" stroke="#000" stroke-width="1.5">
+                <rect x="{-cb/2*sc}" y="{-ch/2*sc}" width="{cb*sc}" height="{ctf*sc}"/> <rect x="{-cb/2*sc}" y="{(ch/2-ctf)*sc}" width="{cb*sc}" height="{ctf*sc}"/> <rect x="{-ctw/2*sc}" y="{-ch/2*sc+ctf*sc}" width="{ctw*sc}" height="{(ch-2*ctf)*sc}"/> </g>
 
-            <g>
-                <rect x="{-b/2*sc}" y="{-h/2*sc}" width="{b*sc}" height="{tf*sc}" {beam_style}/>
-                <rect x="{-b/2*sc}" y="{(h/2-tf)*sc}" width="{b*sc}" height="{tf*sc}" {beam_style}/>
-                <rect x="{-tw/2*sc}" y="{-h/2*sc + tf*sc}" width="{tw*sc}" height="{(h-2*tf)*sc}" {beam_style}/>
+            <g fill="white" stroke="#2563eb" stroke-width="2">
+                <circle cx="{-sx/2*sc}" cy="{-sy/2*sc}" r="{hole_d*sc/2}"/>
+                <circle cx="{sx/2*sc}"  cy="{-sy/2*sc}" r="{hole_d*sc/2}"/>
+                <circle cx="{-sx/2*sc}" cy="{sy/2*sc}"  r="{hole_d*sc/2}"/>
+                <circle cx="{sx/2*sc}"  cy="{sy/2*sc}"  r="{hole_d*sc/2}"/>
             </g>
 
-            <g>
-                <circle cx="{-sx/2*sc}" cy="{-sy/2*sc}" r="{bolt_d*sc*0.8}" {bolt_style}/>
-                <circle cx="{sx/2*sc}"  cy="{-sy/2*sc}" r="{bolt_d*sc*0.8}" {bolt_style}/>
-                <circle cx="{-sx/2*sc}" cy="{sy/2*sc}"  r="{bolt_d*sc*0.8}" {bolt_style}/>
-                <circle cx="{sx/2*sc}"  cy="{sy/2*sc}"  r="{bolt_d*sc*0.8}" {bolt_style}/>
-                <g stroke="#2563eb" stroke-width="1">
-                    <line x1="{-sx/2*sc-5}" y1="{-sy/2*sc}" x2="{-sx/2*sc+5}" y2="{-sy/2*sc}" />
-                    <line x1="{-sx/2*sc}" y1="{-sy/2*sc-5}" x2="{-sx/2*sc}" y2="{-sy/2*sc+5}" />
-                    </g>
+            <g font-family="monospace" font-size="14" font-weight="bold">
+                <line x1="{-B*sc/2}" y1="{N*sc/2 + 60}" x2="{B*sc/2}" y2="{N*sc/2 + 60}" stroke="black" />
+                <line x1="{-B*sc/2}" y1="{N*sc/2 + 50}" x2="{-B*sc/2}" y2="{N*sc/2 + 70}" stroke="black" />
+                <line x1="{B*sc/2}" y1="{N*sc/2 + 50}" x2="{B*sc/2}" y2="{N*sc/2 + 70}" stroke="black" />
+                <text x="0" y="{N*sc/2 + 85}" text-anchor="middle">WIDTH (B) = {int(B)} mm</text>
+
+                <line x1="{-sx/2*sc}" y1="{N*sc/2 + 30}" x2="{sx/2*sc}" y2="{N*sc/2 + 30}" stroke="#2563eb" />
+                <text x="0" y="{N*sc/2 + 25}" text-anchor="middle" fill="#2563eb" font-size="12">Sx = {int(sx)}</text>
+
+                <line x1="{B*sc/2 + 60}" y1="{-N*sc/2}" x2="{B*sc/2 + 60}" y2="{N*sc/2}" stroke="black" />
+                <text x="{B*sc/2 + 80}" y="0" transform="rotate(90, {B*sc/2 + 80}, 0)" text-anchor="middle">LENGTH (N) = {int(N)} mm</text>
+                
+                <line x1="{B*sc/2 + 30}" y1="{-sy/2*sc}" x2="{B*sc/2 + 30}" y2="{sy/2*sc}" stroke="#2563eb" />
+                <text x="{B*sc/2 + 45}" y="0" transform="rotate(90, {B*sc/2 + 45}, 0)" text-anchor="middle" fill="#2563eb" font-size="12">Sy = {int(sy)}</text>
             </g>
 
-            <g transform="translate(0, {-N*sc/2 - 40})">
-                <line x1="{-B*sc/2}" y1="0" x2="{B*sc/2}" y2="0" {dim_style}/>
-                <line x1="{-B*sc/2-5}" y1="5" x2="{-B*sc/2+5}" y2="-5" {tick_style}/>
-                <line x1="{B*sc/2-5}" y1="5" x2="{B*sc/2+5}" y2="-5" {tick_style}/>
-                <text x="0" y="-10" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold">B = {int(B)}</text>
-            </g>
-            
-            <g transform="translate(0, {-N*sc/2 - 15})">
-                <line x1="{-sx/2*sc}" y1="0" x2="{sx/2*sc}" y2="0" stroke="#2563eb" stroke-width="1"/>
-                <text x="0" y="-5" text-anchor="middle" font-family="monospace" font-size="12" fill="#2563eb">Sx = {int(sx)}</text>
-            </g>
-
-            <g transform="translate({-B*sc/2 - 60}, 0)">
-                <line x1="0" y1="{-N*sc/2}" x2="0" y2="{N*sc/2}" {dim_style}/>
-                <line x1="-5" y1="{-N*sc/2+5}" x2="5" y2="{-N*sc/2-5}" {tick_style}/>
-                <line x1="-5" y1="{N*sc/2+5}" x2="5" y2="{N*sc/2-5}" {tick_style}/>
-                <text x="-15" y="0" transform="rotate(-90, -15, 0)" text-anchor="middle" font-family="monospace" font-size="14" font-weight="bold">N = {int(N)}</text>
-            </g>
-
-            <g stroke="#94a3b8" stroke-width="1" stroke-dasharray="10,5">
-                <line x1="{-B*sc/2 - 20}" y1="0" x2="{B*sc/2 + 20}" y2="0" />
-                <line x1="0" y1="{-N*sc/2 - 20}" x2="0" y2="{N*sc/2 + 20}" />
+            <g transform="translate({-cb/2*sc - 40}, {-ch/2*sc + 20})">
+                <path d="M 0 0 L -40 -40 L -100 -40" fill="none" stroke="#dc2626" stroke-width="1.5"/>
+                <text x="-100" y="-45" fill="#dc2626" font-size="14" font-weight="bold">△ 6 mm (Typical)</text>
             </g>
         </g>
 
-        <g transform="translate({cv_w-220}, {cv_h-130})">
-            <rect width="200" height="110" fill="#f8fafc" stroke="#334155" rx="5"/>
-            <text x="10" y="25" font-family="sans-serif" font-weight="bold" font-size="14">DATA SHEET</text>
-            <line x1="10" y1="35" x2="190" y2="35" stroke="#334155" />
-            <text x="10" y="55" font-family="monospace" font-size="12">Plate: t={int(tp)} mm</text>
-            <text x="10" y="75" font-family="monospace" font-size="12">Bolt: 4-M{bolt_d} (8.8)</text>
-            <text x="10" y="95" font-family="monospace" font-size="12">Hole: Ø{bolt_d+4} mm</text>
+        <g transform="translate(600, 680)">
+            <rect width="320" height="180" fill="#f1f5f9" stroke="#1e293b" rx="10"/>
+            <text x="20" y="35" font-family="sans-serif" font-weight="bold" font-size="16">MATERIAL SPECIFICATIONS</text>
+            <line x1="20" y1="45" x2="300" y2="45" stroke="#1e293b"/>
+            <text x="20" y="75" font-family="monospace" font-size="13">COLUMN   : {col_name}</text>
+            <text x="20" y="100" font-family="monospace" font-size="13">PLATE    : PL {int(tp)}x{int(B)}x{int(N)} mm</text>
+            <text x="20" y="125" font-family="monospace" font-size="13">ANCHOR   : 4-M{bolt_d} GR 8.8 (J-Bolt)</text>
+            <text x="20" y="150" font-family="monospace" font-size="13" fill="#2563eb">HOLE DIA : Ø{int(hole_d)} mm (Oversized)</text>
         </g>
     </svg>
     """
-    components.html(svg_content, height=800)
+    components.html(svg, height=920)
+
+    # --- 4. STRUCTURAL CHECKS (Summary) ---
+    st.divider()
+    st.markdown("##### 🔍 Structural Check Summary")
+    area = B * N / 100 # cm2
+    bearing_stress = v_design / area if area > 0 else 0
+    
+    c_res1, c_res2, c_res3 = st.columns(3)
+    c_res1.metric("Bearing Area", f"{area:,.1f} cm²")
+    c_res2.metric("Bearing Stress", f"{bearing_stress:,.2f} kg/cm²")
+    c_res3.info("Check against Concrete f'c in next update.")
