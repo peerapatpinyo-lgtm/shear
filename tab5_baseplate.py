@@ -2,105 +2,88 @@ import streamlit as st
 import math
 
 def render(res_ctx, v_design):
-    # --- 1. ENGINEERING LOGIC & DATA ---
+    # --- 1. DATA & AISC DG1 LOGIC ---
     h, b, tw, tf = res_ctx['h']/10, res_ctx['b']/10, res_ctx['tw']/10, res_ctx['tf']/10
     Fy, is_lrfd = res_ctx['Fy'], res_ctx['is_lrfd']
 
-    # --- 2. PROFESSIONAL INPUT PANEL ---
+    # --- 2. INPUT INTERFACE ---
     with st.container(border=True):
-        st.markdown("##### 🛠️ Design Configuration")
+        st.markdown("##### 📐 Engineering Specification")
         c1, c2, c3, c4 = st.columns(4)
-        N = c1.number_input("N (Length) cm", value=float(math.ceil(h + 15)))
-        B = c2.number_input("B (Width) cm", value=float(math.ceil(b + 15)))
-        tp = c3.number_input("t (Plate) mm", value=25.0)
-        gt = c4.number_input("Grout (mm)", value=30.0)
+        N = c1.number_input("Plate Length N (cm)", value=float(math.ceil(h + 15)))
+        B = c2.number_input("Plate Width B (cm)", value=float(math.ceil(b + 15)))
+        tp_mm = c3.number_input("Plate Thickness (mm)", value=25.0)
+        bolt_d = c4.selectbox("Bolt Size (mm)", [16, 20, 24, 30])
 
-    # --- 3. AISC DG1 CALCULATIONS ---
+    # AISC Calculation
     m = (N - 0.95*h)/2
     n = (B - 0.80*b)/2
-    l_crit = max(m, n, (math.sqrt(h*b)/4))
+    n_prime = math.sqrt(h * b) / 4
+    l_crit = max(m, n, n_prime)
     t_req = l_crit * math.sqrt((2*v_design)/(0.9*Fy*B*N)) if is_lrfd else l_crit * math.sqrt((2*v_design*1.67)/(Fy*B*N))
 
-    # --- 4. THE BLUEPRINT DRAWING (SVG PRECISION) ---
-    st.markdown("#### 📐 Structural Design Drawing")
-    
-    # Scale calculation to fit both views in 800px width
-    sc = 180 / max(N, B)
-    canvas_w, canvas_h = 850, 450
-    
-    # Coordinates
-    plan_cx, plan_cy = 220, 220  # Plan View Center
-    sec_x, sec_y = 550, 100      # Section View Start
+    # --- 3. THE MASTER BLUEPRINT (SVG PRECISION) ---
+    sc = 220 / max(N, B)
+    canvas_w, canvas_h = 800, 500
+    px, py = 250, 250 # Plan Center
     
     svg = f"""
-    <svg width="100%" height="{canvas_h}" viewBox="0 0 {canvas_w} {canvas_h}" style="background-color: #fcfcfc; border: 1px solid #d1d5db;">
-        <defs>
-            <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e7eb" stroke-width="0.5"/>
-            </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#grid)" />
-
-        <text x="{plan_cx}" y="40" text-anchor="middle" font-weight="bold" font-family="monospace">TOP VIEW (PLAN)</text>
+    <svg width="100%" height="{canvas_h}" viewBox="0 0 {canvas_w} {canvas_h}" style="background:#fdfdfd; border:2px solid #334155;">
+        <rect x="10" y="10" width="780" height="480" fill="none" stroke="#334155" stroke-width="1"/>
+        <line x1="550" y1="10" x2="550" y2="490" stroke="#334155" stroke-width="1"/>
         
-        <rect x="{plan_cx - B*sc/2}" y="{plan_cy - N*sc/2}" width="{B*sc}" height="{N*sc}" fill="none" stroke="#1e293b" stroke-width="2.5"/>
+        <text x="{px}" y="40" text-anchor="middle" font-weight="bold" font-family="monospace" font-size="16">BASE PLATE PLAN</text>
         
-        <g transform="translate({plan_cx}, {plan_cy})">
-            <rect x="{-b*sc/2}" y="{-h*sc/2}" width="{b*sc}" height="{tf*sc}" fill="#64748b" stroke="#000" stroke-width="0.5"/>
-            <rect x="{-b*sc/2}" y="{h*sc/2 - tf*sc}" width="{b*sc}" height="{tf*sc}" fill="#64748b" stroke="#000" stroke-width="0.5"/>
-            <rect x="{-tw*sc/2}" y="{-h*sc/2 + tf*sc}" width="{tw*sc}" height="{(h-2*tf)*sc}" fill="#64748b" stroke="#000" stroke-width="0.5"/>
+        <g stroke="#94a3b8" stroke-width="1" stroke-dasharray="10,5,2,5">
+            <line x1="{px - B*sc/2 - 30}" y1="{py}" x2="{px + B*sc/2 + 30}" y2="{py}"/>
+            <line x1="{px}" y1="{py - N*sc/2 - 30}" x2="{px}" y2="{py + N*sc/2 + 30}"/>
         </g>
 
-        <g stroke="#94a3b8" stroke-width="1">
-            <line x1="{plan_cx - B*sc/2}" y1="{plan_cy + N*sc/2 + 30}" x2="{plan_cx + B*sc/2}" y2="{plan_cy + N*sc/2 + 30}"/>
-            <text x="{plan_cx}" y="{plan_cy + N*sc/2 + 45}" text-anchor="middle" font-size="12" fill="#1e293b">B = {B} cm</text>
-            
-            <line x1="{plan_cx - B*sc/2 - 30}" y1="{plan_cy - N*sc/2}" x2="{plan_cx - B*sc/2 - 30}" y2="{plan_cy + N*sc/2}"/>
-            <text x="{plan_cx - B*sc/2 - 45}" y="{plan_cy}" text-anchor="middle" font-size="12" fill="#1e293b" transform="rotate(-90 {plan_cx - B*sc/2 - 45} {plan_cy})">N = {N} cm</text>
-        </g>
-
-        <line x1="{plan_cx + B*sc/2}" y1="{plan_cy}" x2="{plan_cx + B*sc/2 - n*sc}" y2="{plan_cy}" stroke="#ef4444" stroke-width="2" marker-end="url(#arrow)"/>
-        <text x="{plan_cx + B*sc/2 - n*sc/2}" y="{plan_cy - 5}" fill="#ef4444" font-size="11" font-weight="bold">n={n:.1f}</text>
-
-        <g transform="translate({sec_x}, {sec_y})">
-            <text x="80" y="-40" text-anchor="middle" font-weight="bold" font-family="monospace">SECTION A-A</text>
-            
-            <rect x="55" y="0" width="50" height="150" fill="#cbd5e1" stroke="#1e293b"/>
-            
-            <rect x="0" y="150" width="160" height="{(tp/10)*sc*3}" fill="#1e293b" stroke="#000"/>
-            <text x="170" y="{150 + (tp/20)*sc*3}" font-size="11" alignment-baseline="middle">PL {tp}mm</text>
-            
-            <rect x="0" y="{150 + (tp/10)*sc*3}" width="160" height="{(gt/10)*sc*3}" fill="#94a3b8" opacity="0.4"/>
-            <text x="170" y="{155 + (tp/10 + gt/20)*sc*3}" font-size="10" fill="#64748b">Grout {gt}mm</text>
-            
-            <rect x="-20" y="{150 + (tp/10 + gt/10)*sc*3}" width="200" height="60" fill="none" stroke="#94a3b8" stroke-dasharray="4,2"/>
-            <text x="80" y="{230 + (tp/10 + gt/10)*sc*3}" text-anchor="middle" font-size="10" fill="#94a3b8">CONCRETE PEDESTAL</text>
-            
-            <path d="M 105 150 L 125 130 h 20" fill="none" stroke="#ef4444" stroke-width="1.5"/>
-            <text x="127" y="125" font-size="10" fill="#ef4444" font-weight="bold">E70XX</text>
-        </g>
+        <rect x="{px - B*sc/2}" y="{py - N*sc/2}" width="{B*sc}" height="{N*sc}" fill="none" stroke="#000" stroke-width="2"/>
         
-        <defs>
-            <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orientation="auto" markerUnits="strokeWidth">
-                <path d="M0,0 L0,6 L9,3 z" fill="#ef4444" />
-            </marker>
-        </defs>
+        <g transform="translate({px}, {py})" fill="#cbd5e1" stroke="#000" stroke-width="1">
+            <rect x="{-b*sc/2}" y="{-h*sc/2}" width="{b*sc}" height="{tf*sc}"/>
+            <rect x="{-b*sc/2}" y="{h*sc/2 - tf*sc}" width="{b*sc}" height="{tf*sc}"/>
+            <rect x="{-tw*sc/2}" y="{-h*sc/2 + tf*sc}" width="{tw*sc}" height="{(h-2*tf)*sc}"/>
+        </g>
+
+        <g stroke="#dc2626" stroke-width="1.5">
+            <line x1="{px + B*sc/2}" y1="{py}" x2="{px + B*sc/2 - n*sc}" y2="{py}"/>
+            <line x1="{px}" y1="{py + N*sc/2}" x2="{px}" y2="{py + N*sc/2 - m*sc}"/>
+        </g>
+        <text x="{px + B*sc/2 - n*sc/2}" y="{py - 10}" fill="#dc2626" font-size="12" text-anchor="middle">n = {n:.2f}</text>
+        <text x="{px + 10}" y="{py + N*sc/2 - m*sc/2}" fill="#dc2626" font-size="12" transform="rotate(90 {px+10} {py + N*sc/2 - m*sc/2})">m = {m:.2f}</text>
+
+        <g transform="translate(580, 80)">
+            <text x="80" y="0" text-anchor="middle" font-weight="bold" font-family="monospace">SECTION A-A</text>
+            <rect x="60" y="30" width="40" height="120" fill="#94a3b8" stroke="#000"/>
+            <rect x="0" y="150" width="160" height="12" fill="#334155"/>
+            <text x="170" y="160" font-size="11">PL {tp_mm}mm</text>
+            <rect x="0" y="162" width="160" height="8" fill="#e2e8f0" stroke="#94a3b8" stroke-dasharray="2"/>
+            <text x="170" y="170" font-size="10" fill="#64748b">Grout</text>
+            <path d="M 0 170 L 0 250 L 160 250 L 160 170" fill="none" stroke="#334155" stroke-dasharray="5,3"/>
+            
+            <path d="M 100 150 L 130 120 h 20" fill="none" stroke="#dc2626" stroke-width="1"/>
+            <path d="M 110 140 L 120 150 L 100 150 Z" fill="#dc2626"/> </g>
+
+        <g transform="translate(560, 350)" font-family="monospace" font-size="12">
+            <text x="0" y="0" font-weight="bold">DESIGN SUMMARY:</text>
+            <text x="0" y="25">PL: {B}x{N}x{tp_mm} mm</text>
+            <text x="0" y="45">Fy: {Fy} kg/cm2</text>
+            <text x="0" y="65">L_crit: {l_crit:.2f} cm</text>
+            <text x="0" y="85">t_req: {t_req*10:.2f} mm</text>
+        </g>
     </svg>
     """
     st.write(svg, unsafe_allow_html=True)
 
-    # --- 5. RESULT & VALIDATION DASHBOARD ---
+    # --- 4. VERIFICATION VERDICT ---
     st.divider()
-    res1, res2 = st.columns([1, 1.2])
-    with res1:
-        st.markdown("##### 📥 Load & Performance")
-        st.write(f"Design Load: **{v_design/1000:,.2f} Ton**")
-        st.write(f"Critical Lever Arm ($l$): **{l_crit:.2f} cm**")
-        
-    with res2:
-        st.markdown("##### ✅ Final Status")
-        if tp >= t_req*10:
-            st.success(f"PASS: Required {t_req*10:.2f} mm | Provided {tp} mm")
-        else:
-            st.error(f"FAIL: Required {t_req*10:.2f} mm | Provided {tp} mm")
-            st.warning("Action: Increase Plate Thickness or Plate Dimensions (N, B).")
+    v1, v2, v3 = st.columns(3)
+    v1.metric("Required Thickness", f"{t_req*10:.2f} mm")
+    v2.metric("Provided Thickness", f"{tp_mm} mm")
+    
+    if tp_mm >= t_req*10:
+        v3.success("🛡️ DESIGN SAFE")
+    else:
+        v3.error("🚨 THICKNESS INSUFFICIENT")
