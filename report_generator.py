@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 34.0 (Fix Formatting Layout & Indentation)
+# Version: 35.0 (Professional Shop Drawing Edition)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -63,7 +63,7 @@ def get_standard_sections():
     ]
 
 # =========================================================
-# ⚙️ 2. CORE LOGIC (Detailed Calc)
+# ⚙️ 2. CORE LOGIC
 # =========================================================
 def get_load_case_factor(case_name):
     cases = {
@@ -74,36 +74,15 @@ def get_load_case_factor(case_name):
     }
     return cases.get(case_name, 4.0)
 
-# 🆕 Proof Text (No Indentation to prevent Markdown errors)
 def get_derivation_text(case_name):
     if case_name == "Simple Beam (Uniform Load)":
-        return (
-            "* **Support:** Simple Support\n"
-            "* **Load:** Uniform Distributed Load\n"
-            "* **Proof:** $V = wL/2 \\rightarrow M = wL^2/8 \\rightarrow \\mathbf{M = VL/4}$\n"
-            "* **Factor:** $\\mathbf{4.0}$"
-        )
+        return ("* **Support:** Simple Support\n* **Load:** Uniform Distributed Load\n* **Proof:** $V = wL/2 \\rightarrow M = wL^2/8 \\rightarrow \\mathbf{M = VL/4}$\n* **Factor:** $\\mathbf{4.0}$")
     elif case_name == "Simple Beam (Point Load @Center)":
-        return (
-            "* **Support:** Simple Support\n"
-            "* **Load:** Point Load at Center\n"
-            "* **Proof:** $V = P/2 \\rightarrow M = PL/4 \\rightarrow \\mathbf{M = VL/2}$\n"
-            "* **Factor:** $\\mathbf{2.0}$"
-        )
+        return ("* **Support:** Simple Support\n* **Load:** Point Load at Center\n* **Proof:** $V = P/2 \\rightarrow M = PL/4 \\rightarrow \\mathbf{M = VL/2}$\n* **Factor:** $\\mathbf{2.0}$")
     elif case_name == "Cantilever (Uniform Load)":
-        return (
-            "* **Support:** Cantilever (Fixed)\n"
-            "* **Load:** Uniform Distributed Load\n"
-            "* **Proof:** $V = wL \\rightarrow M = wL^2/2 \\rightarrow \\mathbf{M = VL/2}$\n"
-            "* **Factor:** $\\mathbf{2.0}$"
-        )
+        return ("* **Support:** Cantilever (Fixed)\n* **Load:** Uniform Distributed Load\n* **Proof:** $V = wL \\rightarrow M = wL^2/2 \\rightarrow \\mathbf{M = VL/2}$\n* **Factor:** $\\mathbf{2.0}$")
     elif case_name == "Cantilever (Point Load @Tip)":
-        return (
-            "* **Support:** Cantilever (Fixed)\n"
-            "* **Load:** Point Load at Tip\n"
-            "* **Proof:** $V = P \\rightarrow M = PL \\rightarrow \\mathbf{M = VL}$\n"
-            "* **Factor:** $\\mathbf{1.0}$"
-        )
+        return ("* **Support:** Cantilever (Fixed)\n* **Load:** Point Load at Tip\n* **Proof:** $V = P \\rightarrow M = PL \\rightarrow \\mathbf{M = VL}$\n* **Factor:** $\\mathbf{1.0}$")
     return ""
 
 def calculate_zx(h, b, tw, tf):
@@ -111,115 +90,139 @@ def calculate_zx(h, b, tw, tf):
     return (b*tf*(h-tf)) + (tw*(h-2*tf)**2/4)
 
 def calculate_connection(props, load_percent, bolt_dia, span_factor):
-    # Unpack
     h, tw, fy, fu = props['h'], props['tw'], props['Fy'], props['Fu']
     b, tf = props.get('b', h/2), props.get('tf', tw*1.5)
-    
-    # 1. Shear Capacity
     Aw_cm2 = (h/10)*(tw/10) 
     Vn_beam = 0.60 * fy * Aw_cm2
     V_target = (load_percent/100) * Vn_beam
-    
-    # 2. Critical Span
     Zx = calculate_zx(h, b, tw, tf)
     Mn_beam = fy * Zx
     phiMn = 0.90 * Mn_beam
     L_crit = (span_factor * (phiMn / V_target)) / 100.0 if V_target > 0 else 0
-    
-    # 3. Bolt Capacity
     DB_mm = float(bolt_dia)
     Ab_cm2 = 3.1416 * (DB_mm/10)**2 / 4
     Fnv = 3300
     Rn_shear = 0.75 * Fnv * Ab_cm2 
-    
-    # Bearing
     plate_t_mm = 10.0
     Le_cm = 3.5
     hole_dia_mm = DB_mm + 2
     Lc_cm = Le_cm - (hole_dia_mm/10)/2
-    
     Rn_pl_1 = 1.2 * Lc_cm * (plate_t_mm/10) * 4050
     Rn_pl_2 = 2.4 * (DB_mm/10) * (plate_t_mm/10) * 4050
     Rn_pl = 0.75 * min(Rn_pl_1, Rn_pl_2)
-    
     Rn_web_1 = 1.2 * Lc_cm * (tw/10) * fu
     Rn_web_2 = 2.4 * (DB_mm/10) * (tw/10) * fu
     Rn_web = 0.75 * min(Rn_web_1, Rn_web_2)
-    
     phiRn_bolt = min(Rn_shear, Rn_pl, Rn_web)
-    
-    # 4. Result
     if phiRn_bolt > 0:
         n_req = V_target / phiRn_bolt
         n_bolts = max(2, math.ceil(n_req))
     else:
         n_bolts = 99
-        
     control_mode = "Shear"
     if Rn_pl < Rn_shear and Rn_pl < Rn_web: control_mode = "Plate Bear"
     if Rn_web < Rn_shear and Rn_web < Rn_pl: control_mode = "Web Bear"
-    
     spacing = 7.0
     L_plate = (2*Le_cm) + ((n_bolts-1)*spacing)
-
     return {
-        "Section": props['name'],
-        "h": h, "tw": tw, "Fy": fy, "Fu": fu,
-        "Aw": Aw_cm2, "Zx": Zx,
-        "Vn_beam": Vn_beam, "V_target": V_target,
-        "L_crit": L_crit, "Mn_beam": Mn_beam,
-        "DB": DB_mm, "Ab": Ab_cm2, "Rn_shear": Rn_shear,
-        "Lc": Lc_cm, "Rn_pl": Rn_pl, "Rn_web": Rn_web,
-        "Rn_pl_1": Rn_pl_1, "Rn_pl_2": Rn_pl_2,
-        "Rn_web_1": Rn_web_1, "Rn_web_2": Rn_web_2,
-        "phiRn_bolt": phiRn_bolt,
-        "Bolt Qty": n_bolts,
-        "Control By": control_mode,
-        "Plate Len": L_plate,
-        "Le": Le_cm, "S": spacing
+        "Section": props['name'], "h": h, "tw": tw, "Fy": fy, "Fu": fu, "Aw": Aw_cm2, "Zx": Zx,
+        "Vn_beam": Vn_beam, "V_target": V_target, "L_crit": L_crit, "Mn_beam": Mn_beam,
+        "DB": DB_mm, "Ab": Ab_cm2, "Rn_shear": Rn_shear, "Lc": Lc_cm, "Rn_pl": Rn_pl, "Rn_web": Rn_web,
+        "Rn_pl_1": Rn_pl_1, "Rn_pl_2": Rn_pl_2, "Rn_web_1": Rn_web_1, "Rn_web_2": Rn_web_2,
+        "phiRn_bolt": phiRn_bolt, "Bolt Qty": n_bolts, "Control By": control_mode,
+        "Plate Len": L_plate, "Le": Le_cm, "S": spacing
     }
 
 # =========================================================
-# 🎨 3. DRAWING
+# 🎨 3. PROFESSIONAL SHOP DRAWING (NEW!)
 # =========================================================
 def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spacing_cm):
-    fig, ax = plt.subplots(figsize=(4, 6))
-    web_w = 160
-    h_draw = h_beam + 80
+    # 1. Setup Canvas (Standard Blueprint Ratio)
+    fig, ax = plt.subplots(figsize=(5, 7.5))
     
-    ax.add_patch(patches.Rectangle((0, -40), web_w, h_draw, fc='#f8f9fa'))
-    pl_w = 90
-    px = (web_w - pl_w)/2
-    py = (h_beam - plate_len_mm)/2 + 40
-    ax.add_patch(patches.Rectangle((px, py), pl_w, plate_len_mm, ec='#007bff', fc='#cfe2ff', lw=2))
+    # Styling Constants (Blueprint Theme)
+    COLOR_OBJ = '#2C3E50' # Dark slate blue for objects
+    COLOR_DIM = '#E74C3C' # Professional red for dimensions
+    COLOR_CENTER = '#95A5A6' # Light grey for centerlines
+    LW_OBJ = 2.0
+    LW_DIM = 1.0
     
-    bx = px + pl_w/2
-    curr_y = py + plate_len_mm - (le_cm*10)
-    ys = []
-    for _ in range(n_bolts):
-        ys.append(curr_y)
-        ax.add_patch(patches.Circle((bx, curr_y), (bolt_dia+2)/2, ec='k', fc='w'))
-        curr_y -= (spacing_cm*10)
-        
-    dx = px + pl_w + 15
-    def dim(y1, y2, txt):
-        ax.plot([dx, dx], [y1, y2], 'r-', lw=1)
-        ax.plot([dx-3, dx+3], [y1, y1], 'r-', lw=1)
-        ax.plot([dx-3, dx+3], [y2, y2], 'r-', lw=1)
-        ax.text(dx+5, (y1+y2)/2, txt, color='r', fontsize=8, va='center')
-        
-    dim(py+plate_len_mm, ys[0], f"{int(le_cm*10)}")
-    for i in range(len(ys)-1):
-        dim(ys[i], ys[i+1], f"{int(spacing_cm*10)}")
-    dim(ys[-1], py, f"{int(le_cm*10)}")
+    # Geometry Calculation
+    web_w_draw = 200 # Arbitrary drawing width for web
+    h_draw_area = h_beam + 120
+    plate_w = 100
+    plate_x = (web_w_draw - plate_w) / 2
+    plate_y_start = (h_beam - plate_len_mm) / 2 + 60
     
-    dx2 = dx + 25
-    ax.plot([dx2, dx2], [py, py+plate_len_mm], 'b-', lw=1)
-    ax.text(dx2+5, py+plate_len_mm/2, f"L={int(plate_len_mm)}", color='b', rotation=90, va='center')
+    # --- DRAWING OBJECTS ---
+    # 2. Beam Web (Context)
+    web_rect = patches.Rectangle((0, 0), web_w_draw, h_draw_area, linewidth=0, facecolor='#ECF0F1', zorder=1)
+    ax.add_patch(web_rect)
+    ax.text(10, h_draw_area - 20, "BEAM WEB (ELEVATION)", fontsize=9, color=COLOR_OBJ, fontweight='bold')
+    
+    # 3. Shear Plate (Main Object)
+    plate_rect = patches.Rectangle((plate_x, plate_y_start), plate_w, plate_len_mm, linewidth=LW_OBJ, edgecolor=COLOR_OBJ, facecolor='#D6EAF8', zorder=2)
+    ax.add_patch(plate_rect)
+    
+    # 4. Bolts & Centerlines
+    bolt_x_center = plate_x + (plate_w / 2)
+    bolt_y_top = plate_y_start + plate_len_mm - (le_cm*10)
+    
+    # 4.1 Vertical Centerlines (The mark of a pro drawing)
+    ax.vlines(web_w_draw/2, 0, h_draw_area, colors=COLOR_CENTER, linestyles='-.', linewidth=0.8, zorder=1.5) # Beam Center
+    ax.vlines(bolt_x_center, plate_y_start-10, plate_y_start+plate_len_mm+10, colors=COLOR_CENTER, linestyles='-.', linewidth=0.8, zorder=1.5) # Bolt Group Center
 
-    ax.set_xlim(0, web_w + 60)
-    ax.set_ylim(0, h_draw)
+    bolt_ys = []
+    curr_y = bolt_y_top
+    for i in range(n_bolts):
+        bolt_ys.append(curr_y)
+        # Bolt Circle
+        circle = patches.Circle((bolt_x_center, curr_y), radius=(bolt_dia+2)/2, edgecolor=COLOR_OBJ, facecolor='white', linewidth=1.5, zorder=3)
+        ax.add_patch(circle)
+        # Horizontal Centerline for each bolt
+        ax.hlines(curr_y, bolt_x_center-15, bolt_x_center+15, colors=COLOR_CENTER, linestyles='-.', linewidth=0.5, zorder=3)
+        curr_y -= (spacing_cm*10)
+
+    # --- DIMENSIONING (Professional Arrows) ---
+    dim_x_offset = plate_x + plate_w + 25
+    
+    # Helper function for professional arrow dimensions
+    def draw_dim_arrow(y_start, y_end, x_pos, text_val, label_prefix=""):
+        ax.annotate(
+            text='', xy=(x_pos, y_start), xytext=(x_pos, y_end),
+            arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM, shrinkA=0, shrinkB=0)
+        )
+        mid_y = (y_start + y_end) / 2
+        text_display = f"{label_prefix} {int(text_val)}" if label_prefix else f"{int(text_val)}"
+        ax.text(x_pos + 8, mid_y, text_display, color=COLOR_DIM, fontsize=9, va='center')
+        # Extension lines (thin)
+        ax.plot([plate_x+plate_w, x_pos+2], [y_start, y_start], color=COLOR_DIM, lw=0.5, ls=':')
+        ax.plot([plate_x+plate_w, x_pos+2], [y_end, y_end], color=COLOR_DIM, lw=0.5, ls=':')
+
+    # 5.1 Detailed Dimensions (Chain)
+    draw_dim_arrow(plate_y_start + plate_len_mm, bolt_ys[0], dim_x_offset, le_cm*10, "Le")
+    for i in range(len(bolt_ys)-1):
+        draw_dim_arrow(bolt_ys[i], bolt_ys[i+1], dim_x_offset, spacing_cm*10, "S")
+    draw_dim_arrow(bolt_ys[-1], plate_y_start, dim_x_offset, le_cm*10, "Le")
+    
+    # 5.2 Total Height Dimension (Outer)
+    outer_dim_x = dim_x_offset + 40
+    ax.annotate(
+        text='', xy=(outer_dim_x, plate_y_start), xytext=(outer_dim_x, plate_y_start + plate_len_mm),
+        arrowprops=dict(arrowstyle='<|-|>', color=COLOR_OBJ, lw=LW_DIM, shrinkA=0, shrinkB=0)
+    )
+    ax.text(outer_dim_x + 10, plate_y_start + plate_len_mm/2, f"TOTAL PL = {int(plate_len_mm)}", color=COLOR_OBJ, fontsize=10, fontweight='bold', rotation=90, va='center')
+
+    # 6. Labels & Title
+    ax.text(plate_x + plate_w/2, plate_y_start - 30, f"PL-100x{int(plate_len_mm)}x10mm", fontsize=10, color=COLOR_OBJ, ha='center', fontweight='bold')
+    ax.text(plate_x + plate_w/2, plate_y_start - 50, f"({n_bolts}-M{int(bolt_dia)} A325 Bolts)", fontsize=9, color=COLOR_OBJ, ha='center')
+
+    # Final Cleanup
+    ax.set_xlim(0, web_w_draw + 100)
+    ax.set_ylim(0, h_draw_area)
+    ax.set_aspect('equal')
     ax.axis('off')
+    ax.set_title("CONNECTION SHOP DRAWING (N.T.S)", fontsize=12, fontweight='bold', color=COLOR_OBJ, pad=20)
     return fig
 
 # =========================================================
@@ -250,12 +253,11 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
     st.divider()
 
     # 2. Detailed Report Layout
-    col_cal, col_draw = st.columns([1.6, 1])
+    col_cal, col_draw = st.columns([1.5, 1.2]) # Adjust ratio for better drawing view
     
     with col_cal:
         st.subheader("📝 รายการคำนวณ (Detailed Calculation)")
-        with st.container(height=650, border=True):
-            # Using standard text formatting to prevent markdown errors
+        with st.container(height=700, border=True):
             st.markdown(f"""
 #### 1. Design Parameters
 * **Section:** {res['Section']}
@@ -295,12 +297,11 @@ $$ \\phi M_n = 0.90 F_y Z_x = 0.90({res['Fy']})({res['Zx']:.2f}) = {res['Mn_beam
 
 **4.3 Limit Calculation**
 $$ L_{{crit}} = {factor} \\times \\frac{{\\phi M_n}}{{V_u}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit']:.2f} \\; m}} $$
-
-*(Note: If span > {res['L_crit']:.2f} m, beam fails by moment before shear)*
 """)
 
     with col_draw:
-        st.subheader("📐 Drawing")
+        st.subheader("📐 Shop Drawing")
+        # Call the new professional drawing function
         fig = draw_connection_sketch(res['h'], res['Bolt Qty'], float(bolt_dia), res['Plate Len']*10, res['Le'], res['S'])
         st.pyplot(fig)
 
