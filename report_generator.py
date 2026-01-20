@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 8.0 (Official Document Style - Clean & Formal)
+# Version: 9.0 (Full Specification Edition)
 import streamlit as st
 from datetime import datetime
 
@@ -10,7 +10,7 @@ def render_report_tab(beam_data, conn_data):
     with st.expander("🛠️ ตั้งค่าหัวกระดาษ", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
-            project = st.text_input("โครงการ", value="ก่อสร้างโรงจอดรถโครงสร้างเหล็ก")
+            project = st.text_input("โครงการ", value="งานโครงสร้างเหล็กชั้นลอย")
             owner = st.text_input("เจ้าของงาน", value="คุณสมศักดิ์ รักดี")
         with c2:
             engineer = st.text_input("วิศวกรผู้ออกแบบ", value="นายก่อสร้าง มั่นคง (สย.XXXX)")
@@ -21,12 +21,11 @@ def render_report_tab(beam_data, conn_data):
         return
 
     # --- 2. เตรียมข้อมูล ---
-    # ดึงค่าตัวแปร
+    # ดึงค่าตัวแปรคาน
     sec = beam_data.get('sec_name', '-')
     span = beam_data.get('user_span', 0)
     fy = beam_data.get('Fy', 0)
     
-    # ผลลัพธ์
     m_act, m_cap = beam_data.get('m_act', 0), beam_data.get('mn', 0)
     v_act, v_cap = beam_data.get('v_act', 0), beam_data.get('vn', 0)
     d_act, d_all = beam_data.get('defl_act', 0), beam_data.get('defl_all', 0)
@@ -35,101 +34,111 @@ def render_report_tab(beam_data, conn_data):
     max_r = max(r_m, r_v, r_d)
     is_pass = max_r <= 1.0
 
-    # --- 3. ส่วนแสดงผลจำลองกระดาษ A4 (Container) ---
+    # ดึงข้อมูลจุดต่อ
+    conn_type = conn_data.get('type', '-')
+    conn_summ = conn_data.get('summary', '-')
+
+    # --- 3. ส่วนแสดงผลจำลองกระดาษ A4 ---
     st.markdown("---")
     
-    # สร้างกรอบเอกสาร
     with st.container(border=True):
         
         # 3.1 หัวกระดาษ (Header)
         st.markdown(f"""
-        <div style="text-align: center; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 20px;">
-            <h2 style="margin: 0; color: black;">รายการคำนวณโครงสร้างคานเหล็ก</h2>
-            <p style="margin: 5px; color: #555;">STRUCTURAL STEEL BEAM DESIGN CALCULATION</p>
+        <div style="text-align: center; border-bottom: 3px double #333; padding-bottom: 15px; margin-bottom: 20px;">
+            <h2 style="margin: 0; color: #1e3a8a;">รายการคำนวณโครงสร้าง (Structural Calculation)</h2>
+            <p style="margin: 5px; color: #555; font-size: 14px;">มาตรฐานอ้างอิง: AISC 360-16 (LRFD/ASD Specification)</p>
         </div>
         """, unsafe_allow_html=True)
 
         # ข้อมูลโครงการ
-        st.markdown(f"""
-        **โครงการ:** {project}  
-        **เจ้าของงาน:** {owner}  
-        **วิศวกรผู้ออกแบบ:** {engineer}  
-        **วันที่คำนวณ:** {date_str}
-        """)
+        col_info1, col_info2 = st.columns(2)
+        with col_info1:
+            st.markdown(f"**โครงการ:** {project}")
+            st.markdown(f"**เจ้าของงาน:** {owner}")
+        with col_info2:
+            st.markdown(f"**วิศวกร:** {engineer}")
+            st.markdown(f"**วันที่:** {date_str}")
         
         st.markdown("---")
 
-        # 3.2 ข้อมูลการออกแบบ (Design Data)
+        # 3.2 ข้อมูลการออกแบบ (Design Criteria)
         st.markdown("#### 1. ข้อมูลการออกแบบ (Design Criteria)")
         col_d1, col_d2 = st.columns(2)
         with col_d1:
             st.markdown(f"""
             * **หน้าตัดเหล็ก:** {sec}
-            * **มาตรฐานเหล็ก:** JIS / ASTM
             * **กำลังจุดคลาก (Fy):** {fy:,} ksc
             """)
         with col_d2:
             st.markdown(f"""
             * **ความยาวคาน (Span):** {span:.2f} m.
             * **ระยะค้ำยัน (Lb):** {beam_data.get('Lb', 0):.2f} m.
-            * **มาตรฐานการออกแบบ:** AISC 360-16 (LRFD)
             """)
 
         # 3.3 ตารางผลการคำนวณ (Results Table)
-        st.markdown("#### 2. ผลการตรวจสอบกำลังรับน้ำหนัก (Calculation Results)")
+        st.markdown("#### 2. ผลการตรวจสอบกำลังรับน้ำหนัก (Beam Analysis)")
         
-        # ใช้ Column เพื่อจัด Layout แบบตารางที่สะอาดตา
         # Header Row
         h1, h2, h3, h4, h5 = st.columns([2, 1.5, 1.5, 1, 1])
         h1.markdown("**รายการตรวจสอบ**")
-        h2.markdown("**แรงที่เกิด (Mu/Vu)**")
-        h3.markdown("**แรงที่รับได้ (Mn/Vn)**")
+        h2.markdown("**Demand**")
+        h3.markdown("**Capacity**")
         h4.markdown("**Ratio**")
         h5.markdown("**ผลลัพธ์**")
         st.markdown("<hr style='margin: 5px 0; border-top: 1px solid #ddd;'>", unsafe_allow_html=True)
 
-        # Row 1: Moment
-        r1_1, r1_2, r1_3, r1_4, r1_5 = st.columns([2, 1.5, 1.5, 1, 1])
-        r1_1.markdown("1. โมเมนต์ดัด (Moment)")
-        r1_2.markdown(f"{m_act:,.2f} kg-m")
-        r1_3.markdown(f"{m_cap:,.2f} kg-m")
-        r1_4.markdown(f"{r_m:.2f}")
-        r1_5.markdown(f"{'✅ ผ่าน' if r_m <=1 else '❌ ไม่ผ่าน'}")
+        # Rows
+        def row(label, act, cap, unit, ratio):
+            c1, c2, c3, c4, c5 = st.columns([2, 1.5, 1.5, 1, 1])
+            c1.markdown(label)
+            c2.markdown(f"{act:,.2f} {unit}")
+            c3.markdown(f"{cap:,.2f} {unit}")
+            c4.markdown(f"{ratio:.2f}")
+            c5.markdown(f"{'✅ ผ่าน' if ratio <=1 else '❌ ไม่ผ่าน'}")
 
-        # Row 2: Shear
-        r2_1, r2_2, r2_3, r2_4, r2_5 = st.columns([2, 1.5, 1.5, 1, 1])
-        r2_1.markdown("2. แรงเฉือน (Shear)")
-        r2_2.markdown(f"{v_act:,.2f} kg")
-        r2_3.markdown(f"{v_cap:,.2f} kg")
-        r2_4.markdown(f"{r_v:.2f}")
-        r2_5.markdown(f"{'✅ ผ่าน' if r_v <=1 else '❌ ไม่ผ่าน'}")
-
-        # Row 3: Deflection
-        r3_1, r3_2, r3_3, r3_4, r3_5 = st.columns([2, 1.5, 1.5, 1, 1])
-        r3_1.markdown("3. การแอ่นตัว (Deflection)")
-        r3_2.markdown(f"{d_act:.2f} cm")
-        r3_3.markdown(f"{d_all:.2f} cm")
-        r3_4.markdown(f"{r_d:.2f}")
-        r3_5.markdown(f"{'✅ ผ่าน' if r_d <=1 else '❌ ไม่ผ่าน'}")
+        row("1. โมเมนต์ดัด (Moment)", m_act, m_cap, "kg-m", r_m)
+        row("2. แรงเฉือน (Shear)", v_act, v_cap, "kg", r_v)
+        row("3. การแอ่นตัว (Deflection)", d_act, d_all, "cm", r_d)
 
         st.markdown("---")
 
-        # 3.4 สรุปผล (Conclusion)
-        if is_pass:
-            st.success(f"**บทสรุป: โครงสร้างมีความมั่นคงแข็งแรง (PASSED)** | อัตราส่วนการรับแรงสูงสุด = {max_r:.2f}")
-        else:
-            st.error(f"**บทสรุป: โครงสร้างไม่ผ่านเกณฑ์ (FAILED)** | กรุณาเพิ่มขนาดหน้าตัดหรือลดระยะช่วงพาด")
+        # 3.4 รายละเอียดจุดต่อ (Connection Specification) - ส่วนที่เพิ่มใหม่!
+        st.markdown("#### 3. รายละเอียดจุดต่อและข้อกำหนดวัสดุ (Connection Specs)")
         
-        st.markdown(f"**หมายเหตุจุดต่อ:** {conn_data.get('summary', '-')}")
+        with st.container():
+            col_c1, col_c2 = st.columns([1.5, 2])
+            
+            with col_c1:
+                st.markdown(f"**รูปแบบจุดต่อ:** {conn_type}")
+                st.info(f"📋 **สรุปผลออกแบบ:**\n{conn_summ}")
+            
+            with col_c2:
+                st.markdown("**ข้อกำหนดวัสดุประกอบ (Standard Specifications):**")
+                st.markdown("""
+                - **น็อตสกรู (Bolts):** ASTM A325 / ISO 8.8 (High Strength)
+                - **ลวดเชื่อม (Electrodes):** E70xx (Low Hydrogen) 
+                - **รูเจาะ (Holes):** Standard Hole (ขนาดน็อต + 1.5-2 มม.)
+                - **การติดตั้ง:** ขันแน่นพอตึงมือ (Snug-tightened) หรือตามระบุในแบบ
+                """)
 
-        # 3.5 ส่วนลงนาม
+        st.markdown("---")
+
+        # 3.5 สรุปและลงนาม
+        if is_pass:
+            st.success(f"**บทสรุปทางวิศวกรรม:** โครงสร้างมีความมั่นคงแข็งแรง (PASSED) | Safety Ratio = {max_r:.2f}")
+        else:
+            st.error(f"**บทสรุปทางวิศวกรรม:** โครงสร้างไม่ผ่านเกณฑ์ (FAILED) | กรุณาแก้ไขแบบ")
+        
         st.markdown("<br><br>", unsafe_allow_html=True)
         s1, s2 = st.columns(2)
         with s1:
             st.markdown("..........................................................")
             st.markdown(f"({engineer})")
-            st.markdown("วิศวกรผู้ออกแบบ")
+            st.markdown("วิศวกรผู้ออกแบบ (Structural Engineer)")
         with s2:
             st.markdown("..........................................................")
             st.markdown(f"({owner})")
-            st.markdown("ผู้อนุมัติโครงการ")
+            st.markdown("ผู้ตรวจสอบ / ผู้อนุมัติ (Approved By)")
+            
+        st.caption(f"Generated by Structural Insight Engine | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
