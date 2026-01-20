@@ -30,6 +30,9 @@ def init_session_state():
         st.session_state.conn_type = "Fin Plate"
     if 'res_dict' not in st.session_state:
         st.session_state.res_dict = {}
+    # เพิ่มตัวแปรสำหรับเก็บผลออกแบบ Connection เพื่อส่งไป Report
+    if 'v_design' not in st.session_state:
+        st.session_state.v_design = {}
 
 init_session_state()
 
@@ -37,8 +40,8 @@ init_session_state()
 # 1. IMPORT MODULES WITH ERROR HANDLING
 # ==========================================
 try:
-    import steel_db              
-    import connection_design    
+    import steel_db               
+    import connection_design      
     import report_generator
     import tab1_analysis
     import tab3_ltb
@@ -461,6 +464,8 @@ results_context = {
     'fact_p': fact_p,
     'V_cap': V_cap,
     'M_cap': M_cap,
+    'vn': V_cap,  # Map for Report
+    'mn': M_cap,  # Map for Report
     'v_act': v_act,
     'm_act': m_act,
     'ratio_v': ratio_v,
@@ -471,6 +476,8 @@ results_context = {
     'w_safe': w_safe,
     'd_act': d_act,
     'd_allow': d_allow,
+    'defl_act': d_act, # Map for Report
+    'defl_all': d_allow, # Map for Report
     'defl_denom': defl_denom,
     'Aw': Aw,
     'Ix': Ix,
@@ -534,7 +541,7 @@ with tab1:
 # --- TAB 2: SHEAR CONNECTION ---
 with tab2:
     if st.session_state.cal_success:
-        st.info(f"⚡ **Force Vector Input:** {v_conn_final:,.0f} kg")
+        st.info(f"⚡ **Force Vector Input:** {v_conn_final:,.0f} kg ")
         
         # User selection for connection type
         c_type = st.selectbox(
@@ -563,6 +570,14 @@ with tab2:
             default_bolt_grade="A325",
             default_mat_grade=grade_choice
         )
+        
+        # บันทึกสถานะคร่าวๆ ลง Session (เพื่อส่งให้ Tab 4)
+        st.session_state.v_design = {
+            'type': c_type,
+            'summary': f"Designed for Shear {v_conn_final:,.0f} kg ({method_str})",
+            'pass': True 
+        }
+
     else:
         st.warning("⚠️ Calculation pending. Please define section parameters.")
 
@@ -573,20 +588,19 @@ with tab3:
 # --- TAB 4: CALCULATION REPORT ---
 with tab4:
     if st.session_state.cal_success:
-        report_generator.render_report_tab(
-            method=st.session_state.design_method,
-            is_lrfd=is_lrfd,
-            sec_name=sec_name,
-            steel_grade=grade_choice,
-            p={'h': h, 'b': b, 'tw': tw, 'tf': tf, 'Ix': Ix, 'Zx': Zx, 'Sx': Sx},
-            res=st.session_state.res_dict,
-            bolt={
-                'type': st.session_state.conn_type, 
-                'grade': 'A325', 
-                'size': 'M20', 
-                'qty': 'N/A'
+        # 🟢 แก้ไข: ส่ง dict ข้อมูล 2 ตัวตามที่ report_generator.py ต้องการ
+        beam_data = results_context
+        conn_data = st.session_state.get('v_design', {})
+        
+        # สร้าง Dummy Data กัน Error กรณี Tab 2 ยังไม่ถูกรัน
+        if not conn_data:
+            conn_data = {
+                'type': st.session_state.conn_type,
+                'summary': f"Pending design for V={v_conn_final:,.0f} kg",
+                'pass': False
             }
-        )
+
+        report_generator.render_report_tab(beam_data, conn_data)
     else:
         st.error("No data available for reporting.")
 
