@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 23.0 (Interactive & Visualization)
+# Version: 24.0 (Auto-Dimensioning Shop Drawing)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -30,59 +30,105 @@ def get_standard_sections():
     ]
 
 # =========================================================
-# 🎨 2. DRAWING FUNCTION (Matplotlib)
+# 🎨 2. DRAWING FUNCTION (With Dimensions!)
 # =========================================================
-def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len, le, spacing):
+def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spacing_cm):
     """
-    สร้างรูป Sketch 2D ของ Shear Plate
+    สร้างรูป Sketch 2D พร้อมเส้นบอกระยะ (Dimension Lines)
     """
-    fig, ax = plt.subplots(figsize=(4, 6))
+    fig, ax = plt.subplots(figsize=(5, 7)) # ขยายความกว้างนิดนึงเผื่อ dimension
     
-    # 1. Draw Beam Web (Background)
-    # สมมติวาดแค่ส่วน web ที่เกี่ยวข้อง
-    web_width = 150 # mm (width visible in plot)
-    ax.add_patch(patches.Rectangle((0, -50), web_width, h_beam+100, linewidth=0, edgecolor='none', facecolor='#f0f2f6', label='Beam Web'))
+    # --- 1. Geometry Setup ---
+    web_width = 180 
+    h_draw_area = h_beam + 100
     
-    # 2. Draw Shear Plate
-    plate_width = 100 # mm (Standard width for single row)
+    plate_width = 100
     plate_x = (web_width - plate_width) / 2
-    plate_y_start = (h_beam - plate_len) / 2 + 50 # Center vertically relative to beam
+    plate_y_start = (h_beam - plate_len_mm) / 2 + 50
     
-    rect = patches.Rectangle((plate_x, plate_y_start), plate_width, plate_len, linewidth=2, edgecolor='#1f77b4', facecolor='#aec7e8', alpha=0.8, label='Shear Plate')
+    # Draw Beam Web
+    ax.add_patch(patches.Rectangle((0, -50), web_width, h_draw_area, linewidth=0, facecolor='#f0f2f6', label='Beam Web'))
+    
+    # Draw Plate
+    rect = patches.Rectangle((plate_x, plate_y_start), plate_width, plate_len_mm, linewidth=2, edgecolor='#1f77b4', facecolor='#aec7e8', alpha=0.9)
     ax.add_patch(rect)
     
-    # 3. Draw Bolts
+    # --- 2. Bolts & Centers ---
     hole_dia = bolt_dia + 2
-    bolt_x = plate_x + (plate_width / 2) # Center of plate
+    bolt_x = plate_x + (plate_width / 2)
     
-    # Top bolt y position (relative to plate bottom)
-    # y = plate_y_start + plate_len - Le
-    current_y = plate_y_start + plate_len - (le*10) # Convert cm to mm
+    # Calculate positions
+    le_mm = le_cm * 10
+    spacing_mm = spacing_cm * 10
     
+    # Top bolt Y position
+    top_bolt_y = plate_y_start + plate_len_mm - le_mm
+    bolt_positions_y = []
+    
+    current_y = top_bolt_y
     for i in range(n_bolts):
+        bolt_positions_y.append(current_y)
+        # Bolt Circle
         circle = patches.Circle((bolt_x, current_y), radius=hole_dia/2, edgecolor='black', facecolor='white', linewidth=1.5)
         ax.add_patch(circle)
-        # Crosshair center
+        # Crosshair
         ax.plot([bolt_x-5, bolt_x+5], [current_y, current_y], 'k-', linewidth=0.5)
         ax.plot([bolt_x, bolt_x], [current_y-5, current_y+5], 'k-', linewidth=0.5)
         
-        current_y -= (spacing * 10) # Move down by spacing
-        
-    # 4. Annotation
-    ax.text(bolt_x + 30, plate_y_start + plate_len/2, f"{n_bolts}-M{int(bolt_dia)}", fontsize=10, color='blue', verticalalignment='center')
-    ax.text(plate_x - 10, plate_y_start + plate_len/2, f"PL-{int(plate_len)}mm", fontsize=10, rotation=90, verticalalignment='center', horizontalalignment='right')
+        current_y -= spacing_mm
 
-    # Settings
-    ax.set_xlim(0, web_width)
-    ax.set_ylim(0, h_beam + 100)
+    # --- 3. DIMENSION LINES (The Logic) 📏 ---
+    dim_x_offset = plate_x + plate_width + 15 # ระยะห่างเส้น Dimension จากขอบเพลท
+    
+    def draw_dim_line(y1, y2, x_pos, text):
+        # เส้นตั้ง
+        ax.plot([x_pos, x_pos], [y1, y2], color='red', linewidth=1)
+        # ขีดบน-ล่าง (Tick marks)
+        tick_w = 3
+        ax.plot([x_pos-tick_w, x_pos+tick_w], [y1, y1], color='red', linewidth=1)
+        ax.plot([x_pos-tick_w, x_pos+tick_w], [y2, y2], color='red', linewidth=1)
+        # เส้นโยงจากชิ้นงาน (Extension lines) - optional
+        ax.plot([plate_x + plate_width, x_pos], [y1, y1], color='red', linestyle=':', linewidth=0.5)
+        ax.plot([plate_x + plate_width, x_pos], [y2, y2], color='red', linestyle=':', linewidth=0.5)
+        
+        # ตัวหนังสือ (Text)
+        mid_y = (y1 + y2) / 2
+        ax.text(x_pos + 5, mid_y, text, color='red', fontsize=9, va='center')
+
+    # 3.1 Top Edge Distance
+    y_plate_top = plate_y_start + plate_len_mm
+    draw_dim_line(y_plate_top, bolt_positions_y[0], dim_x_offset, f"{int(le_mm)}")
+    
+    # 3.2 Spacing (Loop)
+    for i in range(len(bolt_positions_y)-1):
+        y_curr = bolt_positions_y[i]
+        y_next = bolt_positions_y[i+1]
+        draw_dim_line(y_curr, y_next, dim_x_offset, f"{int(spacing_mm)}")
+        
+    # 3.3 Bottom Edge Distance
+    y_plate_bot = plate_y_start
+    draw_dim_line(bolt_positions_y[-1], y_plate_bot, dim_x_offset, f"{int(le_mm)}")
+    
+    # 3.4 Total Plate Height (Outer Line)
+    outer_dim_x = dim_x_offset + 30
+    ax.plot([outer_dim_x, outer_dim_x], [y_plate_bot, y_plate_top], color='blue', linewidth=1)
+    # Ticks
+    ax.plot([outer_dim_x-3, outer_dim_x+3], [y_plate_bot, y_plate_bot], color='blue', linewidth=1)
+    ax.plot([outer_dim_x-3, outer_dim_x+3], [y_plate_top, y_plate_top], color='blue', linewidth=1)
+    # Text
+    ax.text(outer_dim_x + 5, (y_plate_bot + y_plate_top)/2, f"Total: {int(plate_len_mm)}", color='blue', fontsize=9, rotation=90, va='center')
+
+    # --- 4. Settings ---
+    ax.set_xlim(0, web_width + 80) # เผื่อที่ด้านขวาให้ Dimension
+    ax.set_ylim(0, h_draw_area)
     ax.set_aspect('equal')
-    ax.axis('off') # Hide axis
-    ax.set_title(f"Connection Sketch (N.T.S)", fontsize=10)
+    ax.axis('off')
+    ax.set_title(f"Shop Drawing: {n_bolts}-M{int(bolt_dia)}", fontsize=11, fontweight='bold')
     
     return fig
 
 # =========================================================
-# 🧠 3. CALCULATION LOGIC (Updated with Parameters)
+# 🧠 3. CALCULATION LOGIC
 # =========================================================
 def calculate_zx(h, b, tw, tf):
     h_cm, b_cm = h/10.0, b/10.0
@@ -94,7 +140,7 @@ def calculate_connection(props, load_percent=75, selected_bolt_dia=20):
     h, tw, fy, fu = props['h'], props['tw'], props['Fy'], props['Fu']
     b, tf = props.get('b', h/2.0), props.get('tf', tw*1.5)
     
-    # User Parameters
+    # Params
     DB = float(selected_bolt_dia)
     load_ratio = load_percent / 100.0
     plate_t_mm = 10.0
@@ -104,16 +150,16 @@ def calculate_connection(props, load_percent=75, selected_bolt_dia=20):
     V_cap_max = 1.00 * (0.60 * fy * Aw)
     V_u = load_ratio * V_cap_max
     
-    # Moment Cap & Critical Span
+    # Moment Cap
     Zx = calculate_zx(h, b, tw, tf)
     phiMn = 0.90 * (fy * Zx)
     L_critical_m = ((4 * phiMn) / V_u) / 100.0 if V_u > 0 else 0
     
-    # Bolt Design
+    # Bolts
     Ab = (math.pi * (DB/10.0)**2) / 4.0
     Rn_shear = 0.75 * 3300 * Ab
     
-    Le = 3.5
+    Le = 3.5 # cm
     Lc = Le - ((DB+2)/10.0)/2.0
     t_pl, t_web = plate_t_mm/10.0, tw/10.0
     
@@ -126,8 +172,7 @@ def calculate_connection(props, load_percent=75, selected_bolt_dia=20):
     # Plate Geometry
     spacing = 7.0 # cm
     L_plate_cm = (2*Le) + ((n_bolts-1)*spacing)
-
-    # Utilization % (เพื่อดูความคุ้มค่า)
+    
     actual_capacity = n_bolts * cap_per_bolt
     utilization = (V_u / actual_capacity) * 100 if actual_capacity > 0 else 0
 
@@ -146,30 +191,26 @@ def calculate_connection(props, load_percent=75, selected_bolt_dia=20):
     }
 
 # =========================================================
-# 🖥️ 4. RENDER FUNCTION (Interactive UI)
+# 🖥️ 4. RENDER FUNCTION
 # =========================================================
 def render_report_tab(beam_data, conn_data):
     
-    st.markdown("### 🖨️ Interactive Connection Design")
+    st.markdown("### 🖨️ Interactive Shop Drawing")
 
-    # --- 🎛️ CONTROLS SECTION (NEW!) ---
+    # Controls
     with st.container(border=True):
-        st.markdown("**⚙️ Design Parameters (ปรับค่าการออกแบบ)**")
         col_param1, col_param2 = st.columns(2)
-        
         with col_param1:
-            load_percent = st.slider("Target Capacity (%)", min_value=10, max_value=100, value=75, step=5, help="ออกแบบที่กี่ % ของกำลังคาน")
-        
+            load_percent = st.slider("Target Capacity (%)", 10, 100, 75, 5)
         with col_param2:
-            bolt_dia = st.selectbox("Bolt Size (mm)", [12, 16, 20, 22, 24], index=2, help="เลือกขนาดน๊อต A325")
+            bolt_dia = st.selectbox("Bolt Size (mm)", [12, 16, 20, 22, 24], index=2)
 
     st.divider()
 
-    # --- TAB A: SINGLE BEAM + VISUALIZATION ---
-    with st.expander("📌 Single Beam Analysis & Sketch", expanded=True):
+    # --- TAB A: SINGLE BEAM + DRAWING ---
+    with st.expander("📌 Connection Details & Drawing", expanded=True):
         if beam_data:
             try:
-                # Calculate
                 res = calculate_connection({
                     "name": beam_data.get('sec_name', 'Custom'),
                     "h": float(beam_data.get('h', 400)),
@@ -180,27 +221,30 @@ def render_report_tab(beam_data, conn_data):
                     "Fu": float(beam_data.get('Fu', 4100))
                 }, load_percent, bolt_dia)
                 
-                # Layout: Left = Data, Right = Sketch
-                col_left, col_right = st.columns([1.5, 1])
+                # Layout
+                col_left, col_right = st.columns([1.2, 1.5]) # ขยาย col_right ให้กว้างขึ้นเพื่อรูป
                 
                 with col_left:
-                    st.subheader(f"Results: {res['Steel Section']}")
-                    c1, c2 = st.columns(2)
-                    c1.metric("Design Load", f"{res['Design Vu (Ton)']:.1f} Ton", f"@{load_percent}% Cap")
-                    c2.metric("Bolts Required", f"{res['Bolt Qty']} pcs", f"{res['Bolt Spec']} (A325)")
+                    st.subheader("Design Data")
+                    st.write(f"**Section:** {res['Steel Section']}")
+                    st.write(f"**Load:** {res['Design Vu (Ton)']:.2f} Ton")
+                    st.write(f"**Bolts:** {res['Bolt Qty']} - {res['Bolt Spec']}")
+                    st.write(f"**Plate:** 100x{int(res['Plate Len (cm)']*10)}x10 mm")
                     
-                    st.metric("Critical Span", f"{res['Max Span (m)']:.2f} m", "Max Length")
+                    st.metric("Critical Span", f"{res['Max Span (m)']:.2f} m")
                     
-                    # Utilization Bar (NEW!)
-                    st.write("Efficiency (ความคุ้มค่า):")
-                    st.progress(res['Utilization'] / 100.0, text=f"{res['Utilization']:.1f}% Utilized")
-                    if res['Utilization'] < 50:
-                        st.caption("⚠️ Low efficiency (Over designed). Try reducing bolt size.")
+                    st.caption("Utilization:")
+                    st.progress(res['Utilization'] / 100.0)
                 
                 with col_right:
-                    # Draw Sketch (NEW!)
+                    # Draw with Dimensions!
                     fig = draw_connection_sketch(
-                        res['h'], res['Bolt Qty'], bolt_dia, res['Plate Len (cm)']*10, res['Le (cm)'], res['Spacing (cm)']
+                        res['h'], 
+                        res['Bolt Qty'], 
+                        bolt_dia, 
+                        res['Plate Len (cm)']*10, # mm
+                        res['Le (cm)'], 
+                        res['Spacing (cm)']
                     )
                     st.pyplot(fig)
                     
@@ -209,27 +253,10 @@ def render_report_tab(beam_data, conn_data):
         else:
              st.warning("Please select a beam first.")
 
-    # --- TAB B: BATCH ANALYSIS ---
-    st.subheader("🚀 Batch Analysis Table")
-    if st.button(f"⚡ Generate Table (Load={load_percent}%, Bolt=M{bolt_dia})", type="primary"):
+    # --- TAB B: TABLE ---
+    st.subheader("🚀 Batch Table")
+    if st.button(f"⚡ Generate Table"):
         all_beams = get_standard_sections()
-        results = []
-        progress_bar = st.progress(0)
-        
-        for i, beam in enumerate(all_beams):
-            progress_bar.progress((i + 1) / len(all_beams))
-            results.append(calculate_connection(beam, load_percent, bolt_dia))
-            
+        results = [calculate_connection(b, load_percent, bolt_dia) for b in all_beams]
         df_res = pd.DataFrame(results)
-        
-        st.dataframe(
-            df_res,
-            use_container_width=True,
-            column_config={
-                "Steel Section": st.column_config.TextColumn("Section"),
-                "Design Vu (Ton)": st.column_config.NumberColumn("Load (Ton)", format="%.2f"),
-                "Bolt Qty": st.column_config.NumberColumn("Bolts", format="%d"),
-                "Utilization": st.column_config.ProgressColumn("Efficiency", format="%.0f%%", min_value=0, max_value=100),
-            },
-            hide_index=True
-        )
+        st.dataframe(df_res, use_container_width=True, hide_index=True)
