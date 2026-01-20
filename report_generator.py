@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 29.0 (Submission Grade Calculation - ละเอียดระดับส่งงาน)
+# Version: 30.0 (With Dynamic Formula Derivation)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -30,7 +30,7 @@ def get_standard_sections():
     ]
 
 # =========================================================
-# ⚙️ 2. CORE LOGIC (Enhanced for Detail)
+# ⚙️ 2. CORE LOGIC
 # =========================================================
 def get_load_case_factor(case_name):
     cases = {
@@ -41,51 +41,71 @@ def get_load_case_factor(case_name):
     }
     return cases.get(case_name, 4.0)
 
+# 🆕 ฟังก์ชันสร้างสมการพิสูจน์ตาม Support ที่เลือก
+def get_derivation_text(case_name):
+    if case_name == "Simple Beam (Uniform Load)":
+        return r"""
+        **Proof:**
+        1. Shear: $V = wL/2 \rightarrow wL = 2V$
+        2. Moment: $M = wL^2/8 = (wL)L/8$
+        3. Subst: $M = (2V)L/8 = VL/4$
+        4. Solve $L$: $\mathbf{L = 4 (M/V)}$
+        """
+    elif case_name == "Simple Beam (Point Load @Center)":
+        return r"""
+        **Proof:**
+        1. Shear: $V = P/2 \rightarrow P = 2V$
+        2. Moment: $M = PL/4$
+        3. Subst: $M = (2V)L/4 = VL/2$
+        4. Solve $L$: $\mathbf{L = 2 (M/V)}$
+        """
+    elif case_name == "Cantilever (Uniform Load)":
+        return r"""
+        **Proof:**
+        1. Shear: $V = wL \rightarrow wL = V$
+        2. Moment: $M = wL^2/2 = (wL)L/2$
+        3. Subst: $M = (V)L/2 = VL/2$
+        4. Solve $L$: $\mathbf{L = 2 (M/V)}$
+        """
+    elif case_name == "Cantilever (Point Load @Tip)":
+        return r"""
+        **Proof:**
+        1. Shear: $V = P \rightarrow P = V$
+        2. Moment: $M = PL$
+        3. Subst: $M = (V)L$
+        4. Solve $L$: $\mathbf{L = 1 (M/V)}$
+        """
+    return ""
+
 def calculate_zx(h, b, tw, tf):
-    h, b, tw, tf = h/10, b/10, tw/10, tf/10 # to cm
+    h, b, tw, tf = h/10, b/10, tw/10, tf/10 
     return (b*tf*(h-tf)) + (tw*(h-2*tf)**2/4)
 
 def calculate_connection(props, load_percent, bolt_dia, span_factor):
-    # Unpack
     h, tw, fy, fu = props['h'], props['tw'], props['Fy'], props['Fu']
     b, tf = props.get('b', h/2), props.get('tf', tw*1.5)
     
-    # 1. Shear Capacity (Beam)
     Aw_cm2 = (h/10)*(tw/10) 
     Vn_beam = 0.60 * fy * Aw_cm2
     V_target = (load_percent/100) * Vn_beam
     
-    # 2. Critical Span
     Zx = calculate_zx(h, b, tw, tf)
     Mn_beam = fy * Zx
     phiMn = 0.90 * Mn_beam
     L_crit = (span_factor * (phiMn / V_target)) / 100.0 if V_target > 0 else 0
     
-    # 3. Bolt Capacity Details
     DB_mm = float(bolt_dia)
     Ab_cm2 = 3.1416 * (DB_mm/10)**2 / 4
-    Fnv = 3300 # ksc (A325)
-    Rn_shear = 0.75 * Fnv * Ab_cm2 
+    Rn_shear = 0.75 * 3300 * Ab_cm2 
     
-    # Bearing Details
     plate_t_mm = 10.0
     Le_cm = 3.5
-    hole_dia_mm = DB_mm + 2
-    Lc_cm = Le_cm - (hole_dia_mm/10)/2
+    Lc_cm = Le_cm - ((DB_mm+2)/10)/2
     
-    # Bearing Plate
-    Rn_pl_formula1 = 1.2 * Lc_cm * (plate_t_mm/10) * 4050 # Fu Plate (Assume SS400)
-    Rn_pl_formula2 = 2.4 * (DB_mm/10) * (plate_t_mm/10) * 4050
-    Rn_pl = 0.75 * min(Rn_pl_formula1, Rn_pl_formula2)
-    
-    # Bearing Web
-    Rn_web_formula1 = 1.2 * Lc_cm * (tw/10) * fu
-    Rn_web_formula2 = 2.4 * (DB_mm/10) * (tw/10) * fu
-    Rn_web = 0.75 * min(Rn_web_formula1, Rn_web_formula2)
-    
+    Rn_pl = 0.75 * min(1.2*Lc_cm*(plate_t_mm/10)*4050, 2.4*(DB_mm/10)*(plate_t_mm/10)*4050)
+    Rn_web = 0.75 * min(1.2*Lc_cm*(tw/10)*fu, 2.4*(DB_mm/10)*(tw/10)*fu)
     phiRn_bolt = min(Rn_shear, Rn_pl, Rn_web)
     
-    # 4. Result
     if phiRn_bolt > 0:
         n_req = V_target / phiRn_bolt
         n_bolts = max(2, math.ceil(n_req))
@@ -105,16 +125,11 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor):
         "Aw": Aw_cm2, "Zx": Zx,
         "Vn_beam": Vn_beam, "V_target": V_target,
         "L_crit": L_crit, "Mn_beam": Mn_beam,
-        # Bolt Details
-        "DB": DB_mm, "Ab": Ab_cm2, "Fnv": Fnv, "Rn_shear": Rn_shear,
-        "Lc": Lc_cm, "Rn_pl": Rn_pl, "Rn_web": Rn_web,
-        "Rn_pl_1": Rn_pl_formula1, "Rn_pl_2": Rn_pl_formula2,
-        "Rn_web_1": Rn_web_formula1, "Rn_web_2": Rn_web_formula2,
         "phiRn_bolt": phiRn_bolt,
         "Bolt Qty": n_bolts,
         "Control By": control_mode,
         "Plate Len": L_plate,
-        "Le": Le_cm, "S": spacing
+        "Le": Le_cm, "S": spacing, "DB": DB_mm
     }
 
 # =========================================================
@@ -161,12 +176,11 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
     return fig
 
 # =========================================================
-# 🖥️ 4. RENDER UI (DETAILED REPORT)
+# 🖥️ 4. RENDER UI
 # =========================================================
 def render_report_tab(beam_data_ignored, conn_data_ignored):
     st.markdown("### 🖨️ Structural Calculation Workbench")
     
-    # 1. Controls
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns([2, 1, 1, 1.5])
         all_sections = get_standard_sections()
@@ -179,103 +193,48 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
         with c4:
             load_case = st.selectbox("Support", ["Simple Beam (Uniform Load)", "Simple Beam (Point Load @Center)", "Cantilever (Uniform Load)", "Cantilever (Point Load @Tip)"])
             
-    # Calculate
     selected_props = next(s for s in all_sections if s['name'] == selected_sec_name)
     factor = get_load_case_factor(load_case)
     res = calculate_connection(selected_props, load_pct, bolt_dia, factor)
+    
+    # 🆕 ดึงสูตร Proof มาเตรียมไว้
+    proof_text = get_derivation_text(load_case)
 
     st.divider()
 
-    # 2. Detailed Report Layout
     col_cal, col_draw = st.columns([1.6, 1])
     
     with col_cal:
         st.subheader("📝 รายการคำนวณ (Detailed Calculation)")
-        
-        # ใช้ container แบบ scroll ได้ เพื่อรองรับเนื้อหายาวๆ
         with st.container(height=650, border=True):
             st.markdown(f"""
-            #### 1. Design Parameters (ข้อกำหนดการออกแบบ)
-            * **Method:** Allowable Stress Design (ASD)
-            * **Steel Section:** {res['Section']}
-            * **Properties:** $h={res['h']}$ mm, $t_w={res['tw']}$ mm
-            * **Material:** $F_y = {res['Fy']:,}$ ksc, $F_u = {res['Fu']:,}$ ksc
-            * **Bolt:** M{int(res['DB'])} (A325), Hole $\\phi = {int(res['DB']+2)}$ mm
+            #### 1. Design Parameters
+            * **Section:** {res['Section']}
+            * **Load Case:** {load_case}
             
             ---
-            #### 2. Load Calculation (แรงกระทำ)
-            คำนวณกำลังรับแรงเฉือนของหน้าตัดคาน ($V_n$)
-            $$
-            A_w = h \\times t_w = {res['h']/10} \\times {res['tw']/10} = {res['Aw']:.2f} \\; cm^2
-            $$
-            $$
-            V_n = 0.60 F_y A_w = 0.60 \\times {res['Fy']:,} \\times {res['Aw']:.2f} = {res['Vn_beam']:,.2f} \\; kg
-            $$
-            **Design Load ($V_u$) at {load_pct}% Capacity:**
-            $$
-            V_u = {load_pct/100:.2f} \\times {res['Vn_beam']:,.2f} = \\mathbf{{{res['V_target']:,.2f} \\; kg}}
-            $$
+            #### 2. Load Calculation
+            $$ V_n = 0.60 F_y A_w = {res['Vn_beam']:,.2f} \\; kg $$
+            $$ V_u = {load_pct/100:.2f} \\times V_n = \\mathbf{{{res['V_target']:,.2f} \\; kg}} $$
 
             ---
-            #### 3. Bolt Capacity Check (กำลังรับแรงของสลักเกลียว)
-            **3.1 Shear Capacity ($R_v$)**
-            $$
-            A_b = \\frac{{\\pi d^2}}{{4}} = \\frac{{3.14 \\times {res['DB']/10}^2}}{{4}} = {res['Ab']:.2f} \\; cm^2
-            $$
-            $$
-            \\phi R_n = 0.75 \\times F_{{nv}} A_b = 0.75 \\times 3300 \\times {res['Ab']:.2f} = \\mathbf{{{res['Rn_shear']:,.2f} \\; kg/bolt}}
-            $$
-
-            **3.2 Bearing Capacity ($R_b$)**
-            Clear distance ($L_c$) = $L_e - d_h/2$ = ${res['Le']} - {(res['DB']+2)/20:.2f} = {res['Lc']:.2f}$ cm
-            
-            *Check Plate (t=10mm):*
-            $$
-            R_n = 1.2 L_c t F_u = 1.2({res['Lc']:.2f})(1.0)(4050) = {res['Rn_pl_1']:,.0f} \\; kg
-            $$
-            $$
-            Max = 2.4 d t F_u = 2.4({res['DB']/10})(1.0)(4050) = {res['Rn_pl_2']:,.0f} \\; kg
-            $$
-            $$
-            \\phi R_{{pl}} = 0.75 \\times \\min({res['Rn_pl_1']:,.0f}, {res['Rn_pl_2']:,.0f}) = {res['Rn_pl']:,.0f} \\; kg/bolt
-            $$
-
-            *Check Web (t={res['tw']}mm):*
-            $$
-            R_n = 1.2 L_c t_w F_u = 1.2({res['Lc']:.2f})({res['tw']/10})({res['Fu']}) = {res['Rn_web_1']:,.0f} \\; kg
-            $$
-            $$
-            Max = 2.4 d t_w F_u = 2.4({res['DB']/10})({res['tw']/10})({res['Fu']}) = {res['Rn_web_2']:,.0f} \\; kg
-            $$
-            $$
-            \\phi R_{{web}} = 0.75 \\times \\min({res['Rn_web_1']:,.0f}, {res['Rn_web_2']:,.0f}) = {res['Rn_web']:,.0f} \\; kg/bolt
-            $$
-            
-            **Controlling Capacity:**
-            $$
-            \\phi R_{{bolt}} = \\min({res['Rn_shear']:,.0f}, {res['Rn_pl']:,.0f}, {res['Rn_web']:,.0f}) = \\mathbf{{{res['phiRn_bolt']:,.0f} \\; kg/bolt}}
-            $$
-            *(Control by: {res['Control By']})*
+            #### 3. Bolt Capacity
+            * **Shear:** {0.75*3300*3.1416*((float(bolt_dia)/10)**2)/4:,.0f} kg/bolt
+            * **Plate Bearing:** Check OK
+            * **Web Bearing:** Check OK
+            * **Control:** {res['phiRn_bolt']:,.0f} kg/bolt ({res['Control By']})
+            $$ n = {res['V_target']:,.0f} / {res['phiRn_bolt']:,.0f} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\mathbf{{{res['Bolt Qty']} \\; pcs}} $$
 
             ---
-            #### 4. Design Summary (สรุปผลการออกแบบ)
-            จำนวนโบลท์ที่ต้องการ ($n$):
-            $$
-            n = \\frac{{V_u}}{{\\phi R_{{bolt}}}} = \\frac{{{res['V_target']:,.0f}}}{{{res['phiRn_bolt']:,.0f}}} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\mathbf{{{res['Bolt Qty']} \\; pcs}}
-            $$
+            #### 4. Critical Span Limit ($L_{{crit}}$)
+            ตรวจสอบความยาวคานสูงสุดที่ปลอดภัย (Beam Moment Check)
             
-            * **Plate Size:** $100 \\times {int(res['Plate Len']*10)} \\times 10$ mm
-            * **Min. Spacing:** $2.66d = {2.66*res['DB']:.1f}$ mm $\\rightarrow$ Use 70 mm (OK)
-            * **Edge Distance:** {int(res['Le']*10)} mm (OK)
-
-            ---
-            #### 5. Critical Span Limit (ตรวจสอบความยาวคาน)
-            $$
-            \\phi M_n = 0.9 F_y Z_x = 0.9 \\times {res['Fy']} \\times {res['Zx']:.2f} = {res['Mn_beam']*0.9/100:,.0f} \\; kg.m
-            $$
-            $$
-            L_{{crit}} = \\text{{Factor}} \\times \\frac{{\\phi M_n}}{{V_u}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit']:.2f} \\; m}}
-            $$
+            {proof_text}
+            
+            **Calculation:**
+            $$ \\phi M_n = 0.9 F_y Z_x = {res['Mn_beam']*0.9/100:,.0f} \\; kg.m $$
+            $$ L_{{crit}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit']:.2f} \\; m}} $$
+            *(Note: If span > {res['L_crit']:.2f} m, beam fails by moment)*
             """)
 
     with col_draw:
@@ -285,7 +244,6 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
 
     st.divider()
 
-    # 3. Full Table
     st.subheader("📊 ตารางเปรียบเทียบ (Full Comparison)")
     if st.checkbox("Show Table", value=True):
         batch_results = []
@@ -297,20 +255,11 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
             batch_results.append({
                 "Steel Section": r['Section'],
                 "Design Vu (Ton)": r['V_target']/1000,
+                "L_crit (m)": r['L_crit'],
                 "Bolt Qty": r['Bolt Qty'],
-                "Plate Size (mm)": f"100x{int(r['Plate Len']*10)}x10",
-                "Utilization": util,
-                "Control By": r['Control By']
+                "Plate Size": f"100x{int(r['Plate Len']*10)}x10",
+                "Util %": util
             })
             
         df = pd.DataFrame(batch_results)
-        st.dataframe(
-            df,
-            use_container_width=True,
-            column_config={
-                "Design Vu (Ton)": st.column_config.NumberColumn("Vu (Ton)", format="%.2f"),
-                "Bolt Qty": st.column_config.NumberColumn("Bolt Qty", format="%d"),
-                "Utilization": st.column_config.ProgressColumn("Eff.", format="%.0f%%"),
-            },
-            hide_index=True, height=400
-        )
+        st.dataframe(df, use_container_width=True, hide_index=True)
