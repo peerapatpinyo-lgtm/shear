@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 26.0 (Ultimate Workbench: Manual Select + Calc Sheet + Classic Table)
+# Version: 27.0 (Full TIS Database - All Standard Sections)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,26 +8,59 @@ from datetime import datetime
 import math
 
 # =========================================================
-# 🏗️ 1. DATABASE
+# 🏗️ 1. FULL DATABASE (TIS Standard Wide Flange)
 # =========================================================
 def get_standard_sections():
-    # เรียงลำดับตามขนาดให้หาง่าย
+    # ข้อมูลเหล็ก Wide Flange มาตรฐาน มอก. (ครบถ้วน)
     return [
+        # Series 100
         {"name": "H-100x50x5x7",    "h": 100, "b": 50,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-100x100x6x8",   "h": 100, "b": 100, "tw": 6,  "tf": 8,  "Fy": 2500, "Fu": 4100},
+        # Series 125
         {"name": "H-125x60x6x8",    "h": 125, "b": 60,  "tw": 6,  "tf": 8,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-125x125x6.5x9", "h": 125, "b": 125, "tw": 6.5,"tf": 9,  "Fy": 2500, "Fu": 4100},
+        # Series 150
+        {"name": "H-148x100x6x9",   "h": 148, "b": 100, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
         {"name": "H-150x75x5x7",    "h": 150, "b": 75,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-150x150x7x10",  "h": 150, "b": 150, "tw": 7,  "tf": 10, "Fy": 2500, "Fu": 4100},
+        # Series 175
         {"name": "H-175x90x5x8",    "h": 175, "b": 90,  "tw": 5,  "tf": 8,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-175x175x7.5x11","h": 175, "b": 175, "tw": 7.5,"tf": 11, "Fy": 2500, "Fu": 4100},
+        # Series 200
+        {"name": "H-194x150x6x9",   "h": 194, "b": 150, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
         {"name": "H-200x100x5.5x8", "h": 200, "b": 100, "tw": 5.5,"tf": 8,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-250x125x6x9",    "h": 250, "b": 125, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-300x150x6.5x9",  "h": 300, "b": 150, "tw": 6.5,"tf": 9,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-350x175x7x11",   "h": 350, "b": 175, "tw": 7,  "tf": 11, "Fy": 2500, "Fu": 4100},
-        {"name": "H-400x200x8x13",   "h": 400, "b": 200, "tw": 8,  "tf": 13, "Fy": 2500, "Fu": 4100},
-        {"name": "H-450x200x9x14",   "h": 450, "b": 200, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
-        {"name": "H-500x200x10x16",  "h": 500, "b": 200, "tw": 10, "tf": 16, "Fy": 2500, "Fu": 4100},
-        {"name": "H-600x200x11x17",  "h": 600, "b": 200, "tw": 11, "tf": 17, "Fy": 2500, "Fu": 4100},
-        {"name": "H-700x300x13x24",  "h": 700, "b": 300, "tw": 13, "tf": 24, "Fy": 2500, "Fu": 4100},
-        {"name": "H-800x300x14x26",  "h": 800, "b": 300, "tw": 14, "tf": 26, "Fy": 2500, "Fu": 4100},
-        {"name": "H-900x300x16x28",  "h": 900, "b": 300, "tw": 16, "tf": 28, "Fy": 2500, "Fu": 4100},
+        {"name": "H-200x200x8x12",  "h": 200, "b": 200, "tw": 8,  "tf": 12, "Fy": 2500, "Fu": 4100},
+        # Series 250
+        {"name": "H-244x175x7x11",  "h": 244, "b": 175, "tw": 7,  "tf": 11, "Fy": 2500, "Fu": 4100},
+        {"name": "H-250x125x6x9",   "h": 250, "b": 125, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-250x250x9x14",  "h": 250, "b": 250, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
+        # Series 300
+        {"name": "H-294x200x8x12",  "h": 294, "b": 200, "tw": 8,  "tf": 12, "Fy": 2500, "Fu": 4100},
+        {"name": "H-300x150x6.5x9", "h": 300, "b": 150, "tw": 6.5,"tf": 9,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-300x300x10x15", "h": 300, "b": 300, "tw": 10, "tf": 15, "Fy": 2500, "Fu": 4100},
+        # Series 350
+        {"name": "H-340x250x9x14",  "h": 340, "b": 250, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
+        {"name": "H-350x175x7x11",  "h": 350, "b": 175, "tw": 7,  "tf": 11, "Fy": 2500, "Fu": 4100},
+        {"name": "H-350x350x12x19", "h": 350, "b": 350, "tw": 12, "tf": 19, "Fy": 2500, "Fu": 4100},
+        # Series 400
+        {"name": "H-390x300x10x16", "h": 390, "b": 300, "tw": 10, "tf": 16, "Fy": 2500, "Fu": 4100},
+        {"name": "H-400x200x8x13",  "h": 400, "b": 200, "tw": 8,  "tf": 13, "Fy": 2500, "Fu": 4100},
+        {"name": "H-400x400x13x21", "h": 400, "b": 400, "tw": 13, "tf": 21, "Fy": 2500, "Fu": 4100},
+        # Series 450
+        {"name": "H-440x300x11x18", "h": 440, "b": 300, "tw": 11, "tf": 18, "Fy": 2500, "Fu": 4100},
+        {"name": "H-450x200x9x14",  "h": 450, "b": 200, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
+        # Series 500
+        {"name": "H-482x300x11x15", "h": 482, "b": 300, "tw": 11, "tf": 15, "Fy": 2500, "Fu": 4100},
+        {"name": "H-488x300x11x18", "h": 488, "b": 300, "tw": 11, "tf": 18, "Fy": 2500, "Fu": 4100},
+        {"name": "H-500x200x10x16", "h": 500, "b": 200, "tw": 10, "tf": 16, "Fy": 2500, "Fu": 4100},
+        # Series 600
+        {"name": "H-582x300x12x17", "h": 582, "b": 300, "tw": 12, "tf": 17, "Fy": 2500, "Fu": 4100},
+        {"name": "H-588x300x12x20", "h": 588, "b": 300, "tw": 12, "tf": 20, "Fy": 2500, "Fu": 4100},
+        {"name": "H-600x200x11x17", "h": 600, "b": 200, "tw": 11, "tf": 17, "Fy": 2500, "Fu": 4100},
+        # Series 700-900 (Large)
+        {"name": "H-700x300x13x24", "h": 700, "b": 300, "tw": 13, "tf": 24, "Fy": 2500, "Fu": 4100},
+        {"name": "H-800x300x14x26", "h": 800, "b": 300, "tw": 14, "tf": 26, "Fy": 2500, "Fu": 4100},
+        {"name": "H-900x300x16x28", "h": 900, "b": 300, "tw": 16, "tf": 28, "Fy": 2500, "Fu": 4100},
     ]
 
 # =========================================================
@@ -163,7 +196,7 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
     st.markdown("### 🖨️ Structural Connection Workbench")
     
     # -------------------------------------------
-    # 🎛️ 1. INPUT CONTROL (Select Section Here!)
+    # 🎛️ 1. INPUT CONTROL
     # -------------------------------------------
     with st.container(border=True):
         st.markdown("**1. Configuration (กำหนดค่า)**")
@@ -173,8 +206,8 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
         sec_names = [s['name'] for s in all_sections]
         
         with c1:
-            # เลือกเหล็กตรงนี้ได้เลย!
-            selected_sec_name = st.selectbox("🏗️ Select Steel Section", sec_names, index=6)
+            # เลือกเหล็ก (Default เลือกตัวที่ 10 เพื่อให้เห็นภาพ)
+            selected_sec_name = st.selectbox("🏗️ Select Steel Section", sec_names, index=10)
         with c2:
             load_pct = st.number_input("Load %", 10, 100, 75, step=5)
         with c3:
@@ -187,11 +220,9 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
                 "Cantilever (Point Load @Tip)"
             ])
             
-    # หาข้อมูลเหล็กที่เลือก
+    # Calculate
     selected_props = next(s for s in all_sections if s['name'] == selected_sec_name)
     factor = get_load_case_factor(load_case)
-    
-    # Run Calculation
     res = calculate_connection(selected_props, load_pct, bolt_dia, factor)
 
     st.divider()
@@ -249,8 +280,7 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
     # -------------------------------------------
     st.subheader("📊 ตารางเปรียบเทียบทุกหน้าตัด (Classic Table)")
     
-    if st.checkbox("Show Full Table", value=True):
-        # Run loop for all
+    if st.checkbox("Show Full Table (All TIS Sections)", value=True):
         batch_results = []
         for sec in all_sections:
             r = calculate_connection(sec, load_pct, bolt_dia, factor)
@@ -259,7 +289,6 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
                 "Design Vu (Ton)": r['V_target']/1000,
                 "Max Span (m)": r['L_crit'],
                 "Bolt Qty": r['Bolt Qty'],
-                "Bolt Spec": r['Bolt Spec'],
                 "Control By": r['Control By']
             })
             
@@ -273,5 +302,6 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
                 "Max Span (m)": st.column_config.NumberColumn("Max Span (m)", format="%.2f", help="ความยาววิกฤต"),
                 "Bolt Qty": st.column_config.NumberColumn("Bolt Qty", format="%d"),
             },
-            hide_index=True
+            hide_index=True,
+            height=500
         )
