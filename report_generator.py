@@ -1,197 +1,135 @@
 # report_generator.py
-# Version: 7.0 (Visual Dashboard & Deep Detail)
+# Version: 8.0 (Official Document Style - Clean & Formal)
 import streamlit as st
 from datetime import datetime
 
 def render_report_tab(beam_data, conn_data):
-    # --- 1. ส่วนหัวและ Input ---
-    st.markdown("## 📑 รายงานตรวจสอบความมั่นคงแข็งแรง (Structural Report)")
-    st.caption("Detailed Calculation Report according to AISC 360-22 (LRFD Method)")
-
-    with st.expander("📝 ตั้งค่าข้อมูลโครงการ (Project Info)", expanded=True):
+    # --- 1. ส่วนตั้งค่า (Input) ---
+    st.markdown("### 📄 พิมพ์รายงานรายการคำนวณ")
+    
+    with st.expander("🛠️ ตั้งค่าหัวกระดาษ", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
-            project_name = st.text_input("ชื่อโครงการ", value="โครงการก่อสร้างชั้นลอยโกดังสินค้า")
-            owner_name = st.text_input("เจ้าของโครงการ", value="บริษัท สยามอุตสาหกรรม จำกัด")
+            project = st.text_input("โครงการ", value="ก่อสร้างโรงจอดรถโครงสร้างเหล็ก")
+            owner = st.text_input("เจ้าของงาน", value="คุณสมศักดิ์ รักดี")
         with c2:
-            engineer_name = st.text_input("วิศวกรผู้ออกแบบ", value="นายสมชาย ใจดี (สย. 12345)")
-            doc_no = st.text_input("เลขที่เอกสาร", value=f"CALC-{datetime.now().strftime('%Y%m%d')}-01")
+            engineer = st.text_input("วิศวกรผู้ออกแบบ", value="นายก่อสร้าง มั่นคง (สย.XXXX)")
+            date_str = datetime.now().strftime("%d/%m/%Y")
 
     if not beam_data:
         st.warning("⚠️ กรุณากดคำนวณที่ Tab 1 ก่อนครับ")
         return
 
-    # --- 2. ดึงข้อมูล (Extraction) ---
-    sec_name = beam_data.get('sec_name', '-')
+    # --- 2. เตรียมข้อมูล ---
+    # ดึงค่าตัวแปร
+    sec = beam_data.get('sec_name', '-')
     span = beam_data.get('user_span', 0)
     fy = beam_data.get('Fy', 0)
     
-    # Load & Capacity
-    m_act = beam_data.get('m_act', 0)
-    m_cap = beam_data.get('mn', 0)
-    ratio_m = beam_data.get('ratio_m', 0)
-
-    v_act = beam_data.get('v_act', 0)
-    v_cap = beam_data.get('vn', 0)
-    ratio_v = beam_data.get('ratio_v', 0)
-
-    d_act = beam_data.get('defl_act', 0)
-    d_all = beam_data.get('defl_all', 0)
-    ratio_d = beam_data.get('ratio_d', 0)
-
-    # Section Properties (สมมติค่าหรือดึงจาก Database)
-    area = beam_data.get('area', 0)
-    ix = beam_data.get('Ix', 0)
-    zx = beam_data.get('Zx', 0)
-    bf = beam_data.get('bf', 0) # ความกว้างปีก
-    d = beam_data.get('d', 0)   # ความลึกคาน
+    # ผลลัพธ์
+    m_act, m_cap = beam_data.get('m_act', 0), beam_data.get('mn', 0)
+    v_act, v_cap = beam_data.get('v_act', 0), beam_data.get('vn', 0)
+    d_act, d_all = beam_data.get('defl_act', 0), beam_data.get('defl_all', 0)
     
-    # ประมวลผลสถานะ
-    max_ratio = max(ratio_m, ratio_v, ratio_d)
-    is_pass = max_ratio <= 1.0
-    curr_date = datetime.now().strftime("%d/%m/") + str(datetime.now().year + 543)
+    r_m, r_v, r_d = beam_data.get('ratio_m', 0), beam_data.get('ratio_v', 0), beam_data.get('ratio_d', 0)
+    max_r = max(r_m, r_v, r_d)
+    is_pass = max_r <= 1.0
 
-    st.divider()
-
-    # --- 3. ส่วนหัวรายงาน (Header) ---
-    st.header(f"🏗️ {project_name}")
-    st.markdown(f"**เจ้าของงาน:** {owner_name} | **วิศวกร:** {engineer_name} | **วันที่:** {curr_date}")
-
-    # Banner สถานะรวม
-    if is_pass:
-        st.success(f"### ✅ ผลสรุป: โครงสร้างปลอดภัย (APPROVED)\nใช้งานไป **{max_ratio*100:.1f}%** ของขีดจำกัดสูงสุด (Safety Margin = {100-(max_ratio*100):.1f}%)")
-    else:
-        st.error(f"### ❌ ผลสรุป: อันตราย/ไม่ผ่านเกณฑ์ (REJECTED)\nโครงสร้างรับน้ำหนักเกินพิกัด **{(max_ratio-1)*100:.1f}%** กรุณาแก้ไขแบบทันที")
-
-    # --- 4. Tab System ---
-    tab_dashboard, tab_detail, tab_conn = st.tabs([
-        "📊 แดชบอร์ดความปลอดภัย (Visual)", 
-        "🧮 รายการคำนวณวิศวกรรม (Detailed)", 
-        "🔩 รายละเอียดวัสดุและจุดต่อ (Specs)"
-    ])
-
-    # === TAB 1: Visual Dashboard (เข้าใจง่าย) ===
-    with tab_dashboard:
-        st.markdown("#### ประสิทธิภาพการรับน้ำหนัก (Utilization Ratio)")
-        st.caption("แถบสีแสดงเปอร์เซ็นต์การใช้งานโครงสร้าง (ยิ่งน้อยยิ่งปลอดภัย)")
-
-        # Helper function สร้าง Progress Bar
-        def create_progress(label, act, cap, unit, ratio, desc):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.markdown(f"**{label}** ({desc})")
-                bar_val = min(ratio, 1.0)
-                bar_color = "green" if ratio <= 0.8 else ("orange" if ratio <= 1.0 else "red")
-                st.progress(bar_val, text=f"ใช้งาน {ratio*100:.1f}%")
-            with col2:
-                st.metric(label="Demand / Capacity", value=f"{ratio:.2f}", delta_color="inverse" if ratio > 1 else "normal")
-                st.caption(f"{act:,.0f} / {cap:,.0f} {unit}")
-
-        # 1. Moment
-        create_progress("1. แรงดัด (Moment)", m_act, m_cap, "kg-m", ratio_m, 
-                        "แรงที่พยายามหักกลางคาน")
-        
-        # 2. Shear
-        create_progress("2. แรงเฉือน (Shear)", v_act, v_cap, "kg", ratio_v, 
-                        "แรงที่พยายามตัดคานขาดที่ขั้ว")
-        
-        # 3. Deflection
-        st.markdown("---")
-        col_d1, col_d2 = st.columns([3, 1])
-        with col_d1:
-            st.markdown(f"**3. การแอ่นตัว (Deflection)** (อาการตกท้องช้าง)")
-            bar_val_d = min(ratio_d, 1.0)
-            st.progress(bar_val_d, text=f"แอ่นจริง {d_act:.2f} cm / ยอมให้ {d_all:.2f} cm")
-        with col_d2:
-            st.metric("Ratio", f"{ratio_d:.2f}")
-
-    # === TAB 2: Engineering Calculation (ละเอียด) ===
-    with tab_detail:
-        st.info("ℹ️ ส่วนนี้แสดงสูตรและที่มาของการคำนวณตามมาตรฐาน AISC 360-22")
-        
-        with st.expander("1. สมมติฐานการออกแบบ (Design Criteria)", expanded=True):
-            st.markdown(f"""
-            * **มาตรฐาน:** AISC 360-22 (Specification for Structural Steel Buildings)
-            * **วิธีคำนวณ:** LRFD (Load and Resistance Factor Design) หรือ ASD ตามการตั้งค่า
-            * **ประเภทหน้าตัด:** {sec_name} (Compact Section)
-            * **ความยาวช่วงคาน (L):** {span:.2f} เมตร
-            * **การค้ำยันด้านข้าง (Lb):** {beam_data.get('Lb', 0):.2f} เมตร (Unbraced Length)
-            """)
-
-        st.markdown("#### 2. การตรวจสอบการรับแรงดัด (Flexural Check)")
-        st.latex(r"\text{Condition: } M_u \leq \phi M_n")
-        
-        c_m1, c_m2 = st.columns(2)
-        with c_m1:
-            st.markdown("**Load Effect (Demand):**")
-            st.write(f"$M_u$ = {m_act:,.2f} kg-m")
-            st.caption("คำนวณจากน้ำหนักบรรทุกคงที่ + น้ำหนักบรรทุกจร")
-        with c_m2:
-            st.markdown("**Design Strength (Capacity):**")
-            st.write(f"$\\phi M_n$ = {m_cap:,.2f} kg-m")
-            st.caption(f"คำนวณจาก $0.9 F_y Z_x$ หรือ $C_b$ factor")
-        
-        st.markdown("#### 3. การตรวจสอบแรงเฉือน (Shear Check)")
-        st.latex(r"\text{Condition: } V_u \leq \phi V_n")
-        st.write(f"$V_u$ (แรงที่เกิด) = {v_act:,.0f} kg  |  $\\phi V_n$ (รับได้) = {v_cap:,.0f} kg")
-
-        st.markdown("#### 4. การตรวจสอบระยะแอ่น (Serviceability)")
-        st.markdown(f"เกณฑ์มาตรฐาน $L/{span*100/d_all:.0f}$ (สำหรับคานทั่วไป)")
-        st.write(f"ระยะแอ่นที่เกิดขึ้นจริง $\\Delta_{{actual}}$ = **{d_act:.2f} cm**")
-        st.write(f"ระยะแอ่นที่ยอมให้ $\\Delta_{{allow}}$ = **{d_all:.2f} cm**")
-
-    # === TAB 3: Specification & Connection (สเปก) ===
-    with tab_conn:
-        c_spec1, c_spec2 = st.columns(2)
-        with c_spec1:
-            st.markdown("### 🧱 ข้อมูลวัสดุ (Material)")
-            st.markdown(f"""
-            * **เหล็กเกรด:** {beam_data.get('grade', 'SS400/A36')}
-            * **จุดคลาก ($F_y$):** {fy:,} ksc (kg/cm²)
-            * **แรงดึงประลัย ($F_u$):** {beam_data.get('Fu', 4100):,} ksc
-            * **โมดูลัสยืดหยุ่น ($E$):** 2,040,000 ksc
-            """)
-        
-        with c_spec2:
-            st.markdown("### 📐 มิติหน้าตัด (Dimension)")
-            st.markdown(f"""
-            * **ความลึก (d):** {d} mm
-            * **ปีกกว้าง (bf):** {bf} mm
-            * **เนื้อที่ (Area):** {area} cm²
-            * **Modulus ($Z_x$):** {zx} cm³
-            """)
-
-        st.divider()
-        
-        conn_type = conn_data.get('type', 'ยังไม่ระบุ')
-        st.markdown(f"### 🔩 รายละเอียดจุดต่อ (Connection Detail)")
-        st.info(f"รูปแบบที่เลือก: **{conn_type}**")
-        
-        st.table({
-            "รายการ": ["เกรดน็อตสกรู (Bolt)", "เกรดลวดเชื่อม (Electrode)", "ขนาดรอยเชื่อม (Weld Size)"],
-            "รายละเอียด": ["ASTM A325 / F10T (High Strength)", "E70xx (Low Hydrogen)", "6mm (Fillet Weld) รอบรอยต่อ"]
-        })
-        st.caption("*หมายเหตุ: รายละเอียดจุดต่อเป็นข้อแนะนำเบื้องต้น ผู้ควบคุมงานต้องตรวจสอบหน้างานจริง")
-
-    # --- Footer ---
+    # --- 3. ส่วนแสดงผลจำลองกระดาษ A4 (Container) ---
     st.markdown("---")
-    st.markdown("#### 📝 บันทึกข้อเสนอแนะ (Remarks)")
-    st.text_area("หมายเหตุเพิ่มเติมจากวิศวกร:", height=100, placeholder="เช่น เหล็กต้องทาสีกันสนิม 2 รอบ หรือ ต้องค้ำยันระหว่างเทคอนกรีต...")
+    
+    # สร้างกรอบเอกสาร
+    with st.container(border=True):
+        
+        # 3.1 หัวกระดาษ (Header)
+        st.markdown(f"""
+        <div style="text-align: center; border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 20px;">
+            <h2 style="margin: 0; color: black;">รายการคำนวณโครงสร้างคานเหล็ก</h2>
+            <p style="margin: 5px; color: #555;">STRUCTURAL STEEL BEAM DESIGN CALCULATION</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-    col_sign1, col_sign2 = st.columns(2)
-    with col_sign1:
-        st.markdown("<br>__________________________", unsafe_allow_html=True)
-        st.markdown(f"**{engineer_name}**")
-        st.caption("วิศวกรโครงสร้าง (Structural Engineer)")
-    with col_sign2:
-        st.markdown("<br>__________________________", unsafe_allow_html=True)
-        st.markdown(f"**{owner_name}**")
-        st.caption("ผู้อนุมัติ (Authorized Signature)")
+        # ข้อมูลโครงการ
+        st.markdown(f"""
+        **โครงการ:** {project}  
+        **เจ้าของงาน:** {owner}  
+        **วิศวกรผู้ออกแบบ:** {engineer}  
+        **วันที่คำนวณ:** {date_str}
+        """)
+        
+        st.markdown("---")
 
-    st.markdown("""
-    <style>
-    .stProgress > div > div > div > div {
-        background-color: #1e3a8a;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+        # 3.2 ข้อมูลการออกแบบ (Design Data)
+        st.markdown("#### 1. ข้อมูลการออกแบบ (Design Criteria)")
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            st.markdown(f"""
+            * **หน้าตัดเหล็ก:** {sec}
+            * **มาตรฐานเหล็ก:** JIS / ASTM
+            * **กำลังจุดคลาก (Fy):** {fy:,} ksc
+            """)
+        with col_d2:
+            st.markdown(f"""
+            * **ความยาวคาน (Span):** {span:.2f} m.
+            * **ระยะค้ำยัน (Lb):** {beam_data.get('Lb', 0):.2f} m.
+            * **มาตรฐานการออกแบบ:** AISC 360-16 (LRFD)
+            """)
+
+        # 3.3 ตารางผลการคำนวณ (Results Table)
+        st.markdown("#### 2. ผลการตรวจสอบกำลังรับน้ำหนัก (Calculation Results)")
+        
+        # ใช้ Column เพื่อจัด Layout แบบตารางที่สะอาดตา
+        # Header Row
+        h1, h2, h3, h4, h5 = st.columns([2, 1.5, 1.5, 1, 1])
+        h1.markdown("**รายการตรวจสอบ**")
+        h2.markdown("**แรงที่เกิด (Mu/Vu)**")
+        h3.markdown("**แรงที่รับได้ (Mn/Vn)**")
+        h4.markdown("**Ratio**")
+        h5.markdown("**ผลลัพธ์**")
+        st.markdown("<hr style='margin: 5px 0; border-top: 1px solid #ddd;'>", unsafe_allow_html=True)
+
+        # Row 1: Moment
+        r1_1, r1_2, r1_3, r1_4, r1_5 = st.columns([2, 1.5, 1.5, 1, 1])
+        r1_1.markdown("1. โมเมนต์ดัด (Moment)")
+        r1_2.markdown(f"{m_act:,.2f} kg-m")
+        r1_3.markdown(f"{m_cap:,.2f} kg-m")
+        r1_4.markdown(f"{r_m:.2f}")
+        r1_5.markdown(f"{'✅ ผ่าน' if r_m <=1 else '❌ ไม่ผ่าน'}")
+
+        # Row 2: Shear
+        r2_1, r2_2, r2_3, r2_4, r2_5 = st.columns([2, 1.5, 1.5, 1, 1])
+        r2_1.markdown("2. แรงเฉือน (Shear)")
+        r2_2.markdown(f"{v_act:,.2f} kg")
+        r2_3.markdown(f"{v_cap:,.2f} kg")
+        r2_4.markdown(f"{r_v:.2f}")
+        r2_5.markdown(f"{'✅ ผ่าน' if r_v <=1 else '❌ ไม่ผ่าน'}")
+
+        # Row 3: Deflection
+        r3_1, r3_2, r3_3, r3_4, r3_5 = st.columns([2, 1.5, 1.5, 1, 1])
+        r3_1.markdown("3. การแอ่นตัว (Deflection)")
+        r3_2.markdown(f"{d_act:.2f} cm")
+        r3_3.markdown(f"{d_all:.2f} cm")
+        r3_4.markdown(f"{r_d:.2f}")
+        r3_5.markdown(f"{'✅ ผ่าน' if r_d <=1 else '❌ ไม่ผ่าน'}")
+
+        st.markdown("---")
+
+        # 3.4 สรุปผล (Conclusion)
+        if is_pass:
+            st.success(f"**บทสรุป: โครงสร้างมีความมั่นคงแข็งแรง (PASSED)** | อัตราส่วนการรับแรงสูงสุด = {max_r:.2f}")
+        else:
+            st.error(f"**บทสรุป: โครงสร้างไม่ผ่านเกณฑ์ (FAILED)** | กรุณาเพิ่มขนาดหน้าตัดหรือลดระยะช่วงพาด")
+        
+        st.markdown(f"**หมายเหตุจุดต่อ:** {conn_data.get('summary', '-')}")
+
+        # 3.5 ส่วนลงนาม
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        s1, s2 = st.columns(2)
+        with s1:
+            st.markdown("..........................................................")
+            st.markdown(f"({engineer})")
+            st.markdown("วิศวกรผู้ออกแบบ")
+        with s2:
+            st.markdown("..........................................................")
+            st.markdown(f"({owner})")
+            st.markdown("ผู้อนุมัติโครงการ")
