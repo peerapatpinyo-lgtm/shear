@@ -1,4 +1,4 @@
-#app.py
+# app.py
 
 import streamlit as st
 import math
@@ -20,6 +20,7 @@ try:
     import report_generator
     import tab1_analysis
     import tab3_ltb
+    import tab5_baseplate # เพิ่ม Module ใหม่
 except ImportError as e:
     st.error(f"⚠️ Modules missing: {e}")
     st.stop()
@@ -160,7 +161,6 @@ with st.sidebar:
     st.markdown("---")
     st.write("📐 **Load Position & Reductions**")
     
-    
     ecc_e = st.number_input("Eccentricity 'e' (mm)", value=50, step=5, help="Distance from support face to bolt group centroid")
     
     # Calculate Reduction
@@ -277,7 +277,6 @@ else:
     
     w_safe = min(w_safe_shear, w_safe_moment, w_safe_defl)
     
-    # Back-calculate forces at this "Limit"
     v_act = (w_safe * user_span) / 2
     m_act = (w_safe * user_span**2) / 8
     
@@ -361,7 +360,14 @@ st.session_state.cal_success = True
 # ==========================================
 # 6. UI RENDERING
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Analysis & Graphs", "🔩 Connection Detail", "🛡️ LTB Insight", "📝 Report"])
+# เพิ่ม tab5 เข้าไปในการประกาศตัวแปร
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📊 Analysis & Graphs", 
+    "🔩 Connection Detail", 
+    "🛡️ LTB Insight", 
+    "📝 Report", 
+    "🧱 Base Plate"
+])
 
 # --- TAB 1: ANALYSIS & GRAPHS ---
 with tab1:
@@ -408,7 +414,8 @@ with tab4:
         )
     else:
         st.warning("Please complete analysis first.")
-# ภายใน tab5 (สร้างใหม่)
+
+# --- TAB 5: BASE PLATE (แก้ไข NameError) ---
 with tab5:
     if st.session_state.cal_success:
         # ส่งแรงปฏิกิริยา (v_at_bolt หรือ v_support_design) ไปคำนวณ
