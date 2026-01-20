@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 35.0 (Professional Shop Drawing Edition)
+# Version: 36.0 (Professional Shop Drawing + X & Y Dimensions)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -134,33 +134,33 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor):
     }
 
 # =========================================================
-# 🎨 3. PROFESSIONAL SHOP DRAWING (NEW!)
+# 🎨 3. PROFESSIONAL SHOP DRAWING (X & Y Axis)
 # =========================================================
 def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spacing_cm):
     # 1. Setup Canvas (Standard Blueprint Ratio)
     fig, ax = plt.subplots(figsize=(5, 7.5))
     
-    # Styling Constants (Blueprint Theme)
-    COLOR_OBJ = '#2C3E50' # Dark slate blue for objects
-    COLOR_DIM = '#E74C3C' # Professional red for dimensions
-    COLOR_CENTER = '#95A5A6' # Light grey for centerlines
+    # Styling Constants
+    COLOR_OBJ = '#2C3E50' 
+    COLOR_DIM = '#E74C3C' 
+    COLOR_CENTER = '#95A5A6'
     LW_OBJ = 2.0
     LW_DIM = 1.0
     
     # Geometry Calculation
-    web_w_draw = 200 # Arbitrary drawing width for web
+    web_w_draw = 200 
     h_draw_area = h_beam + 120
     plate_w = 100
     plate_x = (web_w_draw - plate_w) / 2
     plate_y_start = (h_beam - plate_len_mm) / 2 + 60
     
     # --- DRAWING OBJECTS ---
-    # 2. Beam Web (Context)
+    # 2. Beam Web
     web_rect = patches.Rectangle((0, 0), web_w_draw, h_draw_area, linewidth=0, facecolor='#ECF0F1', zorder=1)
     ax.add_patch(web_rect)
     ax.text(10, h_draw_area - 20, "BEAM WEB (ELEVATION)", fontsize=9, color=COLOR_OBJ, fontweight='bold')
     
-    # 3. Shear Plate (Main Object)
+    # 3. Shear Plate
     plate_rect = patches.Rectangle((plate_x, plate_y_start), plate_w, plate_len_mm, linewidth=LW_OBJ, edgecolor=COLOR_OBJ, facecolor='#D6EAF8', zorder=2)
     ax.add_patch(plate_rect)
     
@@ -168,54 +168,62 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
     bolt_x_center = plate_x + (plate_w / 2)
     bolt_y_top = plate_y_start + plate_len_mm - (le_cm*10)
     
-    # 4.1 Vertical Centerlines (The mark of a pro drawing)
-    ax.vlines(web_w_draw/2, 0, h_draw_area, colors=COLOR_CENTER, linestyles='-.', linewidth=0.8, zorder=1.5) # Beam Center
-    ax.vlines(bolt_x_center, plate_y_start-10, plate_y_start+plate_len_mm+10, colors=COLOR_CENTER, linestyles='-.', linewidth=0.8, zorder=1.5) # Bolt Group Center
+    # Vertical Centerlines
+    ax.vlines(web_w_draw/2, 0, h_draw_area, colors=COLOR_CENTER, linestyles='-.', linewidth=0.8, zorder=1.5) 
+    ax.vlines(bolt_x_center, plate_y_start-30, plate_y_start+plate_len_mm+10, colors=COLOR_CENTER, linestyles='-.', linewidth=0.8, zorder=1.5) 
 
     bolt_ys = []
     curr_y = bolt_y_top
     for i in range(n_bolts):
         bolt_ys.append(curr_y)
-        # Bolt Circle
         circle = patches.Circle((bolt_x_center, curr_y), radius=(bolt_dia+2)/2, edgecolor=COLOR_OBJ, facecolor='white', linewidth=1.5, zorder=3)
         ax.add_patch(circle)
-        # Horizontal Centerline for each bolt
         ax.hlines(curr_y, bolt_x_center-15, bolt_x_center+15, colors=COLOR_CENTER, linestyles='-.', linewidth=0.5, zorder=3)
         curr_y -= (spacing_cm*10)
 
-    # --- DIMENSIONING (Professional Arrows) ---
+    # --- DIMENSIONING ---
+    def draw_dim_arrow(y_start, y_end, x_pos, text_val, label_prefix="", orient='v'):
+        if orient == 'v':
+            ax.annotate(text='', xy=(x_pos, y_start), xytext=(x_pos, y_end), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM))
+            mid_y = (y_start + y_end) / 2
+            txt = f"{label_prefix} {int(text_val)}" if label_prefix else f"{int(text_val)}"
+            ax.text(x_pos + 8, mid_y, txt, color=COLOR_DIM, fontsize=9, va='center')
+            ax.plot([plate_x+plate_w, x_pos+2], [y_start, y_start], color=COLOR_DIM, lw=0.5, ls=':')
+            ax.plot([plate_x+plate_w, x_pos+2], [y_end, y_end], color=COLOR_DIM, lw=0.5, ls=':')
+        else:
+            # Horizontal Arrow (for X-Axis)
+            ax.annotate(text='', xy=(y_start, x_pos), xytext=(y_end, x_pos), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM))
+            mid_x = (y_start + y_end) / 2
+            txt = f"{int(text_val)}"
+            ax.text(mid_x, x_pos - 8, txt, color=COLOR_DIM, fontsize=9, ha='center', va='top')
+            
+    # 5.1 Y-Axis Dimensions (Right Side)
     dim_x_offset = plate_x + plate_w + 25
-    
-    # Helper function for professional arrow dimensions
-    def draw_dim_arrow(y_start, y_end, x_pos, text_val, label_prefix=""):
-        ax.annotate(
-            text='', xy=(x_pos, y_start), xytext=(x_pos, y_end),
-            arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM, shrinkA=0, shrinkB=0)
-        )
-        mid_y = (y_start + y_end) / 2
-        text_display = f"{label_prefix} {int(text_val)}" if label_prefix else f"{int(text_val)}"
-        ax.text(x_pos + 8, mid_y, text_display, color=COLOR_DIM, fontsize=9, va='center')
-        # Extension lines (thin)
-        ax.plot([plate_x+plate_w, x_pos+2], [y_start, y_start], color=COLOR_DIM, lw=0.5, ls=':')
-        ax.plot([plate_x+plate_w, x_pos+2], [y_end, y_end], color=COLOR_DIM, lw=0.5, ls=':')
-
-    # 5.1 Detailed Dimensions (Chain)
-    draw_dim_arrow(plate_y_start + plate_len_mm, bolt_ys[0], dim_x_offset, le_cm*10, "Le")
+    draw_dim_arrow(plate_y_start + plate_len_mm, bolt_ys[0], dim_x_offset, le_cm*10, "Le", 'v')
     for i in range(len(bolt_ys)-1):
-        draw_dim_arrow(bolt_ys[i], bolt_ys[i+1], dim_x_offset, spacing_cm*10, "S")
-    draw_dim_arrow(bolt_ys[-1], plate_y_start, dim_x_offset, le_cm*10, "Le")
+        draw_dim_arrow(bolt_ys[i], bolt_ys[i+1], dim_x_offset, spacing_cm*10, "S", 'v')
+    draw_dim_arrow(bolt_ys[-1], plate_y_start, dim_x_offset, le_cm*10, "Le", 'v')
     
-    # 5.2 Total Height Dimension (Outer)
+    # 5.2 X-Axis Dimensions (Bottom Side) - NEW! 🆕
+    dim_y_horz = plate_y_start - 20
+    # Left Edge to Center
+    draw_dim_arrow(plate_x, bolt_x_center, dim_y_horz, plate_w/2, "", 'h')
+    # Center to Right Edge
+    draw_dim_arrow(bolt_x_center, plate_x+plate_w, dim_y_horz, plate_w/2, "", 'h')
+    
+    # Extension lines for X-axis
+    ax.plot([plate_x, plate_x], [plate_y_start, dim_y_horz-2], color=COLOR_DIM, lw=0.5, ls=':')
+    ax.plot([bolt_x_center, bolt_x_center], [plate_y_start, dim_y_horz-2], color=COLOR_DIM, lw=0.5, ls=':')
+    ax.plot([plate_x + plate_w, plate_x + plate_w], [plate_y_start, dim_y_horz-2], color=COLOR_DIM, lw=0.5, ls=':')
+
+    # 5.3 Total Height Dimension (Outer)
     outer_dim_x = dim_x_offset + 40
-    ax.annotate(
-        text='', xy=(outer_dim_x, plate_y_start), xytext=(outer_dim_x, plate_y_start + plate_len_mm),
-        arrowprops=dict(arrowstyle='<|-|>', color=COLOR_OBJ, lw=LW_DIM, shrinkA=0, shrinkB=0)
-    )
+    ax.annotate(text='', xy=(outer_dim_x, plate_y_start), xytext=(outer_dim_x, plate_y_start + plate_len_mm), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_OBJ, lw=LW_DIM))
     ax.text(outer_dim_x + 10, plate_y_start + plate_len_mm/2, f"TOTAL PL = {int(plate_len_mm)}", color=COLOR_OBJ, fontsize=10, fontweight='bold', rotation=90, va='center')
 
     # 6. Labels & Title
-    ax.text(plate_x + plate_w/2, plate_y_start - 30, f"PL-100x{int(plate_len_mm)}x10mm", fontsize=10, color=COLOR_OBJ, ha='center', fontweight='bold')
-    ax.text(plate_x + plate_w/2, plate_y_start - 50, f"({n_bolts}-M{int(bolt_dia)} A325 Bolts)", fontsize=9, color=COLOR_OBJ, ha='center')
+    ax.text(plate_x + plate_w/2, plate_y_start - 50, f"PL-100x{int(plate_len_mm)}x10mm", fontsize=10, color=COLOR_OBJ, ha='center', fontweight='bold')
+    ax.text(plate_x + plate_w/2, plate_y_start - 65, f"({n_bolts}-M{int(bolt_dia)} A325 Bolts)", fontsize=9, color=COLOR_OBJ, ha='center')
 
     # Final Cleanup
     ax.set_xlim(0, web_w_draw + 100)
@@ -253,7 +261,7 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
     st.divider()
 
     # 2. Detailed Report Layout
-    col_cal, col_draw = st.columns([1.5, 1.2]) # Adjust ratio for better drawing view
+    col_cal, col_draw = st.columns([1.5, 1.2]) 
     
     with col_cal:
         st.subheader("📝 รายการคำนวณ (Detailed Calculation)")
@@ -301,7 +309,7 @@ $$ L_{{crit}} = {factor} \\times \\frac{{\\phi M_n}}{{V_u}} = {factor} \\times \
 
     with col_draw:
         st.subheader("📐 Shop Drawing")
-        # Call the new professional drawing function
+        # Call the new professional drawing function with X-axis dimensions
         fig = draw_connection_sketch(res['h'], res['Bolt Qty'], float(bolt_dia), res['Plate Len']*10, res['Le'], res['S'])
         st.pyplot(fig)
 
