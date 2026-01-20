@@ -1,122 +1,212 @@
+# report_generator.py
 import streamlit as st
-import streamlit.components.v1 as components
+from datetime import datetime
+import base64
 
-def get_connection_logic(res, p):
-    # คำนวณตามมาตรฐาน AISC
-    v_act = res.get('v_act', 0)
-    rows = max(2, int(v_act / 4400) + 1)
-    pitch, edge_v, edge_h = 75, 40, 50
-    plate_h = (rows - 1) * pitch + (2 * edge_v)
-    plate_w = 110 
-    return {
-        "rows": rows, "pitch": pitch, "edge_v": edge_v, "edge_h": edge_h,
-        "plate_h": int(plate_h), "plate_w": plate_w,
-        "plate_t": 12, "weld_size": 6, "bolt_dia": 20, "bolt_grade": "8.8"
-    }
+def render(res_ctx, v_res):
+    """
+    Render Professional Engineering Report
+    """
+    st.subheader("📑 Engineering Calculation Report")
 
-def render_report_tab(method, is_lrfd, sec_name, steel_grade, p, res, bolt):
-    conn = get_connection_logic(res, p)
-    v_act, v_cap = res.get('v_act', 0), res.get('v_cap', 1)
-    util = (v_act / v_cap) * 100
-    
-    # SVG Configuration
-    c_w, c_h = 900, 800
-    p_x, p_y = 350, 200 # จุดเริ่มวาด Plate
-    bolt_x = p_x + conn['edge_h']
-    
-    # ส่วนประกอบของ Drawing
-    bolt_svg = ""
-    dim_svg = ""
-    
-    # วาด Bolts และระยะ Pitch (แนวตั้ง)
-    for i in range(conn['rows']):
-        by = p_y + conn['edge_v'] + (i * conn['pitch'])
-        # ตัวโบลต์
-        bolt_svg += f'<g transform="translate({bolt_x}, {by})"><circle r="7" fill="white" stroke="black" stroke-width="1.5"/><path d="M-5-5L5 5M5-5L-5 5" stroke="black" stroke-width="1"/></g>'
-        
-        # เส้นช่วยมิติ (Extension Lines) จากโบลต์
-        dim_svg += f'<line x1="{bolt_x + 15}" y1="{by}" x2="{bolt_x + 75}" y2="{by}" stroke="#999" stroke-width="0.5"/>'
-        
-        if i < conn['rows'] - 1:
-            mid_y = by + (conn['pitch'] / 2)
-            # เส้นบอกระยะ Pitch
-            dim_svg += f"""
-                <line x1="{bolt_x + 70}" y1="{by}" x2="{bolt_x + 70}" y2="{by + conn['pitch']}" stroke="black" stroke-width="1"/>
-                <line x1="{bolt_x + 65}" y1="{by + 5}" x2="{bolt_x + 75}" y2="{by - 5}" stroke="black" stroke-width="1.2"/>
-                <line x1="{bolt_x + 65}" y1="{by + conn['pitch'] + 5}" x2="{bolt_x + 75}" y2="{by + conn['pitch'] - 5}" stroke="black" stroke-width="1.2"/>
-                <text x="{bolt_x + 80}" y="{mid_y + 5}" font-size="12" font-weight="bold">{conn['pitch']}</text>
-            """
+    # --- 1. REPORT CONTROL PANEL ---
+    with st.expander("⚙️ Report Settings", expanded=True):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            proj_name = st.text_input("Project Name", value="Warehouse A - Mezzanine")
+            client_name = st.text_input("Client/Owner", value="Siam Construction Co.,Ltd.")
+        with c2:
+            eng_name = st.text_input("Designed By", value="Eng. Somchai")
+            job_no = st.text_input("Job Number", value="S-2024-001")
+        with c3:
+            rev_no = st.text_input("Revision", value="0")
+            report_date = datetime.now().strftime("%d-%b-%Y")
+            st.text_input("Date", value=report_date, disabled=True)
 
+    # --- 2. PREPARE DATA ---
+    # ถ้ายังไม่ได้คำนวณ ให้ใส่ค่า Default กัน Error
+    if not res_ctx:
+        st.error("⚠️ Please run calculation in Tab 1 first!")
+        return
+
+    # Data Extraction
+    sec_name = res_ctx.get('sec_name', '-')
+    span = res_ctx.get('user_span', 0)
+    
+    # Analysis Ratios
+    ratio_m = res_ctx.get('ratio_m', 0)
+    ratio_v = res_ctx.get('ratio_v', 0)
+    ratio_d = res_ctx.get('ratio_d', 0)
+    max_ratio = max(ratio_m, ratio_v, ratio_d)
+    
+    # Status Logic
+    is_pass = max_ratio <= 1.0
+    status_text = "PASSED" if is_pass else "FAILED"
+    status_color = "#16a34a" if is_pass else "#dc2626" # Green / Red
+    status_bg = "#dcfce7" if is_pass else "#fee2e2"
+
+    # Connection Data
+    if v_res:
+        conn_type = v_res.get('type', '-')
+        conn_summ = v_res.get('summary', '-')
+        conn_pass = v_res.get('pass', False)
+        conn_status_txt = "OK" if conn_pass else "NG"
+        conn_color = "green" if conn_pass else "red"
+    else:
+        conn_type, conn_summ, conn_status_txt, conn_color = "-", "Not Designed", "-", "black"
+
+    # --- 3. HTML TEMPLATE (CSS + CONTENT) ---
     html_content = f"""
-    <div style="background:#ffffff; padding:40px; font-family:'Helvetica', Arial, sans-serif;">
-        <div style="max-width:900px; margin:auto; border:2px solid #000; padding:40px;">
-            
-            <div style="border-bottom:2px solid #000; padding-bottom:10px; margin-bottom:30px; display:flex; justify-content:space-between;">
+    <html>
+    <head>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+            body {{ font-family: 'Sarabun', sans-serif; color: #333; }}
+            .paper {{
+                background-color: white;
+                width: 210mm;
+                min-height: 297mm;
+                padding: 15mm;
+                margin: auto;
+                border: 1px solid #ddd;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+                position: relative;
+            }}
+            .header {{ border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }}
+            .title-box {{ text-align: left; }}
+            .meta-box {{ text-align: right; font-size: 14px; }}
+            h1 {{ margin: 0; font-size: 24px; color: #1e293b; }}
+            h2 {{ font-size: 18px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px; color: #2563eb; }}
+            .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
+            .item {{ margin-bottom: 8px; font-size: 14px; }}
+            .label {{ font-weight: bold; color: #555; width: 120px; display: inline-block; }}
+            .val {{ font-weight: bold; color: #000; }}
+            .status-stamp {{
+                position: absolute;
+                top: 20px;
+                right: 20px;
+                border: 3px solid {status_color};
+                color: {status_color};
+                font-size: 32px;
+                font-weight: bold;
+                padding: 10px 20px;
+                transform: rotate(-15deg);
+                opacity: 0.8;
+                border-radius: 8px;
+            }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: center; }}
+            th {{ background-color: #f8fafc; }}
+            .footer {{ margin-top: 50px; font-size: 12px; color: #888; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }}
+            .signature {{ margin-top: 40px; display: flex; justify-content: space-between; }}
+            .sig-box {{ border-top: 1px solid #333; width: 40%; text-align: center; padding-top: 5px; }}
+        </style>
+    </head>
+    <body>
+        <div class="paper">
+            <div class="status-stamp">{status_text}</div>
+
+            <div class="header">
+                <div class="title-box">
+                    <h1>STRUCTURAL CALCULATION</h1>
+                    <div style="font-size:14px; color:#666;">Standard: AISC 360-16 ({'LRFD' if res_ctx.get('is_lrfd') else 'ASD'})</div>
+                </div>
+                <div class="meta-box">
+                    <div><strong>Project:</strong> {proj_name}</div>
+                    <div><strong>Job No:</strong> {job_no} | <strong>Rev:</strong> {rev_no}</div>
+                    <div><strong>Date:</strong> {report_date}</div>
+                </div>
+            </div>
+
+            <h2>1. Design Parameters</h2>
+            <div class="grid">
                 <div>
-                    <h2 style="margin:0; text-transform:uppercase;">Connection Design Report</h2>
-                    <span style="font-size:12px;">Standard: AISC 360-22 LRFD | Section: {sec_name}</span>
+                    <div class="item"><span class="label">Section:</span> <span class="val" style="font-size:16px;">{sec_name}</span></div>
+                    <div class="item"><span class="label">Steel Grade:</span> <span class="val">{res_ctx.get('Fy',0)} ksc</span></div>
+                    <div class="item"><span class="label">Span (L):</span> <span class="val">{span} m</span></div>
+                    <div class="item"><span class="label">Unbraced (Lb):</span> <span class="val">{res_ctx.get('Lb',0)} m</span></div>
                 </div>
-                <div style="text-align:right;">
-                    <span style="font-size:12px; font-weight:bold;">Status:</span>
-                    <span style="color:{'green' if util <= 100 else 'red'}; font-weight:bold;">{'PASS' if util <= 100 else 'FAIL'} ({util:.1f}%)</span>
+                <div>
+                    <div class="item"><span class="label">Uniform Load:</span> <span class="val">{res_ctx.get('w_load',0):,.0f} kg/m</span></div>
+                    <div class="item"><span class="label">Point Load:</span> <span class="val">{res_ctx.get('p_load',0):,.0f} kg</span></div>
+                    <div class="item"><span class="label">Max Moment (Mu):</span> <span class="val">{res_ctx.get('m_act',0):,.0f} kg-m</span></div>
+                    <div class="item"><span class="label">Max Shear (Vu):</span> <span class="val">{res_ctx.get('v_act',0):,.0f} kg</span></div>
                 </div>
             </div>
 
-            <div style="text-align:center;">
-                <svg width="{c_w}" height="{c_h}" viewBox="0 0 {c_w} {c_h}">
-                    <rect x="{p_x}" y="{p_y}" width="{conn['plate_w']}" height="{conn['plate_h']}" fill="none" stroke="black" stroke-width="2"/>
-                    
-                    <line x1="{p_x}" y1="{p_y}" x2="{p_x - 80}" y2="{p_y}" stroke="#999" stroke-width="0.5"/>
-                    <line x1="{p_x}" y1="{p_y + conn['plate_h']}" x2="{p_x - 80}" y2="{p_y + conn['plate_h']}" stroke="#999" stroke-width="0.5"/>
-                    
-                    <line x1="{p_x - 70}" y1="{p_y}" x2="{p_x - 70}" y2="{p_y + conn['plate_h']}" stroke="black" stroke-width="1"/>
-                    <line x1="{p_x - 75}" y1="{p_y + 5}" x2="{p_x - 65}" y2="{p_y - 5}" stroke="black" stroke-width="1.2"/>
-                    <line x1="{p_x - 75}" y1="{p_y + conn['plate_h'] + 5}" x2="{p_x - 65}" y2="{p_y + conn['plate_h'] - 5}" stroke="black" stroke-width="1.2"/>
-                    <text x="{p_x - 90}" y="{p_y + conn['plate_h']/2}" transform="rotate(-90, {p_x - 90}, {p_y + conn['plate_h']/2})" text-anchor="middle" font-weight="bold">PL HT: {conn['plate_h']}</text>
+            <h2>2. Member Capacity Check</h2>
+            <table>
+                <tr>
+                    <th>Check Type</th>
+                    <th>Demand</th>
+                    <th>Capacity</th>
+                    <th>Ratio</th>
+                    <th>Result</th>
+                </tr>
+                <tr>
+                    <td style="text-align:left;">Bending Moment</td>
+                    <td>{res_ctx.get('m_act',0):,.0f} kg-m</td>
+                    <td>{res_ctx.get('mn',0):,.0f} kg-m</td>
+                    <td style="font-weight:bold; color:{'red' if ratio_m>1 else 'black'}">{ratio_m:.2f}</td>
+                    <td>{'❌ Fail' if ratio_m>1 else '✅ Pass'}</td>
+                </tr>
+                <tr>
+                    <td style="text-align:left;">Shear Force</td>
+                    <td>{res_ctx.get('v_act',0):,.0f} kg</td>
+                    <td>{res_ctx.get('vn',0):,.0f} kg</td>
+                    <td style="font-weight:bold; color:{'red' if ratio_v>1 else 'black'}">{ratio_v:.2f}</td>
+                    <td>{'❌ Fail' if ratio_v>1 else '✅ Pass'}</td>
+                </tr>
+                <tr>
+                    <td style="text-align:left;">Deflection</td>
+                    <td>{res_ctx.get('defl_act',0):.2f} cm</td>
+                    <td>{res_ctx.get('defl_all',0):.2f} cm</td>
+                    <td style="font-weight:bold; color:{'red' if ratio_d>1 else 'black'}">{ratio_d:.2f}</td>
+                    <td>{'❌ Fail' if ratio_d>1 else '✅ Pass'}</td>
+                </tr>
+            </table>
 
-                    <line x1="{p_x}" y1="{p_y - 80}" x2="{p_x + conn['plate_w']}" y2="{p_y - 80}" stroke="black" stroke-width="1"/>
-                    <line x1="{p_x - 5}" y1="{p_y - 75}" x2="{p_x + 5}" y2="{p_y - 85}" stroke="black" stroke-width="1.2"/>
-                    <line x1="{p_x + conn['plate_w'] - 5}" y1="{p_y - 75}" x2="{p_x + conn['plate_w'] + 5}" y2="{p_y - 85}" stroke="black" stroke-width="1.2"/>
-                    <text x="{p_x + conn['plate_w']/2}" y="{p_y - 90}" text-anchor="middle" font-weight="bold">WIDTH: {conn['plate_w']}</text>
-
-                    <line x1="{p_x}" y1="{p_y - 40}" x2="{bolt_x}" y2="{p_y - 40}" stroke="black" stroke-width="1"/>
-                    <line x1="{p_x - 5}" y1="{p_y - 35}" x2="{p_x + 5}" y2="{p_y - 45}" stroke="black" stroke-width="1.2"/>
-                    <line x1="{bolt_x - 5}" y1="{p_y - 35}" x2="{bolt_x + 5}" y2="{p_y - 45}" stroke="black" stroke-width="1.2"/>
-                    <text x="{(p_x + bolt_x)/2}" y="{p_y - 50}" text-anchor="middle" font-size="11">e_h={conn['edge_h']}</text>
-
-                    <line x1="{bolt_x + 70}" y1="{p_y}" x2="{bolt_x + 70}" y2="{p_y + conn['edge_v']}" stroke="black" stroke-width="1"/>
-                    <line x1="{bolt_x + 65}" y1="{p_y + 5}" x2="{bolt_x + 75}" y2="{p_y - 5}" stroke="black" stroke-width="1.2"/>
-                    <line x1="{bolt_x + 65}" y1="{p_y + conn['edge_v'] + 5}" x2="{bolt_x + 75}" y2="{p_y + conn['edge_v'] - 5}" stroke="black" stroke-width="1.2"/>
-                    <text x="{bolt_x + 80}" y="{p_y + conn['edge_v']/2 + 5}" font-size="11">e_v={conn['edge_v']}</text>
-
-                    <path d="M {p_x} {p_y+60} L {p_x-50} {p_y+100} L {p_x-120} {p_y+100}" fill="none" stroke="red" stroke-width="1.5"/>
-                    <text x="-120" y="90" transform="translate({p_x}, {p_y})" fill="red" font-weight="bold" font-size="14">△ {conn['weld_size']}</text>
-
-                    {dim_svg}
-                    {bolt_svg}
-                    
-                    <text x="{p_x + conn['plate_w'] + 20}" y="{p_y + 120}" font-size="12">
-                        <tspan x="{p_x + conn['plate_w'] + 20}" dy="1.2em">BOLTS: {conn['rows']} x M{conn['bolt_dia']} (8.8)</tspan>
-                        <tspan x="{p_x + conn['plate_w'] + 20}" dy="1.2em">PLATE: PL {conn['plate_t']} mm (SS400)</tspan>
-                    </text>
-                </svg>
+            <h2>3. Connection Design Summary</h2>
+            <div style="padding: 10px; background-color: #f8fafc; border: 1px dashed #ccc;">
+                <div class="item"><span class="label">Type:</span> <span class="val">{conn_type}</span></div>
+                <div class="item"><span class="label">Detail:</span> <span class="val">{conn_summ}</span></div>
+                <div class="item"><span class="label">Status:</span> <span class="val" style="color:{conn_color}">{conn_status_txt}</span></div>
             </div>
 
-            <div style="margin-top:20px;">
-                <table style="width:100%; border-collapse: collapse; font-size:13px;">
-                    <tr style="background:#eee;">
-                        <th style="border:1px solid #000; padding:8px;">Component</th>
-                        <th style="border:1px solid #000; padding:8px;">Description</th>
-                        <th style="border:1px solid #000; padding:8px;">Material</th>
-                    </tr>
-                    <tr>
-                        <td style="border:1px solid #000; padding:8px;">Fin Plate</td>
-                        <td style="border:1px solid #000; padding:8px;">{conn['plate_h']} x {conn['plate_w']} x {conn['plate_t']} mm</td>
-                        <td style="border:1px solid #000; padding:8px;">ASTM A36 / SS400</td>
-                    </tr>
-                </table>
+            <div class="signature">
+                <div class="sig-box">
+                    <br><br>
+                    ({eng_name})<br>
+                    <strong>Design Engineer</strong>
+                </div>
+                <div class="sig-box">
+                    <br><br>
+                    (..........................................)<br>
+                    <strong>Approver / Client</strong>
+                </div>
+            </div>
+
+            <div class="footer">
+                Generated by Python Steel Design App | {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             </div>
         </div>
-    </div>
+    </body>
+    </html>
     """
-    components.html(html_content, height=1400, scrolling=True)
+
+    # --- 4. DISPLAY & DOWNLOAD ---
+    
+    # Preview
+    st.markdown(html_content, unsafe_allow_html=True)
+    st.markdown("---")
+    
+    # Download Button logic
+    b64 = base64.b64encode(html_content.encode()).decode()
+    href = f'<a href="data:text/html;base64,{b64}" download="Design_Report_{job_no}.html" style="text-decoration:none;">'
+    href += f'<button style="background-color:#2563eb; color:white; padding:10px 20px; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">📥 Download HTML Report</button></a>'
+    
+    c_btn1, c_btn2 = st.columns([1,4])
+    with c_btn1:
+        st.markdown(href, unsafe_allow_html=True)
+    with c_btn2:
+        st.caption("👈 Click to download report. You can open it in any browser and Print to PDF.")
