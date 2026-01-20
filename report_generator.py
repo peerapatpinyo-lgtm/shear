@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 33.0 (Uniform Formatting & Consistency)
+# Version: 34.0 (Fix Formatting Layout & Indentation)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -74,36 +74,36 @@ def get_load_case_factor(case_name):
     }
     return cases.get(case_name, 4.0)
 
-# 🆕 Proof Text Generator (Formatted for consistency)
+# 🆕 Proof Text (No Indentation to prevent Markdown errors)
 def get_derivation_text(case_name):
     if case_name == "Simple Beam (Uniform Load)":
-        return r"""
-        * **Support:** Simple Support
-        * **Load:** Uniform Distributed Load
-        * **Proof:** $V = wL/2 \rightarrow M = wL^2/8 \rightarrow \mathbf{M = VL/4}$
-        * **Factor:** $\mathbf{4.0}$
-        """
+        return (
+            "* **Support:** Simple Support\n"
+            "* **Load:** Uniform Distributed Load\n"
+            "* **Proof:** $V = wL/2 \\rightarrow M = wL^2/8 \\rightarrow \\mathbf{M = VL/4}$\n"
+            "* **Factor:** $\\mathbf{4.0}$"
+        )
     elif case_name == "Simple Beam (Point Load @Center)":
-        return r"""
-        * **Support:** Simple Support
-        * **Load:** Point Load at Center
-        * **Proof:** $V = P/2 \rightarrow M = PL/4 \rightarrow \mathbf{M = VL/2}$
-        * **Factor:** $\mathbf{2.0}$
-        """
+        return (
+            "* **Support:** Simple Support\n"
+            "* **Load:** Point Load at Center\n"
+            "* **Proof:** $V = P/2 \\rightarrow M = PL/4 \\rightarrow \\mathbf{M = VL/2}$\n"
+            "* **Factor:** $\\mathbf{2.0}$"
+        )
     elif case_name == "Cantilever (Uniform Load)":
-        return r"""
-        * **Support:** Cantilever (Fixed)
-        * **Load:** Uniform Distributed Load
-        * **Proof:** $V = wL \rightarrow M = wL^2/2 \rightarrow \mathbf{M = VL/2}$
-        * **Factor:** $\mathbf{2.0}$
-        """
+        return (
+            "* **Support:** Cantilever (Fixed)\n"
+            "* **Load:** Uniform Distributed Load\n"
+            "* **Proof:** $V = wL \\rightarrow M = wL^2/2 \\rightarrow \\mathbf{M = VL/2}$\n"
+            "* **Factor:** $\\mathbf{2.0}$"
+        )
     elif case_name == "Cantilever (Point Load @Tip)":
-        return r"""
-        * **Support:** Cantilever (Fixed)
-        * **Load:** Point Load at Tip
-        * **Proof:** $V = P \rightarrow M = PL \rightarrow \mathbf{M = VL}$
-        * **Factor:** $\mathbf{1.0}$
-        """
+        return (
+            "* **Support:** Cantilever (Fixed)\n"
+            "* **Load:** Point Load at Tip\n"
+            "* **Proof:** $V = P \\rightarrow M = PL \\rightarrow \\mathbf{M = VL}$\n"
+            "* **Factor:** $\\mathbf{1.0}$"
+        )
     return ""
 
 def calculate_zx(h, b, tw, tf):
@@ -255,48 +255,49 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
     with col_cal:
         st.subheader("📝 รายการคำนวณ (Detailed Calculation)")
         with st.container(height=650, border=True):
+            # Using standard text formatting to prevent markdown errors
             st.markdown(f"""
-            #### 1. Design Parameters
-            * **Section:** {res['Section']}
-            * **Method:** ASD (Allowable Stress Design)
-            * **Bolt:** M{int(res['DB'])} (A325), Hole $\\phi = {int(res['DB']+2)}$ mm
-            
-            ---
-            #### 2. Load Calculation
-            $$ V_n = 0.60 F_y A_w = 0.60({res['Fy']:,})({res['Aw']:.2f}) = {res['Vn_beam']:,.2f} \\; kg $$
-            $$ V_u = {load_pct/100:.2f} \\times V_n = \\mathbf{{{res['V_target']:,.2f} \\; kg}} $$
+#### 1. Design Parameters
+* **Section:** {res['Section']}
+* **Method:** ASD (Allowable Stress Design)
+* **Bolt:** M{int(res['DB'])} (A325), Hole $\\phi = {int(res['DB']+2)}$ mm
 
-            ---
-            #### 3. Bolt Capacity Check
-            **3.1 Shear Capacity:**
-            $$ \\phi R_n = 0.75(3300)({res['Ab']:.2f}) = \\mathbf{{{res['Rn_shear']:,.0f} \\; kg/bolt}} $$
+---
+#### 2. Load Calculation
+$$ V_n = 0.60 F_y A_w = 0.60({res['Fy']:,})({res['Aw']:.2f}) = {res['Vn_beam']:,.2f} \\; kg $$
+$$ V_u = {load_pct/100:.2f} \\times V_n = \\mathbf{{{res['V_target']:,.2f} \\; kg}} $$
 
-            **3.2 Bearing (Plate t=10mm):**
-            $$ R_{{pl}} = 0.75 \\times \\min({res['Rn_pl_1']:,.0f}, {res['Rn_pl_2']:,.0f}) = {res['Rn_pl']:,.0f} \\; kg $$
+---
+#### 3. Bolt Capacity Check
+**3.1 Shear Capacity:**
+$$ \\phi R_n = 0.75(3300)({res['Ab']:.2f}) = \\mathbf{{{res['Rn_shear']:,.0f} \\; kg/bolt}} $$
 
-            **3.3 Bearing (Web t={res['tw']}mm):**
-            $$ R_{{web}} = 0.75 \\times \\min({res['Rn_web_1']:,.0f}, {res['Rn_web_2']:,.0f}) = {res['Rn_web']:,.0f} \\; kg $$
-            
-            **Controlling Capacity:**
-            $$ \\phi R_{{bolt}} = \\min({res['Rn_shear']:,.0f}, {res['Rn_pl']:,.0f}, {res['Rn_web']:,.0f}) = \\mathbf{{{res['phiRn_bolt']:,.0f} \\; kg}} $$
-            *(Control by: {res['Control By']})*
-            
-            $$ n = {res['V_target']:,.0f} / {res['phiRn_bolt']:,.0f} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\mathbf{{{res['Bolt Qty']} \\; pcs}} $$
+**3.2 Bearing (Plate t=10mm):**
+$$ R_{{pl}} = 0.75 \\times \\min({res['Rn_pl_1']:,.0f}, {res['Rn_pl_2']:,.0f}) = {res['Rn_pl']:,.0f} \\; kg $$
 
-            ---
-            #### 4. Critical Span Check ($L_{{crit}}$)
-            **4.1 Theory & Factor:**
-            {proof_text}
-            
-            **4.2 Section Properties:**
-            $$ Z_x = {res['Zx']:.2f} \\; cm^3 $$
-            $$ \\phi M_n = 0.90 F_y Z_x = 0.90({res['Fy']})({res['Zx']:.2f}) = {res['Mn_beam']*0.9/100:,.0f} \\; kg.m $$
-            
-            **4.3 Limit Calculation:**
-            $$ L_{{crit}} = {factor} \\times \\frac{{\\phi M_n}}{{V_u}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit']:.2f} \\; m}} $$
-            
-            *(Note: If span > {res['L_crit']:.2f} m, beam fails by moment before shear)*
-            """)
+**3.3 Bearing (Web t={res['tw']}mm):**
+$$ R_{{web}} = 0.75 \\times \\min({res['Rn_web_1']:,.0f}, {res['Rn_web_2']:,.0f}) = {res['Rn_web']:,.0f} \\; kg $$
+
+**Controlling Capacity:**
+$$ \\phi R_{{bolt}} = \\min({res['Rn_shear']:,.0f}, {res['Rn_pl']:,.0f}, {res['Rn_web']:,.0f}) = \\mathbf{{{res['phiRn_bolt']:,.0f} \\; kg}} $$
+*(Control by: {res['Control By']})*
+
+$$ n = {res['V_target']:,.0f} / {res['phiRn_bolt']:,.0f} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\mathbf{{{res['Bolt Qty']} \\; pcs}} $$
+
+---
+#### 4. Critical Span Check ($L_{{crit}}$)
+**4.1 Theory & Factor**
+{proof_text}
+
+**4.2 Section Properties**
+$$ Z_x = {res['Zx']:.2f} \\; cm^3 $$
+$$ \\phi M_n = 0.90 F_y Z_x = 0.90({res['Fy']})({res['Zx']:.2f}) = {res['Mn_beam']*0.9/100:,.0f} \\; kg.m $$
+
+**4.3 Limit Calculation**
+$$ L_{{crit}} = {factor} \\times \\frac{{\\phi M_n}}{{V_u}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit']:.2f} \\; m}} $$
+
+*(Note: If span > {res['L_crit']:.2f} m, beam fails by moment before shear)*
+""")
 
     with col_draw:
         st.subheader("📐 Drawing")
