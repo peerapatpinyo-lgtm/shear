@@ -1,154 +1,196 @@
 # report_generator.py
-# Version: 12.0 (Linked Data Edition - Pull from Tab 2)
+# Version: 13.0 (Bulletproof - Works with or without Tab 2)
 import streamlit as st
 from datetime import datetime
 import math
 
 def render_report_tab(beam_data, conn_data):
-    # --- 1. Control Panel ---
-    st.markdown("### 🖨️ Final Engineering Report")
+    # --- 1. ส่วนตั้งค่า (Header Input) ---
+    st.markdown("### 🖨️ Engineering Report")
     
-    with st.expander("⚙️ Document Settings", expanded=False):
+    with st.expander("⚙️ ตั้งค่าหัวกระดาษ (Document Settings)", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
-            project = st.text_input("Project Name", value="Warehouse Mezzanine Structure")
-            client = st.text_input("Client", value="Siam Industrial Corp.")
+            project = st.text_input("ชื่อโครงการ", value="โครงการก่อสร้างชั้นลอย (Mezzanine Project)")
+            client = st.text_input("เจ้าของงาน", value="บจก. สยามอินดัสเทรียล")
         with c2:
-            engineer = st.text_input("Engineer", value="Eng. Somchai (PE. Level III)")
-            doc_ref = st.text_input("Ref No.", value=f"STR-{datetime.now().strftime('%Y%m')}-001")
+            engineer = st.text_input("วิศวกร", value="นายสมชาย ใจดี (สย. 12345)")
+            doc_ref = st.text_input("เลขที่เอกสาร", value=f"CALC-{datetime.now().strftime('%y%m')}-001")
 
-    # --- Validation: Check Data Source ---
+    # --- 2. ตรวจสอบข้อมูลจาก Tab 1 (Beam) ---
     if not beam_data:
-        st.warning("⚠️ Warning: Beam Analysis data (Tab 1) is missing.")
-        return
-    
-    # เช็คว่า Tab 2 คำนวณมาหรือยัง?
-    if not conn_data or conn_data.get('status') != 'calculated':
-        st.warning("⚠️ Warning: Connection Design data (Tab 2) is missing or not calculated yet.")
-        st.info("Please go to Tab 2 and click 'Calculate Connection' first.")
+        st.error("⚠️ ไม่พบข้อมูลการคำนวณคาน (กรุณากดคำนวณที่ Tab 1 ก่อน)")
         return
 
-    # --- 2. Data Extraction (Pulling Real Data) ---
-    # Beam Data (Tab 1)
-    sec = beam_data.get('sec_name', '-')
+    # ดึงค่าแรงจากคาน (Tab 1)
+    sec = beam_data.get('sec_name', 'Unknown Section')
+    v_act = beam_data.get('v_act', 0)     # แรงเฉือนที่เกิดขึ้นจริง (Demand)
     m_act = beam_data.get('m_act', 0)
-    v_act = beam_data.get('v_act', 0) # แรงเฉือนที่เกิดขึ้นจริง
-    max_r_beam = max(beam_data.get('ratio_m', 0), beam_data.get('ratio_v', 0))
-
-    # Connection Data (Tab 2) - ดึงค่าจริงที่คำนวณแล้วมาเลย
-    c_type = conn_data.get('type', 'Shear Connection')
-    c_bolts = conn_data.get('bolt_qty', 0)       # จำนวนน๊อตจาก Tab 2
-    c_dia = conn_data.get('bolt_size', '-')      # ขนาดน๊อต (M20)
-    c_grade = conn_data.get('bolt_grade', '-')   # เกรด (A325)
-    c_plate_t = conn_data.get('plate_thick', 0)  # ความหนาเพลท
-    c_capacity = conn_data.get('capacity', 0)    # กำลังรับแรงของจุดต่อที่คำนวณได้
     
-    # --- 3. Final Cross-Check Logic ---
-    # ตรวจสอบว่า จุดต่อ (Tab 2) รับแรงจากคาน (Tab 1) ไหวไหม?
-    # V_connection >= V_beam ?
-    conn_ratio = v_act / c_capacity if c_capacity > 0 else 999
+    # ดึงค่า Capacity ของคาน
+    v_cap = beam_data.get('vn', 0)
+    m_cap = beam_data.get('mn', 0)
+    
+    # Ratio ของคาน
+    r_v = beam_data.get('ratio_v', 0)
+    r_m = beam_data.get('ratio_m', 0)
+    r_d = beam_data.get('ratio_d', 0)
+    
+    is_beam_pass = max(r_v, r_m, r_d) <= 1.0
+
+    # --- 3. จัดการข้อมูลจุดต่อ (Connection Logic) ---
+    # ถ้าไม่มีข้อมูลจาก Tab 2 ให้คำนวณสดๆ ตรงนี้เลย (Fallback Mode)
+    
+    use_auto_calc = False
+    
+    if not conn_data or conn_data.get('status') != 'calculated':
+        # --- โหมดคำนวณเอง (Auto-Design) ---
+        use_auto_calc = True
+        bolt_grade = "A325 (Auto)"
+        bolt_size = "M20"
+        bolt_shear_cap = 7400 # kg/bolt (โดยประมาณ)
+        
+        # คำนวณจำนวนน๊อตที่ต้องใช้รับ v_act
+        req_bolts = v_act / bolt_shear_cap
+        final_bolts = max(2, math.ceil(req_bolts)) # ขั้นต่ำ 2 ตัว
+        
+        conn_cap = final_bolts * bolt_shear_cap
+        plate_t = 10 # mm (สมมติมาตรฐาน)
+        
+        conn_msg = "⚠️ Auto-Calculated (Based on Beam Shear)"
+        
+    else:
+        # --- โหมดดึงข้อมูลจาก Tab 2 (Linked Data) ---
+        bolt_grade = conn_data.get('bolt_grade', 'A325')
+        bolt_size = conn_data.get('bolt_size', 'M20')
+        final_bolts = conn_data.get('bolt_qty', 0)
+        conn_cap = conn_data.get('capacity', 0)
+        plate_t = conn_data.get('plate_thick', 0)
+        conn_msg = "✅ Verified Design (From Tab 2)"
+
+    # คำนวณ Ratio ของจุดต่อ
+    conn_ratio = v_act / conn_cap if conn_cap > 0 else 999
     is_conn_pass = conn_ratio <= 1.0
     
-    # สรุปภาพรวม (Beam + Connection ต้องผ่านทั้งคู่)
-    is_all_pass = (max_r_beam <= 1.0) and is_conn_pass
+    # สรุปภาพรวม
+    final_pass = is_beam_pass and is_conn_pass
     run_date = datetime.now().strftime("%d-%b-%Y")
 
-    # --- 4. REPORT CANVAS ---
+    # --- 4. แสดงผลรายงาน (Report Canvas) ---
     st.markdown("---")
+    
+    # กรอบจำลอง A4
     with st.container(border=True):
         
-        # HEADER
+        # === HEADER ===
         st.markdown(f"""
-        <div style="border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
-            <table style="width:100%;">
-                <tr>
-                    <td style="width:70%;">
-                        <h2 style="margin:0; color:#1e3a8a;">STRUCTURAL CALCULATION SHEET</h2>
-                        <span style="font-size:12px; color:#555;">REF: AISC 360-16 | LRFD METHOD</span>
-                    </td>
-                    <td style="width:30%; text-align:right; font-size:12px;">
-                        <b>Doc No:</b> {doc_ref}<br><b>Date:</b> {run_date}
-                    </td>
-                </tr>
-            </table>
+        <div style="border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 15px;">
+            <h2 style="margin:0; color:#1e3a8a;">รายการคำนวณโครงสร้าง (Structural Report)</h2>
+            <span style="font-size:12px; color:#555;">REF STANDARD: AISC 360-16 (LRFD)</span>
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown(f"**PROJECT:** {project} | **ENGINEER:** {engineer}")
-        st.divider()
-
-        # PART 1: BEAM CHECK SUMMARY
-        st.markdown("#### 1. BEAM ANALYSIS RESULT (FROM TAB 1)")
-        c_b1, c_b2, c_b3 = st.columns(3)
-        c_b1.metric("Beam Section", sec)
-        c_b2.metric("Shear Force ($V_u$)", f"{v_act:,.0f} kg")
-        c_b3.metric("Beam Status", "✅ PASS" if max_r_beam<=1 else "❌ FAIL")
-        
-        st.divider()
-
-        # PART 2: CONNECTION CHECK (LINKED DATA)
-        st.markdown("#### 2. CONNECTION DESIGN VERIFICATION (FROM TAB 2)")
-        
-        # แสดงข้อมูลที่ดึงมาจาก Tab 2
-        with st.container(border=True):
-            col_spec, col_verify = st.columns([1.2, 1])
+        c_h1, c_h2 = st.columns([2, 1])
+        with c_h1:
+            st.write(f"**PROJECT:** {project}")
+            st.write(f"**OWNER:** {client}")
+            st.write(f"**ENGINEER:** {engineer}")
+        with c_h2:
+            st.write(f"**DOC NO:** {doc_ref}")
+            st.write(f"**DATE:** {run_date}")
             
-            with col_spec:
-                st.markdown("**🔹 DESIGN SPECIFICATION**")
-                st.markdown(f"**Type:** {c_type}")
-                st.markdown(f"""
-                - **Bolt Size:** {c_dia}
-                - **Bolt Grade:** {c_grade}
-                - **Total Bolts:** <span style='font-size:20px; font-weight:bold; color:#1e3a8a;'>{c_bolts} pcs.</span>
-                - **Plate Thickness:** {c_plate_t} mm
-                """, unsafe_allow_html=True)
-            
-            with col_verify:
-                st.markdown("**🔹 CAPACITY CHECK**")
-                st.write(f"Demand ($V_u$ from Beam): **{v_act:,.0f} kg**")
-                st.write(f"Capacity ($\phi R_n$ from Conn): **{c_capacity:,.0f} kg**")
-                
-                # Check Ratio
-                if is_conn_pass:
-                    st.markdown(f"""
-                    <div style="background:#dcfce7; color:#166534; padding:8px; border-radius:4px; text-align:center; margin-top:10px;">
-                        <b>✅ OK (Ratio {conn_ratio:.2f})</b>
-                    </div>""", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"""
-                    <div style="background:#fee2e2; color:#991b1b; padding:8px; border-radius:4px; text-align:center; margin-top:10px;">
-                        <b>❌ INSUFFICIENT (Ratio {conn_ratio:.2f})</b>
-                    </div>""", unsafe_allow_html=True)
-
-        # PART 3: DRAWING / PATTERN VISUALIZATION
-        st.markdown("**🔹 BOLT ARRANGEMENT (CONCEPTUAL)**")
-        # Generate Visualization based on Real Bolt Count
-        try:
-            qty = int(c_bolts)
-            cols = 2 if qty >= 4 else 1
-            rows = math.ceil(qty / cols)
-            
-            bolt_viz = ""
-            for r in range(rows):
-                line = "|"
-                for c in range(cols):
-                    if (r * cols + c) < qty:
-                        line += "  (X)  " # Bolt
-                    else:
-                        line += "       " # Empty
-                line += "|\n"
-                bolt_viz += line
-            
-            st.code(f"   [TOP]\n   +-------+\n{bolt_viz}   +-------+", language="text")
-        except:
-            st.caption("Cannot visualize pattern (Invalid bolt quantity)")
-
-        # FINAL CONCLUSION
         st.markdown("---")
-        if is_all_pass:
-             st.success("##### ✅ FINAL CONCLUSION: APPROVED FOR CONSTRUCTION")
+
+        # === PART 1: BEAM CHECK ===
+        st.markdown("#### 1. ผลการตรวจสอบคานเหล็ก (Beam Analysis)")
+        st.info(f"หน้าตัด: **{sec}** | Span: {beam_data.get('user_span',0)} m.")
+
+        # Table Header
+        cols = st.columns([2, 1.5, 1.5, 1, 1])
+        headers = ["Item", "Demand", "Capacity", "Ratio", "Result"]
+        for col, h in zip(cols, headers):
+            col.markdown(f"**{h}**")
+        st.divider()
+
+        # Rows
+        def show_row(label, dem, cap, unit, ratio):
+            c1, c2, c3, c4, c5 = st.columns([2, 1.5, 1.5, 1, 1])
+            c1.write(label)
+            c2.write(f"{dem:,.0f} {unit}")
+            c3.write(f"{cap:,.0f} {unit}")
+            c4.write(f"{ratio:.2f}")
+            c5.write("✅ OK" if ratio<=1 else "❌ NG")
+
+        show_row("Moment (แรงดัด)", m_act, m_cap, "kg-m", r_m)
+        show_row("Shear (แรงเฉือน)", v_act, v_cap, "kg", r_v)
+        show_row("Deflection (ระยะแอ่น)", beam_data.get('defl_act',0), beam_data.get('defl_all',0), "cm", r_d)
+
+        # === PART 2: CONNECTION DESIGN ===
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("#### 2. รายละเอียดจุดต่อ (Connection Detail)")
+        
+        # แสดงสถานะข้อมูล
+        if use_auto_calc:
+            st.caption(f"ℹ️ หมายเหตุ: {conn_msg} (เนื่องจากยังไม่ได้คำนวณที่ Tab 2 ระบบจึงคำนวณให้อัตโนมัติ)")
         else:
-             st.error("##### ❌ FINAL CONCLUSION: REVISE DESIGN (Check Beam or Connection Capacity)")
-             
-        # SIGNATURE
-        st.markdown("<br><br><br>__________________________<br>Professional Engineer Signature", unsafe_allow_html=True)
+            st.caption(f"ℹ️ แหล่งข้อมูล: {conn_msg}")
+
+        with st.container(border=True):
+            col_d1, col_d2 = st.columns(2)
+            
+            with col_d1:
+                st.markdown("**📝 Specification:**")
+                st.write(f"- Bolt Size: **{bolt_size}**")
+                st.write(f"- Grade: **{bolt_grade}**")
+                st.write(f"- Plate Thickness: **{plate_t} mm**")
+                
+            with col_d2:
+                st.markdown("**🧮 Calculation:**")
+                st.write(f"- Shear Force ($V_u$): {v_act:,.0f} kg")
+                st.markdown(f"- **Required Bolts:** `{final_bolts}` **pcs.**")
+                
+                # Visual Check
+                status_color = "green" if is_conn_pass else "red"
+                status_text = "PASSED" if is_conn_pass else "FAILED"
+                st.markdown(f"<span style='color:{status_color}; font-weight:bold;'>Verification: {status_text} (Ratio {conn_ratio:.2f})</span>", unsafe_allow_html=True)
+
+        # === PART 3: BOLT PATTERN VISUALIZATION ===
+        st.markdown("**🔹 แบบร่างการจัดเรียงน๊อต (Conceptual Pattern)**")
+        
+        # Logic วาดรูป ASCII
+        try:
+            qty = int(final_bolts)
+            n_cols = 2 if qty >= 4 else 1
+            n_rows = math.ceil(qty / n_cols)
+            
+            drawing = ""
+            for r in range(n_rows):
+                line = "   |"
+                for c in range(n_cols):
+                    if (r * n_cols + c) < qty:
+                        line += "  (⊕)  " # Bolt Symbol
+                    else:
+                        line += "       "
+                line += "|   \n"
+                drawing += line
+            
+            st.code(f"""
+    [ BEAM WEB / PLATE ]
+   +-------------------+
+{drawing}   +-------------------+
+    Total: {qty} Bolts ({n_rows} Rows x {n_cols} Cols)
+            """, language="text")
+        except:
+            st.write("-")
+
+        # === FOOTER ===
+        st.markdown("---")
+        if final_pass:
+            st.success("##### ✅ สรุปผล: โครงสร้างและจุดต่อ ผ่านเกณฑ์มาตรฐาน (APPROVED)")
+        else:
+            st.error("##### ❌ สรุปผล: ไม่ผ่านเกณฑ์ กรุณาตรวจสอบขนาดหน้าตัดหรือจุดต่อ (REVISE REQUIRED)")
+            
+        st.write("")
+        col_s1, col_s2 = st.columns(2)
+        col_s1.markdown("..................................................<br>ผู้ออกแบบ (Engineer)", unsafe_allow_html=True)
+        col_s2.markdown("..................................................<br>ผู้ตรวจสอบ (Approver)", unsafe_allow_html=True)
