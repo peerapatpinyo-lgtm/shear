@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 15.0 (Linear Flow - Fixed NameError Guaranteed)
+# Version: 15.1 (Fixed LaTeX/f-string syntax collision)
 import streamlit as st
 from datetime import datetime
 import math
@@ -9,13 +9,12 @@ def render_report_tab(beam_data, conn_data):
     # 1. การจัดการข้อมูลและการคำนวณ (Calculation Section)
     # =========================================================
     
-    # 🚨 CHECK POINT 1: ถ้าไม่มีข้อมูลคาน ให้หยุดทำงานทันที (ป้องกัน Error ด้านล่าง)
+    # 🚨 CHECK POINT: ถ้าไม่มีข้อมูลคาน ให้หยุดทำงาน
     if not beam_data:
         st.warning("⚠️ ไม่พบข้อมูลคาน กรุณากลับไปกดคำนวณที่ Tab 1 ก่อน")
-        return # <--- จบการทำงานตรงนี้เลย ไม่ไหลไปทำบรรทัดล่าง
+        return
 
     # 📥 ดึงข้อมูล (Safe Extraction)
-    # ใช้ or เพื่อกันค่า None หรือ 0
     try:
         sec_name = beam_data.get('sec_name', 'Unknown')
         h_val = float(beam_data.get('h', 0) or 400)
@@ -24,17 +23,13 @@ def render_report_tab(beam_data, conn_data):
         fu = float(beam_data.get('Fu', 0) or 4100)
         is_lrfd = beam_data.get('is_lrfd', True)
     except:
-        # กรณีข้อมูลเน่าจริงๆ ให้ใช้ค่า Default กันตาย
         h_val, tw_val, fy, fu = 400.0, 8.0, 2500.0, 4100.0
         sec_name = "Default Section"
         is_lrfd = True
 
-    # 🧮 คำนวณตัวแปรพื้นฐาน (Geometry)
-    # ประกาศตรงนี้ ให้มันเป็น Local Variable ที่มองเห็นได้ทั้งฟังก์ชันแน่นอน
+    # 🧮 คำนวณตัวแปรพื้นฐาน
     d = h_val / 10.0      # cm
     tw = tw_val / 10.0    # cm
-    
-    # *** จุดที่เคย Error: สร้างตัวแปร Aw ตรงนี้ทันที ***
     Aw = d * tw           # cm2
 
     # 🧮 คำนวณกำลังคาน (Beam Capacity)
@@ -49,18 +44,17 @@ def render_report_tab(beam_data, conn_data):
         V_capacity = Vn_raw / omg_v
         method_txt = "ASD (Omega=1.50)"
 
-    # 🧮 คำนวณแรงออกแบบ (Design Force - 75% Rule)
+    # 🧮 คำนวณแรงออกแบบ (75% Rule)
     V_design = 0.75 * V_capacity
 
     # 🧮 คำนวณน๊อต (Bolt Calculation)
     bolt_dia_mm = 20
     plate_t_mm = 10
     
-    # Bolt Properties
     bolt_area_cm2 = (math.pi * (bolt_dia_mm/10)**2) / 4
-    Fnv = 3300 # ksc (Nominal Shear Stress)
+    Fnv = 3300 # ksc
     
-    # Shear Strength per Bolt
+    # Shear Strength
     if is_lrfd:
         phi_bolt = 0.75
         Rn_bolt = phi_bolt * Fnv * bolt_area_cm2
@@ -68,7 +62,7 @@ def render_report_tab(beam_data, conn_data):
         omg_bolt = 2.00
         Rn_bolt = (Fnv * bolt_area_cm2) / omg_bolt
         
-    # Bearing Strength per Bolt
+    # Bearing Strength
     plate_t_cm = plate_t_mm / 10.0
     if is_lrfd:
         phi_br = 0.75
@@ -77,29 +71,25 @@ def render_report_tab(beam_data, conn_data):
         omg_br = 2.00
         Rn_bearing = (2.4 * (bolt_dia_mm/10) * plate_t_cm * fu) / omg_br
         
-    # Governing Capacity
+    # Final Calculation
     capacity_per_bolt = min(Rn_bolt, Rn_bearing)
     
-    # Final Bolt Count
     if capacity_per_bolt > 0:
         req_bolts_final = V_design / capacity_per_bolt
     else:
-        req_bolts_final = 99.0 # กัน Error หารศูนย์
+        req_bolts_final = 99.0
         
     num_bolts_final = max(2, math.ceil(req_bolts_final))
     
-    # Ratio Check
     total_capacity = num_bolts_final * capacity_per_bolt
     ratio = V_design / total_capacity if total_capacity > 0 else 0
 
     # =========================================================
     # 2. การแสดงผล (Rendering Section)
     # =========================================================
-    # บรรทัดพวกนี้จะทำงานก็ต่อเมื่อ Code ข้างบนผ่านหมดแล้วเท่านั้น (เพราะมี return ดักไว้แล้ว)
     
     st.markdown("### 🖨️ รายการคำนวณออกแบบจุดต่อ (Auto-Connection Design)")
     
-    # Input Header
     with st.expander("⚙️ ตั้งค่าหัวกระดาษ", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
@@ -112,7 +102,7 @@ def render_report_tab(beam_data, conn_data):
     st.markdown("---")
     with st.container(border=True):
         
-        # --- HEADER REPORT ---
+        # --- HEADER ---
         st.markdown(f"""
         <div style="border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
             <h3 style="margin:0; color:#000;">รายการคำนวณจุดต่อ (Connection Design)</h3>
@@ -127,12 +117,12 @@ def render_report_tab(beam_data, conn_data):
         st.markdown("#### 1. คำนวณกำลังรับแรงเฉือนของคาน (Beam Shear Capacity)")
         st.write(f"**Section:** {sec_name} (Fy = {fy:,.0f} ksc)")
         
-        # แสดงสูตร LaTeX (ตอนนี้ตัวแปร d, tw, Aw มีค่าแน่นอนแล้ว ไม่ Error ชัวร์)
+        # แก้ไขจุดที่ Error: ใช้ {{ }} สำหรับ LaTeX text
         st.markdown("**1.1 พื้นที่รับแรงเฉือน (Shear Area, Aw):**")
-        st.latex(rf"A_w = d \times t_w = {d:.2f} \times {tw:.2f} = {Aw:.2f} \text{ cm}^2")
+        st.latex(rf"A_w = d \times t_w = {d:.2f} \times {tw:.2f} = {Aw:.2f} \text{{ cm}}^2")
         
         st.markdown("**1.2 กำลังรับแรงเฉือนระบุ (Nominal Shear Strength, Vn):**")
-        st.latex(rf"V_n = 0.6 \times F_y \times A_w = 0.6 \times {fy:.0f} \times {Aw:.2f} = {Vn_raw:,.0f} \text{ kg}")
+        st.latex(rf"V_n = 0.6 \times F_y \times A_w = 0.6 \times {fy:.0f} \times {Aw:.2f} = {Vn_raw:,.0f} \text{{ kg}}")
         
         st.markdown(f"**1.3 กำลังรับแรงเฉือนที่ยอมให้ (Design Capacity):**")
         if is_lrfd:
@@ -145,6 +135,7 @@ def render_report_tab(beam_data, conn_data):
         # --- STEP 2: DESIGN FORCE ---
         st.markdown("#### 2. แรงกระทำสำหรับออกแบบจุดต่อ (Design Force)")
         st.info("💡 Condition: 75% of Beam Shear Capacity")
+        # แก้ไขปีกกา
         st.latex(rf"V_{{req}} = 0.75 \times {V_capacity:,.0f} = \mathbf{{{V_design:,.0f} \text{{ kg}}}}")
         
         st.divider()
@@ -160,25 +151,25 @@ def render_report_tab(beam_data, conn_data):
         st.latex(rf"R_{{bearing}} = \mathbf{{{Rn_bearing:,.0f} \text{{ kg/bolt}}}}")
         
         st.markdown("**3.3 จำนวนน๊อตที่ต้องการ (Required Bolts):**")
+        # แก้ไขปีกกา
         st.latex(rf"N = \frac{{{V_design:,.0f}}}{{\min({Rn_bolt:,.0f}, {Rn_bearing:,.0f})}} = {req_bolts_final:.2f} \rightarrow \text{{Use }} \mathbf{{{num_bolts_final} \text{{ PCS.}}}}")
         
         st.divider()
 
-        # --- STEP 4: SKETCH ---
+        # --- STEP 4: SUMMARY ---
         st.markdown("#### 4. สรุปรายละเอียด (Summary)")
         c_res1, c_res2 = st.columns([1.5, 2])
         
         with c_res1:
             st.success(f"##### ✅ Use: {num_bolts_final} Bolts")
-            st.write(f"- Plate t = {plate_t_mm} mm")
-            st.write(f"- Ratio = {ratio:.2f}")
+            st.write(f"- Bolt: M20 A325")
+            st.write(f"- Plate t: {plate_t_mm} mm")
+            st.write(f"- Ratio: {ratio:.2f}")
 
         with c_res2:
-            # Simple Text Sketch
             qty = int(num_bolts_final)
             rows = math.ceil(qty / 2)
             sketch = ("(X)   (X)\n" * rows) if qty > 1 else "(X)\n"
             st.code(f"PLATE SKETCH:\n-----------\n{sketch}-----------", language="text")
 
     st.markdown("---")
-    st.caption("Auto-Generated Calculation Sheet")
