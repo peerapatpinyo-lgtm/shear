@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 31.0 (Stable Restore - Full DB & Formatting)
+# Version: 32.0 (Complete Calculation with L_crit & Proof)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -74,6 +74,42 @@ def get_load_case_factor(case_name):
     }
     return cases.get(case_name, 4.0)
 
+# 🆕 ฟังก์ชันสร้างสมการพิสูจน์ (Derivation Text)
+def get_derivation_text(case_name):
+    if case_name == "Simple Beam (Uniform Load)":
+        return r"""
+        **Derivation (ที่มาสูตร):**
+        1. Max Shear ($V$) at support: $V = wL/2 \rightarrow wL = 2V$
+        2. Max Moment ($M$) at center: $M = wL^2/8 = (wL)L/8$
+        3. Substitute $wL$: $M = (2V)L/8 = VL/4$
+        4. Solve for $L$: $\mathbf{L = 4 (M/V)}$
+        """
+    elif case_name == "Simple Beam (Point Load @Center)":
+        return r"""
+        **Derivation (ที่มาสูตร):**
+        1. Max Shear ($V$) at support: $V = P/2 \rightarrow P = 2V$
+        2. Max Moment ($M$) at center: $M = PL/4$
+        3. Substitute $P$: $M = (2V)L/4 = VL/2$
+        4. Solve for $L$: $\mathbf{L = 2 (M/V)}$
+        """
+    elif case_name == "Cantilever (Uniform Load)":
+        return r"""
+        **Derivation (ที่มาสูตร):**
+        1. Max Shear ($V$) at fixed end: $V = wL \rightarrow wL = V$
+        2. Max Moment ($M$) at fixed end: $M = wL^2/2 = (wL)L/2$
+        3. Substitute $wL$: $M = (V)L/2 = VL/2$
+        4. Solve for $L$: $\mathbf{L = 2 (M/V)}$
+        """
+    elif case_name == "Cantilever (Point Load @Tip)":
+        return r"""
+        **Derivation (ที่มาสูตร):**
+        1. Max Shear ($V$) constant: $V = P \rightarrow P = V$
+        2. Max Moment ($M$) at fixed end: $M = PL$
+        3. Substitute $P$: $M = (V)L$
+        4. Solve for $L$: $\mathbf{L = 1 (M/V)}$
+        """
+    return ""
+
 def calculate_zx(h, b, tw, tf):
     h, b, tw, tf = h/10, b/10, tw/10, tf/10 
     return (b*tf*(h-tf)) + (tw*(h-2*tf)**2/4)
@@ -83,7 +119,7 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor):
     h, tw, fy, fu = props['h'], props['tw'], props['Fy'], props['Fu']
     b, tf = props.get('b', h/2), props.get('tf', tw*1.5)
     
-    # 1. Shear Capacity (Beam)
+    # 1. Shear Capacity
     Aw_cm2 = (h/10)*(tw/10) 
     Vn_beam = 0.60 * fy * Aw_cm2
     V_target = (load_percent/100) * Vn_beam
@@ -97,21 +133,19 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor):
     # 3. Bolt Capacity
     DB_mm = float(bolt_dia)
     Ab_cm2 = 3.1416 * (DB_mm/10)**2 / 4
-    Fnv = 3300 # ksc
+    Fnv = 3300
     Rn_shear = 0.75 * Fnv * Ab_cm2 
     
-    # Bearing Details
+    # Bearing
     plate_t_mm = 10.0
     Le_cm = 3.5
     hole_dia_mm = DB_mm + 2
     Lc_cm = Le_cm - (hole_dia_mm/10)/2
     
-    # Bearing Plate
     Rn_pl_1 = 1.2 * Lc_cm * (plate_t_mm/10) * 4050
     Rn_pl_2 = 2.4 * (DB_mm/10) * (plate_t_mm/10) * 4050
     Rn_pl = 0.75 * min(Rn_pl_1, Rn_pl_2)
     
-    # Bearing Web
     Rn_web_1 = 1.2 * Lc_cm * (tw/10) * fu
     Rn_web_2 = 2.4 * (DB_mm/10) * (tw/10) * fu
     Rn_web = 0.75 * min(Rn_web_1, Rn_web_2)
@@ -215,6 +249,7 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
     selected_props = next(s for s in all_sections if s['name'] == selected_sec_name)
     factor = get_load_case_factor(load_case)
     res = calculate_connection(selected_props, load_pct, bolt_dia, factor)
+    proof_text = get_derivation_text(load_case)
 
     st.divider()
 
@@ -232,42 +267,40 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
             
             ---
             #### 2. Load Calculation
-            $$
-            V_n = 0.60 F_y A_w = 0.60({res['Fy']:,})({res['Aw']:.2f}) = {res['Vn_beam']:,.2f} \\; kg
-            $$
-            $$
-            V_u = {load_pct/100:.2f} \\times V_n = \\mathbf{{{res['V_target']:,.2f} \\; kg}}
-            $$
+            $$ V_n = 0.60 F_y A_w = 0.60({res['Fy']:,})({res['Aw']:.2f}) = {res['Vn_beam']:,.2f} \\; kg $$
+            $$ V_u = {load_pct/100:.2f} \\times V_n = \\mathbf{{{res['V_target']:,.2f} \\; kg}} $$
 
             ---
             #### 3. Bolt Capacity Check
-            **3.1 Shear:**
-            $$
-            \\phi R_n = 0.75(3300)({res['Ab']:.2f}) = \\mathbf{{{res['Rn_shear']:,.0f} \\; kg/bolt}}
-            $$
+            **3.1 Shear Capacity:**
+            $$ \\phi R_n = 0.75(3300)({res['Ab']:.2f}) = \\mathbf{{{res['Rn_shear']:,.0f} \\; kg/bolt}} $$
 
             **3.2 Bearing (Plate t=10mm):**
-            $$
-            L_c = {res['Le']} - {(res['DB']+2)/20:.2f} = {res['Lc']:.2f} \\; cm
-            $$
-            $$
-            R_{{pl}} = 0.75 \\times \\min({res['Rn_pl_1']:,.0f}, {res['Rn_pl_2']:,.0f}) = {res['Rn_pl']:,.0f} \\; kg
-            $$
+            $$ R_{{pl}} = 0.75 \\times \\min({res['Rn_pl_1']:,.0f}, {res['Rn_pl_2']:,.0f}) = {res['Rn_pl']:,.0f} \\; kg $$
 
             **3.3 Bearing (Web t={res['tw']}mm):**
-            $$
-            R_{{web}} = 0.75 \\times \\min({res['Rn_web_1']:,.0f}, {res['Rn_web_2']:,.0f}) = {res['Rn_web']:,.0f} \\; kg
-            $$
+            $$ R_{{web}} = 0.75 \\times \\min({res['Rn_web_1']:,.0f}, {res['Rn_web_2']:,.0f}) = {res['Rn_web']:,.0f} \\; kg $$
             
-            **Controlling:** $\\mathbf{{{res['phiRn_bolt']:,.0f} \\; kg}}$ ({res['Control By']})
+            **Controlling Capacity:**
+            $$ \\phi R_{{bolt}} = \\min({res['Rn_shear']:,.0f}, {res['Rn_pl']:,.0f}, {res['Rn_web']:,.0f}) = \\mathbf{{{res['phiRn_bolt']:,.0f} \\; kg}} $$
+            *(Control by: {res['Control By']})*
+            
+            $$ n = {res['V_target']:,.0f} / {res['phiRn_bolt']:,.0f} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\mathbf{{{res['Bolt Qty']} \\; pcs}} $$
 
             ---
-            #### 4. Conclusion
-            $$
-            n = \\frac{{{res['V_target']:,.0f}}}{{{res['phiRn_bolt']:,.0f}}} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\mathbf{{{res['Bolt Qty']} \\; pcs}}
-            $$
-            * **Plate Size:** 100 x {int(res['Plate Len']*10)} x 10 mm
-            * **L_crit:** {res['L_crit']:.2f} m ({load_case})
+            #### 4. Critical Span Check ($L_{{crit}}$)
+            ตรวจสอบความยาวคานที่ปลอดภัย (Beam Moment Capacity Check)
+            
+            {proof_text}
+            
+            **Calculation:**
+            1. **Plastic Modulus ($Z_x$):** {res['Zx']:.2f} cm³
+            2. **Moment Capacity ($\phi M_n$):**
+               $$ \phi M_n = 0.90 F_y Z_x = 0.90({res['Fy']})({res['Zx']:.2f}) = {res['Mn_beam']*0.9/100:,.0f} \; kg.m $$
+            3. **Critical Span ($L_{{crit}}$):**
+               $$ L_{{crit}} = {factor} \\times \\frac{{\\phi M_n}}{{V_u}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit']:.2f} \\; m}} $$
+            
+            *(Meaning: If span > {res['L_crit']:.2f} m, beam fails by moment before shear)*
             """)
 
     with col_draw:
@@ -277,7 +310,7 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
 
     st.divider()
 
-    # 3. Full Table (สวยงามแบบเดิม)
+    # 3. Full Table
     st.subheader("📊 ตารางเปรียบเทียบ (Full Comparison)")
     if st.checkbox("Show Table", value=True):
         batch_results = []
