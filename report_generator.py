@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 30.0 (With Dynamic Formula Derivation)
+# Version: 31.0 (Stable Restore - Full DB & Formatting)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,29 +8,62 @@ from datetime import datetime
 import math
 
 # =========================================================
-# 🏗️ 1. FULL DATABASE (TIS Standard)
+# 🏗️ 1. FULL DATABASE (TIS Standard - ครบทุกตัว)
 # =========================================================
 def get_standard_sections():
     return [
+        # Series 100
         {"name": "H-100x50x5x7",    "h": 100, "b": 50,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-100x100x6x8",   "h": 100, "b": 100, "tw": 6,  "tf": 8,  "Fy": 2500, "Fu": 4100},
+        # Series 125
         {"name": "H-125x60x6x8",    "h": 125, "b": 60,  "tw": 6,  "tf": 8,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-125x125x6.5x9", "h": 125, "b": 125, "tw": 6.5,"tf": 9,  "Fy": 2500, "Fu": 4100},
+        # Series 150
+        {"name": "H-148x100x6x9",   "h": 148, "b": 100, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
         {"name": "H-150x75x5x7",    "h": 150, "b": 75,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-150x150x7x10",  "h": 150, "b": 150, "tw": 7,  "tf": 10, "Fy": 2500, "Fu": 4100},
+        # Series 175
         {"name": "H-175x90x5x8",    "h": 175, "b": 90,  "tw": 5,  "tf": 8,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-175x175x7.5x11","h": 175, "b": 175, "tw": 7.5,"tf": 11, "Fy": 2500, "Fu": 4100},
+        # Series 200
+        {"name": "H-194x150x6x9",   "h": 194, "b": 150, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
         {"name": "H-200x100x5.5x8", "h": 200, "b": 100, "tw": 5.5,"tf": 8,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-250x125x6x9",    "h": 250, "b": 125, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-300x150x6.5x9",  "h": 300, "b": 150, "tw": 6.5,"tf": 9,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-350x175x7x11",   "h": 350, "b": 175, "tw": 7,  "tf": 11, "Fy": 2500, "Fu": 4100},
-        {"name": "H-400x200x8x13",   "h": 400, "b": 200, "tw": 8,  "tf": 13, "Fy": 2500, "Fu": 4100},
-        {"name": "H-450x200x9x14",   "h": 450, "b": 200, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
-        {"name": "H-500x200x10x16",  "h": 500, "b": 200, "tw": 10, "tf": 16, "Fy": 2500, "Fu": 4100},
-        {"name": "H-600x200x11x17",  "h": 600, "b": 200, "tw": 11, "tf": 17, "Fy": 2500, "Fu": 4100},
-        {"name": "H-700x300x13x24",  "h": 700, "b": 300, "tw": 13, "tf": 24, "Fy": 2500, "Fu": 4100},
-        {"name": "H-800x300x14x26",  "h": 800, "b": 300, "tw": 14, "tf": 26, "Fy": 2500, "Fu": 4100},
-        {"name": "H-900x300x16x28",  "h": 900, "b": 300, "tw": 16, "tf": 28, "Fy": 2500, "Fu": 4100},
+        {"name": "H-200x200x8x12",  "h": 200, "b": 200, "tw": 8,  "tf": 12, "Fy": 2500, "Fu": 4100},
+        # Series 250
+        {"name": "H-244x175x7x11",  "h": 244, "b": 175, "tw": 7,  "tf": 11, "Fy": 2500, "Fu": 4100},
+        {"name": "H-250x125x6x9",   "h": 250, "b": 125, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-250x250x9x14",  "h": 250, "b": 250, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
+        # Series 300
+        {"name": "H-294x200x8x12",  "h": 294, "b": 200, "tw": 8,  "tf": 12, "Fy": 2500, "Fu": 4100},
+        {"name": "H-300x150x6.5x9", "h": 300, "b": 150, "tw": 6.5,"tf": 9,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-300x300x10x15", "h": 300, "b": 300, "tw": 10, "tf": 15, "Fy": 2500, "Fu": 4100},
+        # Series 350
+        {"name": "H-340x250x9x14",  "h": 340, "b": 250, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
+        {"name": "H-350x175x7x11",  "h": 350, "b": 175, "tw": 7,  "tf": 11, "Fy": 2500, "Fu": 4100},
+        {"name": "H-350x350x12x19", "h": 350, "b": 350, "tw": 12, "tf": 19, "Fy": 2500, "Fu": 4100},
+        # Series 400
+        {"name": "H-390x300x10x16", "h": 390, "b": 300, "tw": 10, "tf": 16, "Fy": 2500, "Fu": 4100},
+        {"name": "H-400x200x8x13",  "h": 400, "b": 200, "tw": 8,  "tf": 13, "Fy": 2500, "Fu": 4100},
+        {"name": "H-400x400x13x21", "h": 400, "b": 400, "tw": 13, "tf": 21, "Fy": 2500, "Fu": 4100},
+        # Series 450
+        {"name": "H-440x300x11x18", "h": 440, "b": 300, "tw": 11, "tf": 18, "Fy": 2500, "Fu": 4100},
+        {"name": "H-450x200x9x14",  "h": 450, "b": 200, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
+        # Series 500
+        {"name": "H-482x300x11x15", "h": 482, "b": 300, "tw": 11, "tf": 15, "Fy": 2500, "Fu": 4100},
+        {"name": "H-488x300x11x18", "h": 488, "b": 300, "tw": 11, "tf": 18, "Fy": 2500, "Fu": 4100},
+        {"name": "H-500x200x10x16", "h": 500, "b": 200, "tw": 10, "tf": 16, "Fy": 2500, "Fu": 4100},
+        # Series 600
+        {"name": "H-582x300x12x17", "h": 582, "b": 300, "tw": 12, "tf": 17, "Fy": 2500, "Fu": 4100},
+        {"name": "H-588x300x12x20", "h": 588, "b": 300, "tw": 12, "tf": 20, "Fy": 2500, "Fu": 4100},
+        {"name": "H-600x200x11x17", "h": 600, "b": 200, "tw": 11, "tf": 17, "Fy": 2500, "Fu": 4100},
+        # Series 700-900 (Large)
+        {"name": "H-700x300x13x24", "h": 700, "b": 300, "tw": 13, "tf": 24, "Fy": 2500, "Fu": 4100},
+        {"name": "H-800x300x14x26", "h": 800, "b": 300, "tw": 14, "tf": 26, "Fy": 2500, "Fu": 4100},
+        {"name": "H-900x300x16x28", "h": 900, "b": 300, "tw": 16, "tf": 28, "Fy": 2500, "Fu": 4100},
     ]
 
 # =========================================================
-# ⚙️ 2. CORE LOGIC
+# ⚙️ 2. CORE LOGIC (Detailed Calc)
 # =========================================================
 def get_load_case_factor(case_name):
     cases = {
@@ -41,71 +74,51 @@ def get_load_case_factor(case_name):
     }
     return cases.get(case_name, 4.0)
 
-# 🆕 ฟังก์ชันสร้างสมการพิสูจน์ตาม Support ที่เลือก
-def get_derivation_text(case_name):
-    if case_name == "Simple Beam (Uniform Load)":
-        return r"""
-        **Proof:**
-        1. Shear: $V = wL/2 \rightarrow wL = 2V$
-        2. Moment: $M = wL^2/8 = (wL)L/8$
-        3. Subst: $M = (2V)L/8 = VL/4$
-        4. Solve $L$: $\mathbf{L = 4 (M/V)}$
-        """
-    elif case_name == "Simple Beam (Point Load @Center)":
-        return r"""
-        **Proof:**
-        1. Shear: $V = P/2 \rightarrow P = 2V$
-        2. Moment: $M = PL/4$
-        3. Subst: $M = (2V)L/4 = VL/2$
-        4. Solve $L$: $\mathbf{L = 2 (M/V)}$
-        """
-    elif case_name == "Cantilever (Uniform Load)":
-        return r"""
-        **Proof:**
-        1. Shear: $V = wL \rightarrow wL = V$
-        2. Moment: $M = wL^2/2 = (wL)L/2$
-        3. Subst: $M = (V)L/2 = VL/2$
-        4. Solve $L$: $\mathbf{L = 2 (M/V)}$
-        """
-    elif case_name == "Cantilever (Point Load @Tip)":
-        return r"""
-        **Proof:**
-        1. Shear: $V = P \rightarrow P = V$
-        2. Moment: $M = PL$
-        3. Subst: $M = (V)L$
-        4. Solve $L$: $\mathbf{L = 1 (M/V)}$
-        """
-    return ""
-
 def calculate_zx(h, b, tw, tf):
     h, b, tw, tf = h/10, b/10, tw/10, tf/10 
     return (b*tf*(h-tf)) + (tw*(h-2*tf)**2/4)
 
 def calculate_connection(props, load_percent, bolt_dia, span_factor):
+    # Unpack
     h, tw, fy, fu = props['h'], props['tw'], props['Fy'], props['Fu']
     b, tf = props.get('b', h/2), props.get('tf', tw*1.5)
     
+    # 1. Shear Capacity (Beam)
     Aw_cm2 = (h/10)*(tw/10) 
     Vn_beam = 0.60 * fy * Aw_cm2
     V_target = (load_percent/100) * Vn_beam
     
+    # 2. Critical Span
     Zx = calculate_zx(h, b, tw, tf)
     Mn_beam = fy * Zx
     phiMn = 0.90 * Mn_beam
     L_crit = (span_factor * (phiMn / V_target)) / 100.0 if V_target > 0 else 0
     
+    # 3. Bolt Capacity
     DB_mm = float(bolt_dia)
     Ab_cm2 = 3.1416 * (DB_mm/10)**2 / 4
-    Rn_shear = 0.75 * 3300 * Ab_cm2 
+    Fnv = 3300 # ksc
+    Rn_shear = 0.75 * Fnv * Ab_cm2 
     
+    # Bearing Details
     plate_t_mm = 10.0
     Le_cm = 3.5
-    Lc_cm = Le_cm - ((DB_mm+2)/10)/2
+    hole_dia_mm = DB_mm + 2
+    Lc_cm = Le_cm - (hole_dia_mm/10)/2
     
-    Rn_pl = 0.75 * min(1.2*Lc_cm*(plate_t_mm/10)*4050, 2.4*(DB_mm/10)*(plate_t_mm/10)*4050)
-    Rn_web = 0.75 * min(1.2*Lc_cm*(tw/10)*fu, 2.4*(DB_mm/10)*(tw/10)*fu)
+    # Bearing Plate
+    Rn_pl_1 = 1.2 * Lc_cm * (plate_t_mm/10) * 4050
+    Rn_pl_2 = 2.4 * (DB_mm/10) * (plate_t_mm/10) * 4050
+    Rn_pl = 0.75 * min(Rn_pl_1, Rn_pl_2)
+    
+    # Bearing Web
+    Rn_web_1 = 1.2 * Lc_cm * (tw/10) * fu
+    Rn_web_2 = 2.4 * (DB_mm/10) * (tw/10) * fu
+    Rn_web = 0.75 * min(Rn_web_1, Rn_web_2)
+    
     phiRn_bolt = min(Rn_shear, Rn_pl, Rn_web)
     
+    # 4. Result
     if phiRn_bolt > 0:
         n_req = V_target / phiRn_bolt
         n_bolts = max(2, math.ceil(n_req))
@@ -125,11 +138,15 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor):
         "Aw": Aw_cm2, "Zx": Zx,
         "Vn_beam": Vn_beam, "V_target": V_target,
         "L_crit": L_crit, "Mn_beam": Mn_beam,
+        "DB": DB_mm, "Ab": Ab_cm2, "Rn_shear": Rn_shear,
+        "Lc": Lc_cm, "Rn_pl": Rn_pl, "Rn_web": Rn_web,
+        "Rn_pl_1": Rn_pl_1, "Rn_pl_2": Rn_pl_2,
+        "Rn_web_1": Rn_web_1, "Rn_web_2": Rn_web_2,
         "phiRn_bolt": phiRn_bolt,
         "Bolt Qty": n_bolts,
         "Control By": control_mode,
         "Plate Len": L_plate,
-        "Le": Le_cm, "S": spacing, "DB": DB_mm
+        "Le": Le_cm, "S": spacing
     }
 
 # =========================================================
@@ -181,6 +198,7 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
 def render_report_tab(beam_data_ignored, conn_data_ignored):
     st.markdown("### 🖨️ Structural Calculation Workbench")
     
+    # 1. Controls
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns([2, 1, 1, 1.5])
         all_sections = get_standard_sections()
@@ -193,15 +211,14 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
         with c4:
             load_case = st.selectbox("Support", ["Simple Beam (Uniform Load)", "Simple Beam (Point Load @Center)", "Cantilever (Uniform Load)", "Cantilever (Point Load @Tip)"])
             
+    # Calculate
     selected_props = next(s for s in all_sections if s['name'] == selected_sec_name)
     factor = get_load_case_factor(load_case)
     res = calculate_connection(selected_props, load_pct, bolt_dia, factor)
-    
-    # 🆕 ดึงสูตร Proof มาเตรียมไว้
-    proof_text = get_derivation_text(load_case)
 
     st.divider()
 
+    # 2. Detailed Report Layout
     col_cal, col_draw = st.columns([1.6, 1])
     
     with col_cal:
@@ -210,31 +227,47 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
             st.markdown(f"""
             #### 1. Design Parameters
             * **Section:** {res['Section']}
-            * **Load Case:** {load_case}
+            * **Method:** ASD (Allowable Stress Design)
+            * **Bolt:** M{int(res['DB'])} (A325), Hole $\\phi = {int(res['DB']+2)}$ mm
             
             ---
             #### 2. Load Calculation
-            $$ V_n = 0.60 F_y A_w = {res['Vn_beam']:,.2f} \\; kg $$
-            $$ V_u = {load_pct/100:.2f} \\times V_n = \\mathbf{{{res['V_target']:,.2f} \\; kg}} $$
+            $$
+            V_n = 0.60 F_y A_w = 0.60({res['Fy']:,})({res['Aw']:.2f}) = {res['Vn_beam']:,.2f} \\; kg
+            $$
+            $$
+            V_u = {load_pct/100:.2f} \\times V_n = \\mathbf{{{res['V_target']:,.2f} \\; kg}}
+            $$
 
             ---
-            #### 3. Bolt Capacity
-            * **Shear:** {0.75*3300*3.1416*((float(bolt_dia)/10)**2)/4:,.0f} kg/bolt
-            * **Plate Bearing:** Check OK
-            * **Web Bearing:** Check OK
-            * **Control:** {res['phiRn_bolt']:,.0f} kg/bolt ({res['Control By']})
-            $$ n = {res['V_target']:,.0f} / {res['phiRn_bolt']:,.0f} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\mathbf{{{res['Bolt Qty']} \\; pcs}} $$
+            #### 3. Bolt Capacity Check
+            **3.1 Shear:**
+            $$
+            \\phi R_n = 0.75(3300)({res['Ab']:.2f}) = \\mathbf{{{res['Rn_shear']:,.0f} \\; kg/bolt}}
+            $$
+
+            **3.2 Bearing (Plate t=10mm):**
+            $$
+            L_c = {res['Le']} - {(res['DB']+2)/20:.2f} = {res['Lc']:.2f} \\; cm
+            $$
+            $$
+            R_{{pl}} = 0.75 \\times \\min({res['Rn_pl_1']:,.0f}, {res['Rn_pl_2']:,.0f}) = {res['Rn_pl']:,.0f} \\; kg
+            $$
+
+            **3.3 Bearing (Web t={res['tw']}mm):**
+            $$
+            R_{{web}} = 0.75 \\times \\min({res['Rn_web_1']:,.0f}, {res['Rn_web_2']:,.0f}) = {res['Rn_web']:,.0f} \\; kg
+            $$
+            
+            **Controlling:** $\\mathbf{{{res['phiRn_bolt']:,.0f} \\; kg}}$ ({res['Control By']})
 
             ---
-            #### 4. Critical Span Limit ($L_{{crit}}$)
-            ตรวจสอบความยาวคานสูงสุดที่ปลอดภัย (Beam Moment Check)
-            
-            {proof_text}
-            
-            **Calculation:**
-            $$ \\phi M_n = 0.9 F_y Z_x = {res['Mn_beam']*0.9/100:,.0f} \\; kg.m $$
-            $$ L_{{crit}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit']:.2f} \\; m}} $$
-            *(Note: If span > {res['L_crit']:.2f} m, beam fails by moment)*
+            #### 4. Conclusion
+            $$
+            n = \\frac{{{res['V_target']:,.0f}}}{{{res['phiRn_bolt']:,.0f}}} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\mathbf{{{res['Bolt Qty']} \\; pcs}}
+            $$
+            * **Plate Size:** 100 x {int(res['Plate Len']*10)} x 10 mm
+            * **L_crit:** {res['L_crit']:.2f} m ({load_case})
             """)
 
     with col_draw:
@@ -244,6 +277,7 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
 
     st.divider()
 
+    # 3. Full Table (สวยงามแบบเดิม)
     st.subheader("📊 ตารางเปรียบเทียบ (Full Comparison)")
     if st.checkbox("Show Table", value=True):
         batch_results = []
@@ -258,8 +292,20 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
                 "L_crit (m)": r['L_crit'],
                 "Bolt Qty": r['Bolt Qty'],
                 "Plate Size": f"100x{int(r['Plate Len']*10)}x10",
-                "Util %": util
+                "Utilization": util,
+                "Control By": r['Control By']
             })
             
         df = pd.DataFrame(batch_results)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(
+            df,
+            use_container_width=True,
+            column_config={
+                "Design Vu (Ton)": st.column_config.NumberColumn("Vu (Ton)", format="%.2f"),
+                "L_crit (m)": st.column_config.NumberColumn("Max Span (m)", format="%.2f"),
+                "Bolt Qty": st.column_config.NumberColumn("Bolt Qty", format="%d"),
+                "Utilization": st.column_config.ProgressColumn("Eff.", format="%.0f%%", min_value=0, max_value=100),
+                "Plate Size": st.column_config.TextColumn("Plate Size (mm)"),
+            },
+            hide_index=True, height=500
+        )
