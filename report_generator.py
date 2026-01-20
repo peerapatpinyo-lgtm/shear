@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 20.0 (Batch Processor - Generate All Sections Table)
+# Version: 20.1 (Bug Fixed & Stable)
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -8,8 +8,6 @@ import math
 # =========================================================
 # 🏗️ 1. MOCK DATABASE (ฐานข้อมูลเหล็กมาตรฐาน TIS)
 # =========================================================
-# หมายเหตุ: ในการใช้งานจริง คุณสามารถดึงจาก df_beams ที่ Tab 1 ได้เลย
-# อันนี้ผมทำไว้เพื่อให้โค้ดนี้ทำงานได้ทันทีโดยไม่ต้องโหลดไฟล์ CSV
 def get_standard_sections():
     return [
         {"name": "H-100x50x5x7",    "h": 100, "tw": 5,  "Fy": 2500, "Fu": 4100},
@@ -30,11 +28,11 @@ def get_standard_sections():
     ]
 
 # =========================================================
-# 🧠 2. CORE CALCULATION LOGIC (ฟังก์ชันคำนวณล้วนๆ ไม่มี UI)
+# 🧠 2. CORE CALCULATION LOGIC
 # =========================================================
 def calculate_connection(props):
     """
-    รับค่า dictionary ของเหล็ก 1 ตัว -> ส่งคืนผลลัพธ์การออกแบบ
+    Core Logic: Input Dict -> Output Dict
     """
     # 1. Unpack properties
     h = props['h']
@@ -46,7 +44,6 @@ def calculate_connection(props):
     DB = 20.0
     DH = DB + 2.0
     plate_t_mm = 10.0
-    is_lrfd = True # Default LRFD
     
     # 2. Geometry Conversion
     d_cm = h / 10.0
@@ -99,12 +96,12 @@ def calculate_connection(props):
     
     weld_status = "OK" if L_plate_cm >= req_weld_len else "Short Plate"
     
-    # Return Result Dictionary
+    # Return Result Dictionary (KEY NAMES FIXED HERE)
     return {
         "Steel Section": props['name'],
         "h (mm)": h,
         "Beam Cap (Ton)": V_cap/1000.0,
-        "Design Vu (Ton)": V_u/1000.0, # 75%
+        "Design Vu (Ton)": V_u/1000.0, 
         "Bolt Qty": n_bolts,
         "Bolt Spec": f"M{int(DB)} A325",
         "Plate (mm)": int(plate_t_mm),
@@ -113,67 +110,70 @@ def calculate_connection(props):
     }
 
 # =========================================================
-# 🖥️ 3. RENDER FUNCTION (ส่วนแสดงผล UI)
+# 🖥️ 3. RENDER FUNCTION
 # =========================================================
 def render_report_tab(beam_data, conn_data):
     
     st.markdown("### 🖨️ Engineering Report & Batch Analysis")
     
-    # --- TAB A: SINGLE CALCULATION (อันเดิมที่คุณเคยมี) ---
+    # --- TAB A: SINGLE CALCULATION ---
     with st.expander("📌 Single Beam Detail (ดูรายละเอียดทีละตัว)", expanded=True):
         if not beam_data:
             st.warning("Please select a beam in Tab 1")
         else:
-            # ใช้ฟังก์ชันคำนวณของเรา
-            res = calculate_connection({
-                "name": beam_data.get('sec_name', 'Custom'),
-                "h": float(beam_data.get('h', 400)),
-                "tw": float(beam_data.get('tw', 8)),
-                "Fy": float(beam_data.get('Fy', 2500)),
-                "Fu": float(beam_data.get('Fu', 4100))
-            })
-            
-            # Show Result Pretty
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Design Load (Vu)", f"{res['Design Vu']*1000:,.0f} kg")
-            c2.metric("Required Bolts", f"{res['Bolt Qty']} pcs", res['Bolt Spec'])
-            c3.metric("Plate Thickness", f"{res['Plate (mm)']} mm", res['Control By'])
-            
-            st.info(f"Summary: Use {res['Bolt Qty']} bolts for {res['Steel Section']} (Weld Status: {res['Weld Check']})")
+            # ใช้ฟังก์ชันคำนวณ
+            try:
+                res = calculate_connection({
+                    "name": beam_data.get('sec_name', 'Custom'),
+                    "h": float(beam_data.get('h', 400)),
+                    "tw": float(beam_data.get('tw', 8)),
+                    "Fy": float(beam_data.get('Fy', 2500)),
+                    "Fu": float(beam_data.get('Fu', 4100))
+                })
+                
+                # Show Result Pretty
+                c1, c2, c3 = st.columns(3)
+                
+                # FIX: ใช้ key ให้ตรงกับที่ return มา (Design Vu (Ton))
+                design_load_kg = res['Design Vu (Ton)'] * 1000 
+                
+                c1.metric("Design Load (Vu)", f"{design_load_kg:,.0f} kg")
+                c2.metric("Required Bolts", f"{res['Bolt Qty']} pcs", res['Bolt Spec'])
+                c3.metric("Plate Thickness", f"{res['Plate (mm)']} mm", res['Control By'])
+                
+                st.info(f"Summary: Use {res['Bolt Qty']} bolts for {res['Steel Section']} (Weld Status: {res['Weld Check']})")
+            except Exception as e:
+                st.error(f"Error processing single beam: {e}")
 
     st.markdown("---")
 
-    # --- TAB B: BATCH PROCESSOR (ฟีเจอร์ใหม่!) ---
+    # --- TAB B: BATCH PROCESSOR ---
     st.subheader("🚀 Batch Analysis (คำนวณรวดเดียวทั้งตาราง)")
-    st.write("กดปุ่มด้านล่างเพื่อไล่คำนวณหน้าตัดเหล็กมาตรฐานทั้งหมด (TIS Standard) ตั้งแต่เล็กสุดไปใหญ่สุด")
+    st.write("กดปุ่มด้านล่างเพื่อไล่คำนวณหน้าตัดเหล็กมาตรฐานทั้งหมด (TIS Standard)")
     
     if st.button("⚡ Run Calculation for All Sections", type="primary"):
         
-        # 1. Get Data
         all_beams = get_standard_sections()
         results = []
         
-        # 2. Progress Bar
+        # Progress Bar
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        # 3. Loop Calculate
+        # Loop Calculate
         for i, beam in enumerate(all_beams):
-            # Update Progress
             progress = (i + 1) / len(all_beams)
             progress_bar.progress(progress)
             status_text.text(f"Calculating: {beam['name']}...")
             
-            # Calculate
             res = calculate_connection(beam)
             results.append(res)
             
         status_text.text("✅ Calculation Complete!")
         
-        # 4. Display DataFrame
+        # Display DataFrame
         df_res = pd.DataFrame(results)
         
-        # Formatting for Display
         st.dataframe(
             df_res,
             use_container_width=True,
@@ -187,7 +187,7 @@ def render_report_tab(beam_data, conn_data):
             hide_index=True
         )
         
-        # 5. Download CSV
+        # Download CSV
         csv = df_res.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Download Excel/CSV",
