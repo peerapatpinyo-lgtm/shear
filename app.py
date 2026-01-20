@@ -1,5 +1,3 @@
-# app.py
-
 import streamlit as st
 import math
 
@@ -20,7 +18,7 @@ try:
     import report_generator
     import tab1_analysis
     import tab3_ltb
-    import tab5_baseplate # เพิ่ม Module ใหม่
+    import tab5_baseplate # ต้อง Import ตัวนี้เพิ่มด้วย
 except ImportError as e:
     st.error(f"⚠️ Modules missing: {e}")
     st.stop()
@@ -187,7 +185,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     
     # Final Decision for Calc
-    use_reduced = st.checkbox("Use Reduced Force for Design?", value=False, help="If selected, V @ Bolt is used. Otherwise, V @ Support is used (Conservative)")
+    use_reduced = st.checkbox("Use Reduced Force for Design?", value=False)
     v_conn_final = v_at_bolt if use_reduced else v_support_design
 
     # --- Loads (Check Mode Only) ---
@@ -233,7 +231,6 @@ if is_lrfd:
     phi_b = 0.90
     V_cap = V_cap_disp 
     M_cap = (phi_b * Mn) / 100 # kg-m
-    
     fact_w = 1.4 * w_load
     fact_p = 1.4 * p_load
     method_str = "LRFD"
@@ -241,7 +238,6 @@ else:
     omg_b = 1.67
     V_cap = V_cap_disp 
     M_cap = (Mn / omg_b) / 100 # kg-m
-    
     fact_w = w_load
     fact_p = p_load
     method_str = "ASD"
@@ -250,108 +246,54 @@ else:
 d_allow = L_cm / defl_denom
 
 if is_check_mode:
-    # --- CHECK MODE ---
     v_act = (fact_w * user_span / 2) + (fact_p / 2)
     m_act = (fact_w * user_span**2 / 8) + (fact_p * user_span / 4)
-    
     d_unif = (5 * (w_load/100) * (L_cm**4)) / (384 * E * Ix)
     d_point = (p_load * (L_cm**3)) / (48 * E * Ix)
     d_act = d_unif + d_point
-    
-    ratio_v = v_act / V_cap
-    ratio_m = m_act / M_cap
-    ratio_d = d_act / d_allow
+    ratio_v, ratio_m, ratio_d = v_act / V_cap, m_act / M_cap, d_act / d_allow
     gov_ratio = max(ratio_v, ratio_m, ratio_d)
-    
-    if gov_ratio == ratio_v: gov_cause = "Shear"
-    elif gov_ratio == ratio_m: gov_cause = "Moment"
-    else: gov_cause = "Deflection"
-    
+    gov_cause = "Shear" if gov_ratio == ratio_v else "Moment" if gov_ratio == ratio_m else "Deflection"
+    w_safe = 0
 else:
-    # --- FIND CAPACITY MODE ---
     w_safe_shear = (2 * V_cap) / user_span
     w_safe_moment = (8 * M_cap) / (user_span**2)
-    
     w_serv_defl = (384 * E * Ix * d_allow) / (5 * (L_cm**4)) * 100
     w_safe_defl = w_serv_defl * 1.4 if is_lrfd else w_serv_defl
-    
     w_safe = min(w_safe_shear, w_safe_moment, w_safe_defl)
-    
     v_act = (w_safe * user_span) / 2
     m_act = (w_safe * user_span**2) / 8
-    
-    ratio_v = w_safe / w_safe_shear
-    ratio_m = w_safe / w_safe_moment
-    ratio_d = w_safe / w_safe_defl
-    
+    ratio_v, ratio_m, ratio_d = w_safe / w_safe_shear, w_safe / w_safe_moment, w_safe / w_safe_defl
     w_safe_service = w_safe / 1.4 if is_lrfd else w_safe
     d_act = (5 * (w_safe_service/100) * (L_cm**4)) / (384 * E * Ix)
-
     gov_ratio = 1.00 
-    
-    if w_safe == w_safe_shear: gov_cause = "Shear Control"
-    elif w_safe == w_safe_moment: gov_cause = "Moment Control"
-    else: gov_cause = "Deflection Control"
+    gov_cause = "Shear Control" if w_safe == w_safe_shear else "Moment Control" if w_safe == w_safe_moment else "Deflection Control"
 
 # ==========================================
-# 5. PACK DATA FOR TABS
+# 5. PACK DATA FOR TABS (FIXED KEYERROR)
 # ==========================================
 results_context = {
     'is_check_mode': is_check_mode,
     'method_str': method_str,
     'is_lrfd': is_lrfd,
     'sec_name': sec_name,
+    'h': h, # เพิ่ม h เข้าไป
+    'b': b, # เพิ่ม b เข้าไป
     'user_span': user_span,
-    'Lb': Lb,
-    'Lb_cm': Lb_cm,
-    'Fy': Fy,
-    'E': E,
-    
-    'w_load': w_load,
-    'p_load': p_load,
-    'fact_w': fact_w,
-    'fact_p': fact_p,
-    
-    'V_cap': V_cap,
-    'M_cap': M_cap,
-    'v_act': v_act,
-    'm_act': m_act,
-    'ratio_v': ratio_v,
-    'ratio_m': ratio_m,
-    'ratio_d': ratio_d,
-    'gov_ratio': gov_ratio,
-    'gov_cause': gov_cause,
-    'w_safe': w_safe if not is_check_mode else 0,
-    
-    'd_act': d_act,
-    'd_allow': d_allow,
-    'defl_denom': defl_denom,
-    
-    'Aw': Aw,
-    'Ix': Ix,
-    'Sx': Sx,
-    'Zx': Zx,
-    'Mp': Mp,
-    'Cb': Cb,
-    'r_ts': r_ts,
-    'val_A': val_A,
-    'Lp_cm': Lp_cm,
-    'Lr_cm': Lr_cm,
-    'ltb_zone': ltb_zone,
-    'Mn': Mn,
-    
-    'ry': ry,
-    'J': J,
-    'h0': h0
+    'Lb': Lb, 'Lb_cm': Lb_cm, 'Fy': Fy, 'E': E,
+    'w_load': w_load, 'p_load': p_load, 'fact_w': fact_w, 'fact_p': fact_p,
+    'V_cap': V_cap, 'M_cap': M_cap, 'v_act': v_act, 'm_act': m_act,
+    'ratio_v': ratio_v, 'ratio_m': ratio_m, 'ratio_d': ratio_d,
+    'gov_ratio': gov_ratio, 'gov_cause': gov_cause, 'w_safe': w_safe,
+    'd_act': d_act, 'd_allow': d_allow, 'defl_denom': defl_denom,
+    'Aw': Aw, 'Ix': Ix, 'Sx': Sx, 'Zx': Zx, 'Mp': Mp, 'Cb': Cb, 'r_ts': r_ts,
+    'val_A': val_A, 'Lp_cm': Lp_cm, 'Lr_cm': Lr_cm, 'ltb_zone': ltb_zone, 'Mn': Mn,
+    'ry': ry, 'J': J, 'h0': h0
 }
 
-# Save simplified state for report generator
 st.session_state.res_dict = {
-    'w_safe': w_safe if not is_check_mode else 0, 
-    'cause': gov_cause, 
-    'v_cap': V_cap, 'v_act': v_act,
-    'm_cap': M_cap, 'm_act': m_act, 'mn_raw': Mn,
-    'd_all': d_allow, 'd_act': d_act,
+    'w_safe': w_safe, 'cause': gov_cause, 'v_cap': V_cap, 'v_act': v_act,
+    'm_cap': M_cap, 'm_act': m_act, 'mn_raw': Mn, 'd_all': d_allow, 'd_act': d_act,
     'v_conn_design': v_conn_final, 
     'ltb_info': {'Lp': Lp_cm, 'Lr': Lr_cm, 'Lb': Lb_cm, 'Zone': ltb_zone, 'Cb': Cb}
 }
@@ -360,65 +302,38 @@ st.session_state.cal_success = True
 # ==========================================
 # 6. UI RENDERING
 # ==========================================
-# เพิ่ม tab5 เข้าไปในการประกาศตัวแปร
+# เพิ่ม tab5 เข้าไปใน list ของ st.tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Analysis & Graphs", 
     "🔩 Connection Detail", 
     "🛡️ LTB Insight", 
-    "📝 Report", 
+    "📝 Report",
     "🧱 Base Plate"
 ])
 
-# --- TAB 1: ANALYSIS & GRAPHS ---
 with tab1:
     tab1_analysis.render(results_context)
 
-# --- TAB 2: CONNECTION DETAIL ---
 with tab2:
     if st.session_state.cal_success:
         st.info(f"⚡ **Designing for Shear Force:** {v_conn_final:,.0f} kg")
-        
         c_type = st.selectbox("Connection Type", ["Fin Plate", "End Plate", "Double Angle"], key='conn_type_select')
         st.session_state.conn_type = c_type 
-        
         section_data = {"name": sec_name, "h": h, "b": b, "tw": tw, "tf": tf}
-        
-        connection_design.render_connection_tab(
-            V_design_from_tab1=v_conn_final,
-            default_bolt_size=20,
-            method=st.session_state.design_method,
-            is_lrfd=is_lrfd,
-            section_data=section_data,
-            conn_type=c_type,
-            default_bolt_grade="A325",
-            default_mat_grade=grade_choice
-        )
-    else:
-        st.warning("Please complete analysis in Tab 1 first.")
+        connection_design.render_connection_tab(v_conn_final, 20, st.session_state.design_method, is_lrfd, section_data, c_type, "A325", grade_choice)
+    else: st.warning("Please complete analysis first.")
 
-# --- TAB 3: LTB INSIGHT ---
 with tab3:
     tab3_ltb.render(results_context)
 
-# --- TAB 4: REPORT ---
 with tab4:
     if st.session_state.cal_success:
-        report_generator.render_report_tab(
-            method=st.session_state.design_method,
-            is_lrfd=is_lrfd,
-            sec_name=sec_name,
-            steel_grade=grade_choice,
-            p={'h': h, 'b': b, 'tw': tw, 'tf': tf, 'Ix': Ix, 'Zx': Zx, 'Sx': Sx},
-            res=st.session_state.res_dict,
-            bolt={'type': st.session_state.get('conn_type', 'Fin Plate'), 'grade': 'A325', 'size': 'M20', 'qty': 'N/A'}
-        )
-    else:
-        st.warning("Please complete analysis first.")
+        report_generator.render_report_tab(st.session_state.design_method, is_lrfd, sec_name, grade_choice, {'h': h, 'b': b, 'tw': tw, 'tf': tf, 'Ix': Ix, 'Zx': Zx, 'Sx': Sx}, st.session_state.res_dict, {'type': st.session_state.conn_type, 'grade': 'A325', 'size': 'M20', 'qty': 'N/A'})
+    else: st.warning("Please complete analysis first.")
 
-# --- TAB 5: BASE PLATE (แก้ไข NameError) ---
 with tab5:
     if st.session_state.cal_success:
-        # ส่งแรงปฏิกิริยา (v_at_bolt หรือ v_support_design) ไปคำนวณ
+        # เรียกใช้โมดูล Base Plate
         tab5_baseplate.render(results_context, v_conn_final)
     else:
-        st.warning("Please complete analysis first.")
+        st.warning("Please complete analysis in Tab 1 first.")
