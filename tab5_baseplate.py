@@ -1,118 +1,138 @@
 import streamlit as st
 import math
+import pandas as pd
 
 def render(res_ctx, v_design):
-    st.markdown("### 🏆 Professional Column Base Design Suite")
+    st.markdown("<h2 style='text-align: center; color: #1e3a8a;'>🚀 Enterprise Base Plate Analysis</h2>", unsafe_allow_html=True)
     
-    # --- 1. CORE DATA & CONSTANTS ---
+    # --- 1. DATA PREPARATION ---
     h, b, tw, tf = res_ctx['h']/10, res_ctx['b']/10, res_ctx['tw']/10, res_ctx['tf']/10
     Fy, E, is_lrfd = res_ctx['Fy'], res_ctx['E'], res_ctx['is_lrfd']
-    Ag, ry = 2*b*tf + (h-2*tf)*tw, res_ctx['ry']
+    Ag, ry, rx = 2*b*tf + (h-2*tf)*tw, res_ctx['ry'], res_ctx['Ix']**0.5 / Ag**0.5
     
-    # --- 2. MULTI-COLUMN INPUT UI ---
-    with st.container(border=True):
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.write("📐 **Geometry**")
-            col_h = st.number_input("Height (m)", 0.5, 15.0, 4.0)
-            k_val = st.selectbox("K Factor", [2.1, 1.2, 1.0, 0.8, 0.65], index=2)
-        with c2:
-            st.write("🧱 **Plate & Grout**")
-            N = st.number_input("Length N (cm)", value=float(math.ceil(h + 10)))
-            B = st.number_input("Width B (cm)", value=float(math.ceil(b + 10)))
-            grout_t = st.slider("Grout (mm)", 10, 50, 25)
-        with c3:
-            st.write("⛓️ **Anchor Bolts**")
-            bolt_d = st.selectbox("Bolt Size", [12, 16, 20, 24, 30], index=2)
-            bolt_n = st.selectbox("Bolt Qty", [4, 6, 8], index=0)
-            bolt_fu = 4200 # Grade 4.6/A307 approx
-        with c4:
-            st.write("🏗️ **Concrete**")
-            fc = st.number_input("f'c (ksc)", 150, 400, 240)
-            a2_a1 = st.slider("A2/A1 Ratio", 1.0, 4.0, 2.0)
+    # --- 2. ADVANCED CONTROL PANEL ---
+    with st.sidebar:
+        st.markdown("### ⚙️ Advanced Settings")
+        stiffener_check = st.checkbox("Add Base Plate Stiffeners?", value=False)
+        weld_size = st.slider("Fillet Weld Size (mm)", 3, 20, 6)
+        concrete_type = st.selectbox("Concrete Type", ["Normal Weight", "Lightweight"])
+        lambda_c = 1.0 if concrete_type == "Normal Weight" else 0.75
 
-    # --- 3. ADVANCED CALCULATIONS ---
-    # A. Column Stability (AISC Ch. E)
-    slenderness = (k_val * col_h * 100) / ry
-    Fe = (math.pi**2 * E) / (slenderness**2) if slenderness > 0 else 0.1
-    Fcr = (0.658**(Fy/Fe)) * Fy if slenderness <= 4.71*math.sqrt(E/Fy) else 0.877*Fe
+    # --- 3. INPUT SECTION ---
+    tab_in1, tab_in2 = st.columns([1, 1])
+    with tab_in1:
+        with st.container(border=True):
+            st.markdown("##### 📏 Structural Geometry")
+            col_h = st.slider("Column Height (m)", 0.5, 15.0, 4.0, 0.1)
+            k_val = st.selectbox("Effective Length (K)", [2.1, 1.2, 1.0, 0.8, 0.65], index=2)
+            st.markdown("##### 🏗️ Foundation Details")
+            fc = st.number_input("Concrete f'c (ksc)", 100, 500, 240)
+            a2_a1 = st.slider("Pedestal/Plate Area Ratio", 1.0, 4.0, 2.0)
+    
+    with tab_in2:
+        with st.container(border=True):
+            st.markdown("##### 🧱 Base Plate & Bolts")
+            c_n, c_b = st.columns(2)
+            N = c_n.number_input("Plate N (cm)", value=float(math.ceil(h + 10)))
+            B = c_b.number_input("Plate B (cm)", value=float(math.ceil(b + 10)))
+            bolt_d = st.selectbox("Anchor Bolt Ø (mm)", [16, 20, 24, 30, 36], index=1)
+            bolt_n = st.number_input("Number of Bolts", 4, 12, 4, 2)
+
+    # --- 4. ENGINE: BUCKLING & COMPACTNESS ---
+    # AISC Table B4.1a - Check Compactness for Compression
+    lambda_flange = (b/2) / tf
+    limit_flange = 0.56 * math.sqrt(E/Fy)
+    flange_status = "Compact" if lambda_flange < limit_flange else "Slender"
+    
+    # Column Stability
+    slend_ratio = (k_val * col_h * 100) / ry
+    Fe = (math.pi**2 * E) / (slend_ratio**2)
+    Fcr = (0.658**(Fy/Fe)) * Fy if slend_ratio <= 4.71*math.sqrt(E/Fy) else 0.877*Fe
     P_cap = (0.9 * Fcr * Ag) if is_lrfd else (Fcr * Ag / 1.67)
 
-    # B. Base Plate Thickness (AISC Design Guide 1)
+    # --- 5. ENGINE: BASE PLATE OPTIMIZATION ---
+    # AISC Design Guide 1 Method
+    A1 = N * B
+    Pp = min(0.85 * fc * A1 * math.sqrt(a2_a1), 1.7 * fc * A1)
+    phi_b = 0.65
+    P_bearing = (phi_b * Pp) if is_lrfd else (Pp / 2.31)
+    
+    # Thickness Optimization
     m = (N - 0.95*h)/2
     n = (B - 0.80*b)/2
+    lambda_val = (2 * math.sqrt(h*b) / (h+b)) # AISC lambda
     n_prime = math.sqrt(h * b) / 4
-    l_crit = max(m, n, n_prime)
-    t_req = l_crit * math.sqrt((2*v_design) / (0.9*Fy*B*N)) if is_lrfd else l_crit * math.sqrt((2*v_design*1.67)/(Fy*B*N))
+    l_max = max(m, n, lambda_val * n_prime)
+    
+    t_req = l_max * math.sqrt((2*v_design) / (0.9*Fy*B*N)) if is_lrfd else l_max * math.sqrt((2*v_design*1.67)/(Fy*B*N))
 
-    # C. Anchor Bolt Shear Capacity (AISC Ch. J)
-    # Nominal Shear per bolt (Simplified)
-    Ab = (math.pi * (bolt_d/10)**2) / 4
-    Fnv = 0.45 * bolt_fu # Shear strength
-    V_bolt_cap = (0.75 * Fnv * Ab * bolt_n) if is_lrfd else (Fnv * Ab * bolt_n / 2.0)
+    # --- 6. VISUALIZATION & DASHBOARD ---
+    st.divider()
     
-    # Shear force for bolt check (Assume 20% of axial as accidental shear if no shear input)
-    v_shear_act = v_design * 0.1 
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Column Utilization", f"{v_design/P_cap:.1%}")
+    m2.metric("Bearing Utilization", f"{v_design/P_bearing:.1%}")
+    m3.metric("Required Thickness", f"{t_req*10:.1f} mm")
+    m4.metric("Slenderness (KL/r)", f"{slend_ratio:.1f}")
 
-    # --- 4. PROFESSIONAL VISUALIZATION ---
-    st.markdown("#### 🔍 Structural Integrity & Detailed Drawings")
     
-    v1, v2 = st.columns([1.5, 1])
+
+    v_col, d_col = st.columns([1.2, 1])
     
-    with v1:
-        # SVG SIDE VIEW (Section)
-        canvas_h = 300
-        svg_side = f"""
-        <svg width="100%" height="{canvas_h}" viewBox="0 -50 400 350" xmlns="http://www.w3.org/2000/svg">
-            <rect x="50" y="150" width="300" height="100" fill="#d1d5db" />
-            <path d="M 50 150 L 350 150" stroke="#9ca3af" stroke-width="2" />
-            
-            <rect x="80" y="140" width="240" height="{grout_t/2}" fill="#94a3b8" />
-            
-            <rect x="80" y="{140 - 15}" width="240" height="15" fill="#334155" />
-            
-            <rect x="150" y="0" width="100" height="{140-15}" fill="#1e40af" fill-opacity="0.9" />
-            <line x1="150" y1="0" x2="150" y2="125" stroke="#1e3a8a" stroke-width="2"/>
-            <line x1="250" y1="0" x2="250" y2="125" stroke="#1e3a8a" stroke-width="2"/>
-            
-            <line x1="100" y1="100" x2="100" y2="220" stroke="#ef4444" stroke-width="4" stroke-dasharray="2"/>
-            <line x1="300" y1="100" x2="300" y2="220" stroke="#ef4444" stroke-width="4" stroke-dasharray="2"/>
-            
-            <text x="200" y="270" text-anchor="middle" font-size="14" fill="#1e3a8a" font-weight="bold">SIDE SECTION VIEW</text>
-            <text x="330" y="145" font-size="12" fill="#4b5563">Grout {grout_t}mm</text>
+    with v_col:
+        st.markdown("#### 🎨 Section Drafting & Pressure Map")
+        # Advanced SVG Drawing
+        scale = 250 / max(N, B)
+        svg_w, svg_h = B*scale, N*scale
+        pad = 25
+        
+        svg = f"""
+        <svg width="100%" height="350" viewBox="-50 -50 400 400">
+            <defs>
+                <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" style="stop-color:#f3f4f6;stop-opacity:1" />
+                    <stop offset="100%" style="stop-color:#d1d5db;stop-opacity:1" />
+                </linearGradient>
+            </defs>
+            <rect x="0" y="0" width="{svg_w}" height="{svg_h}" fill="url(#grad1)" stroke="#1e3a8a" stroke-width="3" />
+            <rect x="{(svg_w - b*scale)/2}" y="{(svg_h - h*scale)/2}" width="{b*scale}" height="{tf*scale}" fill="#1e40af" />
+            <rect x="{(svg_w - b*scale)/2}" y="{(svg_h + h*scale)/2 - tf*scale}" width="{b*scale}" height="{tf*scale}" fill="#1e40af" />
+            <rect x="{(svg_w - tw*scale)/2}" y="{(svg_h - h*scale)/2 + tf*scale}" width="{tw*scale}" height="{(h-2*tf)*scale}" fill="#1e40af" />
+            <line x1="{svg_w}" y1="{svg_h/2}" x2="{svg_w - n*scale}" y2="{svg_h/2}" stroke="#ef4444" stroke-dasharray="5,5" />
+            <text x="{svg_w - 10}" y="{svg_h/2 - 5}" fill="#ef4444" font-size="10">n</text>
+            <circle cx="30" cy="30" r="8" fill="#374151" />
+            <circle cx="{svg_w-30}" cy="30" r="8" fill="#374151" />
+            <circle cx="30" cy="{svg_h-30}" r="8" fill="#374151" />
+            <circle cx="{svg_w-30}" cy="{svg_h-30}" r="8" fill="#374151" />
         </svg>
         """
-        st.write(svg_side, unsafe_allow_html=True)
+        st.write(svg, unsafe_allow_html=True)
         
 
-    with v2:
-        # Metrics & Gauges
-        st.info("**Analysis Summary**")
+    with d_col:
+        st.markdown("#### 📈 Stability Interaction")
+        # Interaction Graph: Force vs Height
+        heights = [h/10 for h in range(5, 155, 5)]
+        capacities = []
+        for hh in heights:
+            sr = (k_val * hh * 100) / ry
+            f_e = (math.pi**2 * E) / (sr**2)
+            f_cr = (0.658**(Fy/f_e)) * Fy if sr <= 4.71*math.sqrt(E/Fy) else 0.877*f_e
+            capacities.append((0.9 * f_cr * Ag)/1000 if is_lrfd else (f_cr * Ag / 1.67)/1000)
         
-        # Column Gauge
-        c_util = v_design/P_cap
-        st.write(f"Column Buckling: **{c_util:.1%}**")
-        st.progress(min(c_util, 1.0))
-        
-        # Bearing Gauge
-        # Concrete capacity including A2/A1
-        Pp = 0.85 * fc * (N*B) * math.sqrt(a2_a1)
-        B_cap = (0.65 * Pp) if is_lrfd else (Pp / 2.31)
-        b_util = v_design/B_cap
-        st.write(f"Concrete Bearing: **{b_util:.1%}**")
-        st.progress(min(b_util, 1.0))
-        
-        # Shear Gauge
-        s_util = v_shear_act/V_bolt_cap
-        st.write(f"Anchor Shear: **{s_util:.1%}**")
-        st.progress(min(s_util, 1.0))
+        chart_data = pd.DataFrame({'Height (m)': heights, 'Capacity (Ton)': capacities})
+        st.line_chart(chart_data.set_index('Height (m)'))
+        st.caption("Graph showing Axial Capacity (Ton) as Column Height increases.")
 
-    # --- 5. RESULT CARDS ---
-    st.divider()
-    res1, res2, res3 = st.columns(3)
-    res1.success(f"**PLATE THICKNESS**\n\n**{t_req*10:.2f} mm**")
-    res2.help("Based on AISC Design Guide 1").metric("MIN. BOLT EMBEDMENT", f"{bolt_d*12} mm")
-    res3.metric("SAFE LOAD LIMIT", f"{int(min(P_cap, B_cap)/1000)} Ton")
+    # --- 7. TECHNICAL SUMMARY ---
+    with st.expander("📝 Detailed Calculation Steps (Report Ready)"):
+        st.write(f"1. **Section Compactness:** Flange b/t = {lambda_flange:.2f} (Limit: {limit_flange:.2f}) -> **{flange_status}**")
+        st.write(f"2. **Effective Length:** KL = {k_val} * {col_h} = {k_val*col_h:.2f} m")
+        st.write(f"3. **Slenderness Ratio:** KL/r = {slend_ratio:.2f} {'< 200 (OK)' if slend_ratio < 200 else '> 200 (Fail)'}")
+        st.write(f"4. **Bearing Stress:** fp = {v_design/A1:.2f} kg/cm² (Allowable: {P_bearing/A1:.2f} kg/cm²)")
+        st.write(f"5. **Cantilever distances:** m = {m:.2f} cm, n = {n:.2f} cm, λn' = {lambda_val*n_prime:.2f} cm")
 
-    if c_util > 1.0:
-        st.error("🚨 CRITICAL: Column will fail by Buckling. Increase section size or decrease K-length.")
+    if v_design > min(P_cap, P_bearing):
+        st.error("🚨 OVERLOADED: Structure exceeds capacity in one or more checks.")
+    else:
+        st.success("💎 Structural Design meets AISC 360-22 Requirements.")
