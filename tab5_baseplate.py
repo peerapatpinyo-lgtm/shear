@@ -3,98 +3,106 @@ import streamlit.components.v1 as components
 import math
 
 def render(res_ctx, v_design):
-    # --- 1. ENGINEERING LOGIC ---
+    st.markdown("### 🏛️ Advanced Base Plate & Bolt Placement Analysis")
+    
+    # --- 1. DATA EXTRACTION ---
     h, b, tw, tf = res_ctx['h']/10, res_ctx['b']/10, res_ctx['tw']/10, res_ctx['tf']/10
     Fy, is_lrfd = res_ctx['Fy'], res_ctx['is_lrfd']
-
-    # --- 2. INPUT INTERFACE ---
+    
+    # --- 2. COMPREHENSIVE INPUTS ---
     with st.container(border=True):
+        st.markdown("##### 🛠️ Design Specification")
         c1, c2, c3, c4 = st.columns(4)
-        N = c1.number_input("N (Plate Length) cm", value=float(math.ceil(h + 15)))
-        B = c2.number_input("B (Plate Width) cm", value=float(math.ceil(b + 15)))
-        tp = c3.number_input("t (Thickness) mm", value=25.0)
-        edge_d = c4.number_input("Edge Dist. (mm)", value=50.0)
+        N = c1.number_input("Plate Length N (cm)", value=float(math.ceil(h + 15)))
+        B = c2.number_input("Plate Width B (cm)", value=float(math.ceil(b + 15)))
+        tp = c3.number_input("Thickness (mm)", value=25.0)
+        fc = c4.number_input("Concrete f'c (ksc)", value=240.0)
+        
+        st.markdown("##### ⛓️ Bolt Placement (Constructability)")
+        c5, c6, c7, c8 = st.columns(4)
+        bolt_d = c5.selectbox("Bolt Size (mm)", [16, 20, 24, 30], index=1)
+        edge_d = c6.number_input("Edge Distance (mm)", value=50.0)
+        # Bolt offset from center calculation
+        dist_x = c7.number_input("Bolt Spacing X (cm)", value=B-10.0)
+        dist_y = c8.number_input("Bolt Spacing Y (cm)", value=N-10.0)
 
-    # Calculation AISC DG1
+    # --- 3. ENGINEERING CALCULATIONS ---
+    # AISC DG1: Cantilever distances
     m = (N - 0.95*h)/2
     n = (B - 0.80*b)/2
     l_crit = max(m, n, (math.sqrt(h*b)/4))
     t_req = l_crit * math.sqrt((2*v_design)/(0.9*Fy*B*N)) if is_lrfd else l_crit * math.sqrt((2*v_design*1.67)/(Fy*B*N))
-
-    # --- 3. HIGH-DETAIL SVG BLUEPRINT ---
-    sc = 220 / max(N, B)
-    canvas_w, canvas_h = 800, 520
-    px, py = 250, 260 # Plan Center
     
-    # Bolt Offset
-    eb = edge_d / 10
-    bx, by = (B/2 - eb) * sc, (N/2 - eb) * sc
+    # Bolt Clearance Checks
+    bolt_c_x = (B - dist_x) / 2 # Edge distance actual (cm)
+    bolt_to_flange = (dist_x - b) / 2 # Clearance from flange to bolt center
+    
+    # --- 4. PRECISION BLUEPRINT (SVG) ---
+    sc = 250 / max(N, B)
+    canvas_w, canvas_h = 800, 500
+    px, py = 250, 250 # Plan Center
+    
+    # Dynamic Colors based on checks
+    edge_color = "#ef4444" if (bolt_c_x * 10) < (1.5 * bolt_d) else "#22c55e"
+    wrench_color = "#ef4444" if (bolt_to_flange * 10) < 40 else "#3b82f6"
 
     svg_code = f"""
-    <div style="display: flex; justify-content: center; background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
+    <div style="display: flex; justify-content: center; background: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0;">
     <svg width="{canvas_w}" height="{canvas_h}" viewBox="0 0 {canvas_w} {canvas_h}" xmlns="http://www.w3.org/2000/svg">
-        <text x="20" y="30" font-family="monospace" font-size="18" font-weight="bold" fill="#1e3a8a">STRUCTURAL SHOP DRAWING: BASE PLATE</text>
-        <line x1="20" y1="40" x2="520" y2="40" stroke="#1e3a8a" stroke-width="2"/>
-
-        <g transform="translate(0, 20)">
-            <text x="{px}" y="40" text-anchor="middle" font-weight="bold" font-family="monospace" font-size="14">TOP VIEW (PLAN)</text>
-            
-            <rect x="{px - B*sc/2}" y="{py - N*sc/2}" width="{B*sc}" height="{N*sc}" fill="#f8fafc" stroke="#1e293b" stroke-width="2.5"/>
-            
-            <g stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="12,4,2,4">
-                <line x1="{px - B*sc/2 - 30}" y1="{py}" x2="{px + B*sc/2 + 30}" y2="{py}"/>
-                <line x1="{px}" y1="{py - N*sc/2 - 30}" x2="{px}" y2="{py + N*sc/2 + 30}"/>
-            </g>
-
-            <g transform="translate({px}, {py})" fill="#475569" stroke="#000" stroke-width="1">
-                <rect x="{-b*sc/2}" y="{-h*sc/2}" width="{b*sc}" height="{tf*sc}"/> <rect x="{-b*sc/2}" y="{h*sc/2 - tf*sc}" width="{b*sc}" height="{tf*sc}"/> <rect x="{-tw*sc/2}" y="{-h*sc/2 + tf*sc}" width="{tw*sc}" height="{(h-2*tf)*sc}"/> </g>
-
-            <g fill="none" stroke="#ef4444" stroke-width="1.5">
-                <circle cx="{px-bx}" cy="{py-by}" r="8"/> <circle cx="{px-bx}" cy="{py-by}" r="2" fill="#ef4444"/>
-                <circle cx="{px+bx}" cy="{py-by}" r="8"/> <circle cx="{px+bx}" cy="{py-by}" r="2" fill="#ef4444"/>
-                <circle cx="{px-bx}" cy="{py+by}" r="8"/> <circle cx="{px-bx}" cy="{py+by}" r="2" fill="#ef4444"/>
-                <circle cx="{px+bx}" cy="{py+by}" r="8"/> <circle cx="{px+bx}" cy="{py+by}" r="2" fill="#ef4444"/>
-            </g>
-
-            <g stroke="#64748b" stroke-width="1" font-family="monospace" font-size="11">
-                <line x1="{px - B*sc/2}" y1="{py + N*sc/2 + 25}" x2="{px + B*sc/2}" y2="{py + N*sc/2 + 25}"/>
-                <path d="M{px - B*sc/2} {py + N*sc/2 + 20} L{px - B*sc/2} {py + N*sc/2 + 30} M{px + B*sc/2} {py + N*sc/2 + 20} L{px + B*sc/2} {py + N*sc/2 + 30}"/>
-                <text x="{px}" y="{py + N*sc/2 + 45}" text-anchor="middle">B = {B} cm</text>
-                
-                <line x1="{px + B*sc/2 + 25}" y1="{py - N*sc/2}" x2="{px + B*sc/2 + 25}" y2="{py + N*sc/2}"/>
-                <text x="{px + B*sc/2 + 45}" y="{py}" transform="rotate(90 {px + B*sc/2 + 45} {py})" text-anchor="middle">N = {N} cm</text>
-            </g>
+        <text x="{px}" y="40" text-anchor="middle" font-weight="bold" font-family="monospace" font-size="14">ENGINEERING PLAN: BOLT & CLEARANCE</text>
+        
+        <rect x="{px - B*sc/2}" y="{py - N*sc/2}" width="{B*sc}" height="{N*sc}" fill="#f8fafc" stroke="#1e293b" stroke-width="2"/>
+        
+        <g transform="translate({px}, {py})" fill="#cbd5e1" stroke="#000" stroke-width="1.2">
+            <rect x="{-b*sc/2}" y="{-h*sc/2}" width="{b*sc}" height="{tf*sc}"/>
+            <rect x="{-b*sc/2}" y="{h*sc/2 - tf*sc}" width="{b*sc}" height="{tf*sc}"/>
+            <rect x="{-tw*sc/2}" y="{-h*sc/2 + tf*sc}" width="{tw*sc}" height="{(h-2*tf)*sc}"/>
         </g>
 
-        <g transform="translate(560, 100)">
-            <text x="80" y="0" text-anchor="middle" font-weight="bold" font-family="monospace" font-size="14">SECTION A-A</text>
-            
-            <rect x="55" y="30" width="50" height="150" fill="#cbd5e1" stroke="#334155"/>
-            
-            <rect x="0" y="180" width="160" height="18" fill="#1e293b"/>
-            <text x="170" y="195" font-size="12" font-weight="bold" fill="#1e293b">PL {tp} mm</text>
-            
-            <rect x="0" y="198" width="160" height="10" fill="#94a3b8" opacity="0.4"/>
-            <text x="170" y="208" font-size="10" fill="#64748b">30mm NON-SHRINK GROUT</text>
-            
-            <rect x="-20" y="208" width="200" height="80" fill="none" stroke="#94a3b8" stroke-dasharray="4,4"/>
-            <text x="80" y="280" text-anchor="middle" font-size="10" fill="#94a3b8">CONCRETE FOUNDATION</text>
+        <g stroke-width="2">
+            <circle cx="{px - dist_x/2*sc}" cy="{py - dist_y/2*sc}" r="8" fill="none" stroke="{wrench_color}"/>
+            <circle cx="{px + dist_x/2*sc}" cy="{py - dist_y/2*sc}" r="8" fill="none" stroke="{wrench_color}"/>
+            <circle cx="{px - dist_x/2*sc}" cy="{py + dist_y/2*sc}" r="8" fill="none" stroke="{wrench_color}"/>
+            <circle cx="{px + dist_x/2*sc}" cy="{py + dist_y/2*sc}" r="8" fill="none" stroke="{wrench_color}"/>
+        </g>
 
-            <path d="M 105 180 L 130 150 H 155" fill="none" stroke="#ef4444" stroke-width="1.5"/>
-            <path d="M 112 165 L 122 180 H 102 Z" fill="#ef4444"/> <text x="132" y="145" font-size="11" font-weight="bold" fill="#ef4444">FW E70XX</text>
+        <line x1="{px + b/2*sc}" y1="{py}" x2="{px + dist_x/2*sc}" y2="{py}" stroke="{wrench_color}" stroke-dasharray="4"/>
+        <text x="{px + (b/2 + dist_x/4)*sc}" y="{py - 10}" fill="{wrench_color}" font-size="10" text-anchor="middle">Wrench: {bolt_to_flange*10:.0f}mm</text>
+
+        <line x1="{px + B/2*sc}" y1="{py + dist_y/2*sc}" x2="{px + dist_x/2*sc}" y2="{py + dist_y/2*sc}" stroke="{edge_color}" />
+        <text x="{px + B/2*sc + 10}" y="{py + dist_y/2*sc + 5}" fill="{edge_color}" font-size="10">Edge: {bolt_c_x*10:.0f}mm</text>
+
+        <g transform="translate(550, 120)">
+            <text x="80" y="-30" text-anchor="middle" font-weight="bold" font-family="monospace">SECTION A-A</text>
+            <rect x="65" y="0" width="30" height="150" fill="#f1f5f9" stroke="#334155"/>
+            <rect x="0" y="150" width="160" height="12" fill="#334155"/>
+            <text x="170" y="160" font-size="11" font-weight="bold">t={tp}mm</text>
+            <path d="M 95 150 L 115 130 h 20" fill="none" stroke="#ef4444" stroke-width="1"/>
+            <path d="M 100 142 L 108 150 L 92 150 Z" fill="#ef4444"/>
         </g>
     </svg>
     </div>
     """
-    components.html(svg_code, height=canvas_h + 20)
-    
-    
+    components.html(svg_code, height=520)
 
-    # --- 4. CALCULATION LOGS ---
+    # --- 5. TECHNICAL VERDICT ---
     st.divider()
-    res1, res2, res3 = st.columns(3)
-    res1.metric("Critical Arm (l)", f"{l_crit:.2f} cm")
-    res2.metric("Min. Required t", f"{t_req*10:.2f} mm")
+    col1, col2, col3 = st.columns(3)
     
-    status = "✅ PASS" if tp >= t_req*10 else "🚨 FAIL"
-    res3.subheader(f"Status: {status}")
+    with col1:
+        st.markdown("**🛡️ Structural Strength**")
+        st.write(f"Req. Thickness: `{t_req*10:.2f} mm`")
+        if tp >= t_req*10: st.success("Plate Thickness OK")
+        else: st.error("Plate too thin")
+
+    with col2:
+        st.markdown("**🔧 Constructability**")
+        st.write(f"Wrench Clearance: `{bolt_to_flange*10:.1f} mm`")
+        if (bolt_to_flange*10) >= 40: st.success("Clearance OK")
+        else: st.warning("Space tight for Wrench")
+
+    with col3:
+        st.markdown("**📐 Concrete Edge**")
+        st.write(f"Min. Edge (1.5d): `{1.5*bolt_d:.1f} mm`")
+        if (bolt_c_x*10) >= (1.5*bolt_d): st.success("Edge Distance OK")
+        else: st.error("Edge Distance FAIL")
