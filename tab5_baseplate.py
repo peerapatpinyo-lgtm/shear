@@ -28,19 +28,18 @@ def render(res_ctx, v_design):
     grout_h = 50.0
 
     # --- 3. SVG ENGINE ---
-    cv_w, cv_h = 1100, 1000
-    sc = 400 / max(N, B) # Scale factor
+    cv_w, cv_h = 1150, 1000
+    sc = 400 / max(N, B) 
     
-    # Grid Positions
-    px, py = 300, 300   # Plan center
-    ax, ay = 300, 800   # Elevation A-A (Front)
-    bx, by = 850, 300   # Elevation B-B (Side)
+    px, py = 350, 320   # Plan
+    ax, ay = 350, 820   # Front (X-X)
+    bx, by = 900, 320   # Side (Y-Y)
 
     def tick(x, y): return f'<line x1="{x-4}" y1="{y+4}" x2="{x+4}" y2="{y-4}" stroke="black" stroke-width="1"/>'
 
     svg = f"""
     <svg width="{cv_w}" height="{cv_h}" viewBox="0 0 {cv_w} {cv_h}" xmlns="http://www.w3.org/2000/svg">
-        <rect width="100%" height="100%" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+        <rect width="100%" height="100%" fill="#ffffff" />
         
         <g transform="translate({px}, {py})">
             <text x="0" y="{-N*sc/2 - 60}" text-anchor="middle" font-weight="bold" font-size="16">PLAN VIEW</text>
@@ -54,57 +53,38 @@ def render(res_ctx, v_design):
                 <circle cx="{-sx/2*sc}" cy="{-sy/2*sc}" r="6"/><circle cx="{sx/2*sc}" cy="{-sy/2*sc}" r="6"/>
                 <circle cx="{-sx/2*sc}" cy="{sy/2*sc}" r="6"/><circle cx="{sx/2*sc}" cy="{sy/2*sc}" r="6"/>
             </g>
-            <g transform="translate(0, {N*sc/2 + 40})" font-family="monospace" font-size="10">
-                <line x1="{-B*sc/2}" y1="0" x2="{B*sc/2}" y2="0" stroke="black"/>
-                {tick(-B*sc/2,0)} {tick(-sx*sc/2,0)} {tick(sx*sc/2,0)} {tick(B*sc/2,0)}
-                <text x="{-sx/2*sc-edge_x*sc/2}" y="12" text-anchor="middle" fill="green">{int(edge_x)}</text>
-                <text x="0" y="12" text-anchor="middle" font-weight="bold">Sx={int(sx)}</text>
-                <text x="{sx/2*sc+edge_x*sc/2}" y="12" text-anchor="middle" fill="green">{int(edge_x)}</text>
-                <text x="0" y="35" text-anchor="middle" font-size="12" font-weight="bold">B = {int(B)}</text>
-            </g>
+            <text x="{B*sc/2 + 30}" y="0" fill="red" font-weight="bold">B-B →</text>
         </g>
 
         <g transform="translate({ax}, {ay})">
-            <text x="0" y="-120" text-anchor="middle" font-weight="bold" font-size="14">SECTION A-A (FRONT VIEW)</text>
-            <rect x="{-B*sc/2 - 40}" y="{tp*sc + grout_h*sc}" width="{B*sc + 80}" height="60" fill="#f1f5f9" stroke="#94a3b8" stroke-dasharray="2,2"/>
-            <rect x="{-B*sc/2}" y="{tp*sc}" width="{B*sc}" height="{grout_h*sc}" fill="#e2e8f0" stroke="black"/>
-            <rect x="{-B*sc/2}" y="0" width="{B*sc}" height="{tp*sc}" fill="white" stroke="black" stroke-width="1.5"/>
-            <rect x="{-cb/2*sc}" y="-100" width="{cb*sc}" height="100" fill="#cbd5e1" stroke="black"/>
+            <text x="0" y="-120" text-anchor="middle" font-weight="bold" font-size="14">SECTION A-A (FRONT)</text>
+            <rect x="{-B*sc/2}" y="{tp*sc}" width="{B*sc}" height="{grout_h*sc}" fill="#f1f5f9" stroke="black" stroke-dasharray="2,1"/>
+            <rect x="{-B*sc/2}" y="0" width="{B*sc}" height="{tp*sc}" fill="white" stroke="black" stroke-width="2"/>
+            <rect x="{-cb/2*sc}" y="-120" width="{cb*sc}" height="120" fill="#cbd5e1" stroke="black"/>
             <line x1="{-sx/2*sc}" y1="-10" x2="{-sx/2*sc}" y2="120" stroke="#2563eb" stroke-width="2" stroke-dasharray="4,2"/>
-            <line x1="{sx*sc/2}" y1="-10" x2="{sx*sc/2}" y2="120" stroke="#2563eb" stroke-width="2" stroke-dasharray="4,2"/>
+            <line x1="{sx/2*sc}" y1="-10" x2="{sx/2*sc}" y2="120" stroke="#2563eb" stroke-width="2" stroke-dasharray="4,2"/>
         </g>
 
         <g transform="translate({bx}, {by})">
-            <text x="0" y="{-N*sc/2 - 60}" text-anchor="middle" font-weight="bold" font-size="14">SECTION B-B (SIDE VIEW)</text>
-            <rect x="{-N*sc/2 - 40}" y="{tp*sc + grout_h*sc}" width="{N*sc + 80}" height="60" fill="#f1f5f9" stroke="#94a3b8" stroke-dasharray="2,2"/>
-            <rect x="{-N*sc/2}" y="{tp*sc}" width="{N*sc}" height="{grout_h*sc}" fill="#e2e8f0" stroke="black"/>
-            <rect x="{-N*sc/2}" y="0" width="{N*sc}" height="{tp*sc}" fill="white" stroke="black" stroke-width="1.5"/>
-            <line x1="{-ch/2*sc}" y1="-100" x2="{-ch/2*sc}" y2="0" stroke="black" stroke-width="2"/>
-            <line x1="{ch/2*sc}" y1="-100" x2="{ch/2*sc}" y2="0" stroke="black" stroke-width="2"/>
-            <rect x="{-ctw/2*sc}" y="-100" width="{ctw*sc}" height="100" fill="#cbd5e1" stroke="black"/>
+            <text x="0" y="{-N*sc/2 - 60}" text-anchor="middle" font-weight="bold" font-size="14">SECTION B-B (SIDE)</text>
+            <rect x="{-N*sc/2}" y="{tp*sc}" width="{N*sc}" height="{grout_h*sc}" fill="#f1f5f9" stroke="black" stroke-dasharray="2,1"/>
+            <rect x="{-N*sc/2}" y="0" width="{N*sc}" height="{tp*sc}" fill="white" stroke="black" stroke-width="2"/>
+            
+            <line x1="{-ch/2*sc}" y1="-120" x2="{-ch/2*sc}" y2="0" stroke="black" stroke-width="2.5"/>
+            <line x1="{ch/2*sc}" y1="-120" x2="{ch/2*sc}" y2="0" stroke="black" stroke-width="2.5"/>
+            <line x1="0" y1="-120" x2="0" y2="0" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,5"/>
+            
             <line x1="{-sy/2*sc}" y1="-10" x2="{-sy/2*sc}" y2="120" stroke="#2563eb" stroke-width="2" stroke-dasharray="4,2"/>
             <line x1="{sy/2*sc}" y1="-10" x2="{sy/2*sc}" y2="120" stroke="#2563eb" stroke-width="2" stroke-dasharray="4,2"/>
 
             <g transform="translate({N*sc/2 + 40}, 0)" font-family="monospace" font-size="10">
                 <line x1="0" y1="{-N*sc/2}" x2="0" y2="{N*sc/2}" stroke="black"/>
-                {tick(0,-N*sc/2)} {tick(0,-sy*sc/2)} {tick(0,sy*sc/2)} {tick(0,N*sc/2)}
+                {tick(0,-N*sc/2)} {tick(0,-sy*sc/2)} {tick(0,-ch/2*sc)} {tick(0,ch/2*sc)} {tick(0,sy*sc/2)} {tick(0,N*sc/2)}
                 <text x="12" y="{-sy/2*sc - edge_y*sc/2}" transform="rotate(90, 12, {-sy/2*sc - edge_y*sc/2})" text-anchor="middle" fill="green">{int(edge_y)}</text>
                 <text x="12" y="0" transform="rotate(90, 12, 0)" text-anchor="middle" font-weight="bold">Sy={int(sy)}</text>
                 <text x="12" y="{sy/2*sc + edge_y*sc/2}" transform="rotate(90, 12, {sy/2*sc + edge_y*sc/2})" text-anchor="middle" fill="green">{int(edge_y)}</text>
-                <text x="40" y="0" transform="rotate(90, 40, 0)" text-anchor="middle" font-size="12" font-weight="bold">N = {int(N)}</text>
+                <text x="40" y="0" transform="rotate(90, 40, 0)" text-anchor="middle" font-size="13" font-weight="bold">N = {int(N)}</text>
             </g>
-        </g>
-
-        <g transform="translate(700, 750)">
-            <rect width="350" height="200" fill="none" stroke="black" stroke-width="1"/>
-            <text x="10" y="25" font-family="sans-serif" font-weight="bold">MATERIAL SUMMARY</text>
-            <text x="10" y="55" font-family="monospace" font-size="12">COLUMN : {col_name}</text>
-            <text x="10" y="75" font-family="monospace" font-size="12">PLATE  : {int(B)}x{int(N)}x{int(tp)} mm</text>
-            <text x="10" y="95" font-family="monospace" font-size="12">BOLT   : 4-M{bolt_d} GRADE 8.8</text>
-            <line x1="10" y1="110" x2="340" y2="110" stroke="#cbd5e1"/>
-            <text x="10" y="135" fill="green" font-size="11">● GREEN: EDGE DISTANCE</text>
-            <text x="10" y="155" fill="#2563eb" font-size="11">● BLUE: ANCHOR BOLT (CL)</text>
-            <text x="10" y="175" fill="black" font-size="11">● BLACK: PLATE / COLUMN OUTLINE</text>
         </g>
     </svg>
     """
