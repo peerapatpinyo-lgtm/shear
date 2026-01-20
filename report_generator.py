@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 32.0 (Complete Calculation with L_crit & Proof)
+# Version: 33.0 (Uniform Formatting & Consistency)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -74,39 +74,35 @@ def get_load_case_factor(case_name):
     }
     return cases.get(case_name, 4.0)
 
-# 🆕 ฟังก์ชันสร้างสมการพิสูจน์ (Derivation Text)
+# 🆕 Proof Text Generator (Formatted for consistency)
 def get_derivation_text(case_name):
     if case_name == "Simple Beam (Uniform Load)":
         return r"""
-        **Derivation (ที่มาสูตร):**
-        1. Max Shear ($V$) at support: $V = wL/2 \rightarrow wL = 2V$
-        2. Max Moment ($M$) at center: $M = wL^2/8 = (wL)L/8$
-        3. Substitute $wL$: $M = (2V)L/8 = VL/4$
-        4. Solve for $L$: $\mathbf{L = 4 (M/V)}$
+        * **Support:** Simple Support
+        * **Load:** Uniform Distributed Load
+        * **Proof:** $V = wL/2 \rightarrow M = wL^2/8 \rightarrow \mathbf{M = VL/4}$
+        * **Factor:** $\mathbf{4.0}$
         """
     elif case_name == "Simple Beam (Point Load @Center)":
         return r"""
-        **Derivation (ที่มาสูตร):**
-        1. Max Shear ($V$) at support: $V = P/2 \rightarrow P = 2V$
-        2. Max Moment ($M$) at center: $M = PL/4$
-        3. Substitute $P$: $M = (2V)L/4 = VL/2$
-        4. Solve for $L$: $\mathbf{L = 2 (M/V)}$
+        * **Support:** Simple Support
+        * **Load:** Point Load at Center
+        * **Proof:** $V = P/2 \rightarrow M = PL/4 \rightarrow \mathbf{M = VL/2}$
+        * **Factor:** $\mathbf{2.0}$
         """
     elif case_name == "Cantilever (Uniform Load)":
         return r"""
-        **Derivation (ที่มาสูตร):**
-        1. Max Shear ($V$) at fixed end: $V = wL \rightarrow wL = V$
-        2. Max Moment ($M$) at fixed end: $M = wL^2/2 = (wL)L/2$
-        3. Substitute $wL$: $M = (V)L/2 = VL/2$
-        4. Solve for $L$: $\mathbf{L = 2 (M/V)}$
+        * **Support:** Cantilever (Fixed)
+        * **Load:** Uniform Distributed Load
+        * **Proof:** $V = wL \rightarrow M = wL^2/2 \rightarrow \mathbf{M = VL/2}$
+        * **Factor:** $\mathbf{2.0}$
         """
     elif case_name == "Cantilever (Point Load @Tip)":
         return r"""
-        **Derivation (ที่มาสูตร):**
-        1. Max Shear ($V$) constant: $V = P \rightarrow P = V$
-        2. Max Moment ($M$) at fixed end: $M = PL$
-        3. Substitute $P$: $M = (V)L$
-        4. Solve for $L$: $\mathbf{L = 1 (M/V)}$
+        * **Support:** Cantilever (Fixed)
+        * **Load:** Point Load at Tip
+        * **Proof:** $V = P \rightarrow M = PL \rightarrow \mathbf{M = VL}$
+        * **Factor:** $\mathbf{1.0}$
         """
     return ""
 
@@ -289,18 +285,17 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
 
             ---
             #### 4. Critical Span Check ($L_{{crit}}$)
-            ตรวจสอบความยาวคานที่ปลอดภัย (Beam Moment Capacity Check)
-            
+            **4.1 Theory & Factor:**
             {proof_text}
             
-            **Calculation:**
-            1. **Plastic Modulus ($Z_x$):** {res['Zx']:.2f} cm³
-            2. **Moment Capacity ($\phi M_n$):**
-               $$ \phi M_n = 0.90 F_y Z_x = 0.90({res['Fy']})({res['Zx']:.2f}) = {res['Mn_beam']*0.9/100:,.0f} \; kg.m $$
-            3. **Critical Span ($L_{{crit}}$):**
-               $$ L_{{crit}} = {factor} \\times \\frac{{\\phi M_n}}{{V_u}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit']:.2f} \\; m}} $$
+            **4.2 Section Properties:**
+            $$ Z_x = {res['Zx']:.2f} \\; cm^3 $$
+            $$ \\phi M_n = 0.90 F_y Z_x = 0.90({res['Fy']})({res['Zx']:.2f}) = {res['Mn_beam']*0.9/100:,.0f} \\; kg.m $$
             
-            *(Meaning: If span > {res['L_crit']:.2f} m, beam fails by moment before shear)*
+            **4.3 Limit Calculation:**
+            $$ L_{{crit}} = {factor} \\times \\frac{{\\phi M_n}}{{V_u}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit']:.2f} \\; m}} $$
+            
+            *(Note: If span > {res['L_crit']:.2f} m, beam fails by moment before shear)*
             """)
 
     with col_draw:
