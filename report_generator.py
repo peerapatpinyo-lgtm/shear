@@ -1,196 +1,220 @@
 # report_generator.py
-# Version: 13.0 (Bulletproof - Works with or without Tab 2)
+# Version: 14.0 (Auto-Design: 75% Capacity Rule with Full Calc)
 import streamlit as st
 from datetime import datetime
 import math
 
 def render_report_tab(beam_data, conn_data):
-    # --- 1. ส่วนตั้งค่า (Header Input) ---
-    st.markdown("### 🖨️ Engineering Report")
+    # --- 1. ส่วนตั้งค่าเอกสาร ---
+    st.markdown("### 🖨️ รายการคำนวณออกแบบจุดต่อ (Auto-Connection Design)")
+    st.caption("ออกแบบจุดต่ออัตโนมัติด้วยเกณฑ์ 75% ของกำลังรับแรงเฉือนคาน (75% Beam Shear Capacity Rule)")
     
-    with st.expander("⚙️ ตั้งค่าหัวกระดาษ (Document Settings)", expanded=False):
+    with st.expander("⚙️ ตั้งค่าหัวกระดาษ", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
-            project = st.text_input("ชื่อโครงการ", value="โครงการก่อสร้างชั้นลอย (Mezzanine Project)")
-            client = st.text_input("เจ้าของงาน", value="บจก. สยามอินดัสเทรียล")
+            project = st.text_input("ชื่อโครงการ", value="โครงการก่อสร้างอาคารเหล็ก")
+            owner = st.text_input("เจ้าของงาน", value="บจก. สยามเอ็นจิเนียริ่ง")
         with c2:
-            engineer = st.text_input("วิศวกร", value="นายสมชาย ใจดี (สย. 12345)")
-            doc_ref = st.text_input("เลขที่เอกสาร", value=f"CALC-{datetime.now().strftime('%y%m')}-001")
+            engineer = st.text_input("วิศวกรผู้ออกแบบ", value="นายคำนวณ แม่นยำ (สย.)")
+            doc_ref = st.text_input("เลขที่เอกสาร", value=f"CALC-{datetime.now().strftime('%y%m%d')}")
 
-    # --- 2. ตรวจสอบข้อมูลจาก Tab 1 (Beam) ---
     if not beam_data:
-        st.error("⚠️ ไม่พบข้อมูลการคำนวณคาน (กรุณากดคำนวณที่ Tab 1 ก่อน)")
+        st.error("⚠️ ไม่พบข้อมูลคาน (กรุณาเลือกขนาดเหล็กที่ Tab 1)")
         return
 
-    # ดึงค่าแรงจากคาน (Tab 1)
-    sec = beam_data.get('sec_name', 'Unknown Section')
-    v_act = beam_data.get('v_act', 0)     # แรงเฉือนที่เกิดขึ้นจริง (Demand)
-    m_act = beam_data.get('m_act', 0)
+    # =========================================================
+    # 🧠 ส่วนคำนวณวิศวกรรม (ENGINEERING CALCULATION CORE)
+    # =========================================================
     
-    # ดึงค่า Capacity ของคาน
-    v_cap = beam_data.get('vn', 0)
-    m_cap = beam_data.get('mn', 0)
+    # 1. ดึงข้อมูลหน้าตัดคาน
+    sec_name = beam_data.get('sec_name', '-')
+    d = beam_data.get('h', 400) / 10.0   # cm (Depth)
+    tw = beam_data.get('tw', 8) / 10.0   # cm (Web Thickness)
+    fy = beam_data.get('Fy', 2500)       # ksc
+    fu = beam_data.get('Fu', 4100)       # ksc (สมมติถ้าไม่มี)
+    is_lrfd = beam_data.get('is_lrfd', True)
     
-    # Ratio ของคาน
-    r_v = beam_data.get('ratio_v', 0)
-    r_m = beam_data.get('ratio_m', 0)
-    r_d = beam_data.get('ratio_d', 0)
+    # 2. คำนวณ Shear Capacity ของคาน (Vn)
+    # สูตร: Vn = 0.6 * Fy * Aw
+    Aw = d * tw # พื้นที่รับแรงเฉือน (cm2)
+    Vn_raw = 0.60 * fy * Aw
     
-    is_beam_pass = max(r_v, r_m, r_d) <= 1.0
-
-    # --- 3. จัดการข้อมูลจุดต่อ (Connection Logic) ---
-    # ถ้าไม่มีข้อมูลจาก Tab 2 ให้คำนวณสดๆ ตรงนี้เลย (Fallback Mode)
-    
-    use_auto_calc = False
-    
-    if not conn_data or conn_data.get('status') != 'calculated':
-        # --- โหมดคำนวณเอง (Auto-Design) ---
-        use_auto_calc = True
-        bolt_grade = "A325 (Auto)"
-        bolt_size = "M20"
-        bolt_shear_cap = 7400 # kg/bolt (โดยประมาณ)
-        
-        # คำนวณจำนวนน๊อตที่ต้องใช้รับ v_act
-        req_bolts = v_act / bolt_shear_cap
-        final_bolts = max(2, math.ceil(req_bolts)) # ขั้นต่ำ 2 ตัว
-        
-        conn_cap = final_bolts * bolt_shear_cap
-        plate_t = 10 # mm (สมมติมาตรฐาน)
-        
-        conn_msg = "⚠️ Auto-Calculated (Based on Beam Shear)"
-        
+    if is_lrfd:
+        phi_v = 1.00
+        V_capacity = phi_v * Vn_raw
+        method_txt = "LRFD (phi=1.00)"
     else:
-        # --- โหมดดึงข้อมูลจาก Tab 2 (Linked Data) ---
-        bolt_grade = conn_data.get('bolt_grade', 'A325')
-        bolt_size = conn_data.get('bolt_size', 'M20')
-        final_bolts = conn_data.get('bolt_qty', 0)
-        conn_cap = conn_data.get('capacity', 0)
-        plate_t = conn_data.get('plate_thick', 0)
-        conn_msg = "✅ Verified Design (From Tab 2)"
-
-    # คำนวณ Ratio ของจุดต่อ
-    conn_ratio = v_act / conn_cap if conn_cap > 0 else 999
-    is_conn_pass = conn_ratio <= 1.0
+        omg_v = 1.50
+        V_capacity = Vn_raw / omg_v
+        method_txt = "ASD (Omega=1.50)"
+        
+    # 3. คำนวณแรงออกแบบจุดต่อ (Design Force) ตามกฎ 75%
+    # V_conn = 75% of V_capacity
+    V_design = 0.75 * V_capacity
     
-    # สรุปภาพรวม
-    final_pass = is_beam_pass and is_conn_pass
-    run_date = datetime.now().strftime("%d-%b-%Y")
+    # 4. ออกแบบน๊อต (Bolt Design)
+    # สมมติใช้ Bolt M20 Grade A325 (มาตรฐานนิยม)
+    bolt_dia_mm = 20
+    bolt_area_cm2 = (math.pi * (bolt_dia_mm/10)**2) / 4
+    
+    # กําลังรับแรงเฉือนของ Bolt (Shear Strength per Bolt)
+    # Fnv = 372 MPa approx 3,793 ksc (A325 Threads Included)
+    # คิด conservative ที่ 3,300 ksc (Allowable/Factored) เพื่อความปลอดภัยใน Code ตัวอย่าง
+    if is_lrfd:
+        phi_bolt = 0.75
+        Fnv = 3300 # ksc (Nominal Shear Stress)
+        Rn_bolt = phi_bolt * Fnv * bolt_area_cm2
+    else:
+        omg_bolt = 2.00
+        Fnv = 3300
+        Rn_bolt = (Fnv * bolt_area_cm2) / omg_bolt
+        
+    # จำนวนน๊อตที่ต้องการ
+    req_bolts = V_design / Rn_bolt
+    num_bolts = max(2, math.ceil(req_bolts)) # ขั้นต่ำ 2 ตัว
+    
+    # 5. ตรวจสอบ Plate (Bearing Check & Shear Check) แบบย่อ
+    # สมมติ Plate หนา 10mm
+    plate_t_mm = 10
+    plate_t_cm = 1.0
+    
+    # กำลังรับแรงแบกทาน (Bearing Capacity) ที่รูเจาะ
+    # Rn = 2.4 * d * t * Fu
+    if is_lrfd:
+        phi_br = 0.75
+        Rn_bearing = phi_br * (2.4 * (bolt_dia_mm/10) * plate_t_cm * fu)
+    else:
+        omg_br = 2.00
+        Rn_bearing = (2.4 * (bolt_dia_mm/10) * plate_t_cm * fu) / omg_br
+        
+    # เช็คว่าอะไรวิกฤตกว่ากันระหว่าง Shear Bolt กับ Bearing Plate
+    capacity_per_bolt = min(Rn_bolt, Rn_bearing)
+    
+    # คำนวณใหม่หาก Bearing control (กรณีเพลทบาง)
+    req_bolts_final = V_design / capacity_per_bolt
+    num_bolts_final = max(2, math.ceil(req_bolts_final))
+    
+    total_capacity = num_bolts_final * capacity_per_bolt
+    ratio = V_design / total_capacity
 
-    # --- 4. แสดงผลรายงาน (Report Canvas) ---
+    # =========================================================
+    # 📄 ส่วนแสดงผลรายงาน (REPORT RENDERING)
+    # =========================================================
     st.markdown("---")
     
-    # กรอบจำลอง A4
+    # สร้าง Container กระดาษ A4
     with st.container(border=True):
         
-        # === HEADER ===
+        # --- HEADER ---
         st.markdown(f"""
-        <div style="border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 15px;">
-            <h2 style="margin:0; color:#1e3a8a;">รายการคำนวณโครงสร้าง (Structural Report)</h2>
-            <span style="font-size:12px; color:#555;">REF STANDARD: AISC 360-16 (LRFD)</span>
+        <div style="border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
+            <table style="width:100%;">
+                <tr>
+                    <td style="width:70%;">
+                        <h2 style="margin:0; color:#000;">รายการคำนวณจุดต่อ (Connection Design)</h2>
+                        <span style="font-size:12px; color:#555;">Design Method: {method_txt} | 75% Capacity Rule</span>
+                    </td>
+                    <td style="width:30%; text-align:right;">
+                        <b>Doc:</b> {doc_ref}<br>
+                        <b>Date:</b> {datetime.now().strftime('%d/%m/%Y')}
+                    </td>
+                </tr>
+            </table>
         </div>
         """, unsafe_allow_html=True)
         
-        c_h1, c_h2 = st.columns([2, 1])
-        with c_h1:
-            st.write(f"**PROJECT:** {project}")
-            st.write(f"**OWNER:** {client}")
-            st.write(f"**ENGINEER:** {engineer}")
-        with c_h2:
-            st.write(f"**DOC NO:** {doc_ref}")
-            st.write(f"**DATE:** {run_date}")
-            
-        st.markdown("---")
-
-        # === PART 1: BEAM CHECK ===
-        st.markdown("#### 1. ผลการตรวจสอบคานเหล็ก (Beam Analysis)")
-        st.info(f"หน้าตัด: **{sec}** | Span: {beam_data.get('user_span',0)} m.")
-
-        # Table Header
-        cols = st.columns([2, 1.5, 1.5, 1, 1])
-        headers = ["Item", "Demand", "Capacity", "Ratio", "Result"]
-        for col, h in zip(cols, headers):
-            col.markdown(f"**{h}**")
+        st.write(f"**PROJECT:** {project} | **ENGINEER:** {engineer}")
         st.divider()
 
-        # Rows
-        def show_row(label, dem, cap, unit, ratio):
-            c1, c2, c3, c4, c5 = st.columns([2, 1.5, 1.5, 1, 1])
-            c1.write(label)
-            c2.write(f"{dem:,.0f} {unit}")
-            c3.write(f"{cap:,.0f} {unit}")
-            c4.write(f"{ratio:.2f}")
-            c5.write("✅ OK" if ratio<=1 else "❌ NG")
-
-        show_row("Moment (แรงดัด)", m_act, m_cap, "kg-m", r_m)
-        show_row("Shear (แรงเฉือน)", v_act, v_cap, "kg", r_v)
-        show_row("Deflection (ระยะแอ่น)", beam_data.get('defl_act',0), beam_data.get('defl_all',0), "cm", r_d)
-
-        # === PART 2: CONNECTION DESIGN ===
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("#### 2. รายละเอียดจุดต่อ (Connection Detail)")
+        # --- STEP 1: BEAM SHEAR CAPACITY ---
+        st.markdown("#### 1. คำนวณกำลังรับแรงเฉือนของคาน (Beam Shear Capacity)")
+        st.write(f"**Section:** {sec_name} (Fy = {fy:,} ksc, Fu = {fu:,} ksc)")
+        st.write(f"**Dimensions:** Depth (d) = {d} cm, Web Thickness (tw) = {tw} cm")
         
-        # แสดงสถานะข้อมูล
-        if use_auto_calc:
-            st.caption(f"ℹ️ หมายเหตุ: {conn_msg} (เนื่องจากยังไม่ได้คำนวณที่ Tab 2 ระบบจึงคำนวณให้อัตโนมัติ)")
+        st.markdown("**1.1 พื้นที่รับแรงเฉือน (Shear Area, Aw):**")
+        st.latex(rf"A_w = d \times t_w = {d} \times {tw} = {Aw:.2f} \text{ cm}^2")
+        
+        st.markdown("**1.2 กำลังรับแรงเฉือนระบุ (Nominal Shear Strength, Vn):**")
+        st.latex(rf"V_n = 0.6 \times F_y \times A_w = 0.6 \times {fy} \times {Aw:.2f} = {Vn_raw:,.0f} \text{ kg}")
+        
+        st.markdown(f"**1.3 กำลังรับแรงเฉือนที่ยอมให้ (Design Capacity, {'$\phi V_n$' if is_lrfd else '$V_n/\Omega$'}):**")
+        if is_lrfd:
+            st.latex(rf"\phi V_n = 1.00 \times {Vn_raw:,.0f} = \mathbf{{{V_capacity:,.0f} \text{{ kg}}}}")
         else:
-            st.caption(f"ℹ️ แหล่งข้อมูล: {conn_msg}")
-
-        with st.container(border=True):
-            col_d1, col_d2 = st.columns(2)
+            st.latex(rf"V_n / \Omega = {Vn_raw:,.0f} / 1.50 = \mathbf{{{V_capacity:,.0f} \text{{ kg}}}}")
             
-            with col_d1:
-                st.markdown("**📝 Specification:**")
-                st.write(f"- Bolt Size: **{bolt_size}**")
-                st.write(f"- Grade: **{bolt_grade}**")
-                st.write(f"- Plate Thickness: **{plate_t} mm**")
-                
-            with col_d2:
-                st.markdown("**🧮 Calculation:**")
-                st.write(f"- Shear Force ($V_u$): {v_act:,.0f} kg")
-                st.markdown(f"- **Required Bolts:** `{final_bolts}` **pcs.**")
-                
-                # Visual Check
-                status_color = "green" if is_conn_pass else "red"
-                status_text = "PASSED" if is_conn_pass else "FAILED"
-                st.markdown(f"<span style='color:{status_color}; font-weight:bold;'>Verification: {status_text} (Ratio {conn_ratio:.2f})</span>", unsafe_allow_html=True)
+        st.divider()
 
-        # === PART 3: BOLT PATTERN VISUALIZATION ===
-        st.markdown("**🔹 แบบร่างการจัดเรียงน๊อต (Conceptual Pattern)**")
+        # --- STEP 2: DESIGN FORCE ---
+        st.markdown("#### 2. แรงกระทำสำหรับออกแบบจุดต่อ (Design Force for Connection)")
+        st.info("💡 ใช้เกณฑ์ 75% ของกำลังรับแรงเฉือนคาน ตามข้อกำหนด")
+        st.latex(rf"V_{{req}} = 0.75 \times V_{{capacity}}")
+        st.latex(rf"V_{{req}} = 0.75 \times {V_capacity:,.0f} = \mathbf{{{V_design:,.0f} \text{{ kg}}}}")
         
-        # Logic วาดรูป ASCII
-        try:
-            qty = int(final_bolts)
-            n_cols = 2 if qty >= 4 else 1
-            n_rows = math.ceil(qty / n_cols)
+        st.divider()
+
+        # --- STEP 3: BOLT DESIGN ---
+        st.markdown("#### 3. ออกแบบปริมาณน๊อต (Bolt Calculation)")
+        st.markdown(f"**เลือกใช้:** High Strength Bolt **M{bolt_dia_mm} (A325)**")
+        st.markdown(f"**พื้นที่หน้าตัดน๊อต ($A_b$):** {bolt_area_cm2:.2f} cm²")
+        
+        st.markdown("**3.1 กำลังรับแรงเฉือนต่อน๊อต 1 ตัว (Shear Capacity per Bolt):**")
+        if is_lrfd:
+            st.latex(rf"\phi R_n = 0.75 \times 3300 \times {bolt_area_cm2:.2f} = \mathbf{{{Rn_bolt:,.0f} \text{{ kg/bolt}}}}")
+        else:
+            st.latex(rf"R_n/\Omega = (3300 \times {bolt_area_cm2:.2f}) / 2.0 = \mathbf{{{Rn_bolt:,.0f} \text{{ kg/bolt}}}}")
             
-            drawing = ""
-            for r in range(n_rows):
+        st.markdown("**3.2 ตรวจสอบแรงแบกทานที่รูเจาะ (Bearing Check @ t=10mm):**")
+        st.latex(rf"R_{{bearing}} = \mathbf{{{Rn_bearing:,.0f} \text{{ kg/bolt}}}}")
+        
+        st.markdown("**3.3 กำลังรับแรงวิกฤต (Governing Capacity per Bolt):**")
+        st.write(f"เลือกค่าน้อยสุดระหว่าง Shear และ Bearing: **{capacity_per_bolt:,.0f} kg/bolt**")
+
+        st.markdown("**3.4 จำนวนน๊อตที่ต้องการ (Required Bolts):**")
+        st.latex(rf"N = \frac{{V_{{req}}}}{{R_{{bolt}}}} = \frac{{{V_design:,.0f}}}{{{capacity_per_bolt:,.0f}}} = {req_bolts_final:.2f} \rightarrow \text{{Use }} \mathbf{{{num_bolts_final} \text{{ PCS.}}}}")
+        
+        st.divider()
+
+        # --- STEP 4: SUMMARY & SKETCH ---
+        st.markdown("#### 4. สรุปรายละเอียดการก่อสร้าง (Construction Detail)")
+        
+        col_res1, col_res2 = st.columns([1.5, 2])
+        with col_res1:
+            st.success(f"##### ✅ สรุปจำนวน: {num_bolts_final} ตัว (M20 A325)")
+            st.markdown(f"""
+            - **Plate Thickness:** 10 mm (Min)
+            - **Weld Size:** 6 mm (Fillet)
+            - **Bolt Grade:** A325 / 8.8
+            - **Demand/Cap Ratio:** {ratio:.2f}
+            """)
+        
+        with col_res2:
+            st.markdown("**Layout Sketch (การจัดเรียง):**")
+            # Logic วาดรูป
+            qty = num_bolts_final
+            cols = 2 if qty >= 4 else 1
+            rows = math.ceil(qty / cols)
+            
+            ascii_plate = ""
+            for r in range(rows):
                 line = "   |"
-                for c in range(n_cols):
-                    if (r * n_cols + c) < qty:
-                        line += "  (⊕)  " # Bolt Symbol
+                for c in range(cols):
+                    if (r * cols + c) < qty:
+                         line += "  (X)  "
                     else:
-                        line += "       "
-                line += "|   \n"
-                drawing += line
+                         line += "       "
+                line += "|\n"
+                ascii_plate += line
             
             st.code(f"""
-    [ BEAM WEB / PLATE ]
-   +-------------------+
-{drawing}   +-------------------+
-    Total: {qty} Bolts ({n_rows} Rows x {n_cols} Cols)
+    +-----------------+
+    |  SHEAR PLATE    |
+{ascii_plate}    |  t = 10 mm      |
+    +-----------------+
+   {rows} Rows x {cols} Cols
             """, language="text")
-        except:
-            st.write("-")
 
-        # === FOOTER ===
+        # --- FOOTER ---
         st.markdown("---")
-        if final_pass:
-            st.success("##### ✅ สรุปผล: โครงสร้างและจุดต่อ ผ่านเกณฑ์มาตรฐาน (APPROVED)")
-        else:
-            st.error("##### ❌ สรุปผล: ไม่ผ่านเกณฑ์ กรุณาตรวจสอบขนาดหน้าตัดหรือจุดต่อ (REVISE REQUIRED)")
-            
-        st.write("")
-        col_s1, col_s2 = st.columns(2)
-        col_s1.markdown("..................................................<br>ผู้ออกแบบ (Engineer)", unsafe_allow_html=True)
-        col_s2.markdown("..................................................<br>ผู้ตรวจสอบ (Approver)", unsafe_allow_html=True)
+        st.markdown(f"**Note:** การคำนวณนี้เป็นการตรวจสอบเบื้องต้นสำหรับจุดต่อรับแรงเฉือน (Shear Connection) เท่านั้น")
+        st.markdown("<br><br>..................................................<br>วิศวกรผู้ออกแบบ", unsafe_allow_html=True)
