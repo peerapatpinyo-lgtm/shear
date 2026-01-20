@@ -3,210 +3,172 @@ import streamlit as st
 from datetime import datetime
 import base64
 
-def render(res_ctx, v_res):
+# 👇 แก้ชื่อฟังก์ชันตรงนี้ให้ตรงกับที่ app.py เรียกใช้
+def render_report_tab(res_ctx, v_res):
     """
-    Render Professional Engineering Report
+    Render Professional Engineering Report (Version 2.0)
     """
-    st.subheader("📑 Engineering Calculation Report")
+    # --- 1. HEADER & SETTINGS ---
+    st.subheader("📑 Professional Report (v2.0)") 
+    st.markdown("---")
 
-    # --- 1. REPORT CONTROL PANEL ---
-    with st.expander("⚙️ Report Settings", expanded=True):
-        c1, c2, c3 = st.columns(3)
+    with st.expander("🛠️ Report Configuration (ตั้งค่าหัวกระดาษ)", expanded=True):
+        c1, c2 = st.columns(2)
         with c1:
-            proj_name = st.text_input("Project Name", value="Warehouse A - Mezzanine")
-            client_name = st.text_input("Client/Owner", value="Siam Construction Co.,Ltd.")
+            proj_name = st.text_input("Project Name", value="Proposed Mezzanine Floor")
+            client_name = st.text_input("Owner / Client", value="Siam Industry Co., Ltd.")
         with c2:
-            eng_name = st.text_input("Designed By", value="Eng. Somchai")
-            job_no = st.text_input("Job Number", value="S-2024-001")
-        with c3:
-            rev_no = st.text_input("Revision", value="0")
-            report_date = datetime.now().strftime("%d-%b-%Y")
-            st.text_input("Date", value=report_date, disabled=True)
-
-    # --- 2. PREPARE DATA ---
-    # ถ้ายังไม่ได้คำนวณ ให้ใส่ค่า Default กัน Error
+            eng_name = st.text_input("Engineer Name", value="Mr. Somchai Jai-dee (PE)")
+            rev_no = st.text_input("Revision No.", value="Rev.0A")
+            
+    # --- 2. DATA PREPARATION ---
     if not res_ctx:
-        st.error("⚠️ Please run calculation in Tab 1 first!")
+        st.warning("⚠️ Waiting for Calculation Data from Tab 1...")
         return
 
-    # Data Extraction
+    # Extract Data
     sec_name = res_ctx.get('sec_name', '-')
     span = res_ctx.get('user_span', 0)
+    fy = res_ctx.get('Fy', 0)
     
-    # Analysis Ratios
-    ratio_m = res_ctx.get('ratio_m', 0)
-    ratio_v = res_ctx.get('ratio_v', 0)
-    ratio_d = res_ctx.get('ratio_d', 0)
-    max_ratio = max(ratio_m, ratio_v, ratio_d)
+    # Ratios
+    r_m = res_ctx.get('ratio_m', 0)
+    r_v = res_ctx.get('ratio_v', 0)
+    r_d = res_ctx.get('ratio_d', 0)
+    max_r = max(r_m, r_v, r_d)
     
     # Status Logic
-    is_pass = max_ratio <= 1.0
-    status_text = "PASSED" if is_pass else "FAILED"
-    status_color = "#16a34a" if is_pass else "#dc2626" # Green / Red
-    status_bg = "#dcfce7" if is_pass else "#fee2e2"
+    is_pass = max_r <= 1.0
+    status_text = "APPROVED" if is_pass else "REJECTED"
+    status_color = "#22c55e" if is_pass else "#ef4444" # Green / Red
+    stamp_border = "double" if is_pass else "solid"
 
     # Connection Data
-    if v_res:
-        conn_type = v_res.get('type', '-')
-        conn_summ = v_res.get('summary', '-')
-        conn_pass = v_res.get('pass', False)
-        conn_status_txt = "OK" if conn_pass else "NG"
-        conn_color = "green" if conn_pass else "red"
-    else:
-        conn_type, conn_summ, conn_status_txt, conn_color = "-", "Not Designed", "-", "black"
+    conn_txt = v_res.get('summary', 'N/A') if v_res else "Not Designed"
 
-    # --- 3. HTML TEMPLATE (CSS + CONTENT) ---
-    html_content = f"""
-    <html>
-    <head>
-        <style>
-            @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
-            body {{ font-family: 'Sarabun', sans-serif; color: #333; }}
-            .paper {{
-                background-color: white;
-                width: 210mm;
-                min-height: 297mm;
-                padding: 15mm;
-                margin: auto;
-                border: 1px solid #ddd;
-                box-shadow: 0 0 10px rgba(0,0,0,0.1);
-                position: relative;
-            }}
-            .header {{ border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; }}
-            .title-box {{ text-align: left; }}
-            .meta-box {{ text-align: right; font-size: 14px; }}
-            h1 {{ margin: 0; font-size: 24px; color: #1e293b; }}
-            h2 {{ font-size: 18px; margin-top: 20px; border-bottom: 1px solid #ccc; padding-bottom: 5px; color: #2563eb; }}
-            .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
-            .item {{ margin-bottom: 8px; font-size: 14px; }}
-            .label {{ font-weight: bold; color: #555; width: 120px; display: inline-block; }}
-            .val {{ font-weight: bold; color: #000; }}
-            .status-stamp {{
-                position: absolute;
-                top: 20px;
-                right: 20px;
-                border: 3px solid {status_color};
-                color: {status_color};
-                font-size: 32px;
-                font-weight: bold;
-                padding: 10px 20px;
-                transform: rotate(-15deg);
-                opacity: 0.8;
-                border-radius: 8px;
-            }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }}
-            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: center; }}
-            th {{ background-color: #f8fafc; }}
-            .footer {{ margin-top: 50px; font-size: 12px; color: #888; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }}
-            .signature {{ margin-top: 40px; display: flex; justify-content: space-between; }}
-            .sig-box {{ border-top: 1px solid #333; width: 40%; text-align: center; padding-top: 5px; }}
-        </style>
-    </head>
-    <body>
-        <div class="paper">
-            <div class="status-stamp">{status_text}</div>
+    # Report Date
+    now_str = datetime.now().strftime("%d %B %Y")
 
-            <div class="header">
-                <div class="title-box">
-                    <h1>STRUCTURAL CALCULATION</h1>
-                    <div style="font-size:14px; color:#666;">Standard: AISC 360-16 ({'LRFD' if res_ctx.get('is_lrfd') else 'ASD'})</div>
-                </div>
-                <div class="meta-box">
-                    <div><strong>Project:</strong> {proj_name}</div>
-                    <div><strong>Job No:</strong> {job_no} | <strong>Rev:</strong> {rev_no}</div>
-                    <div><strong>Date:</strong> {report_date}</div>
-                </div>
+    # --- 3. HTML REPORT TEMPLATE ---
+    html_code = f"""
+    <div style="
+        font-family: 'Sarabun', sans-serif;
+        background-color: white;
+        padding: 40px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        color: #1f2937;
+        position: relative;
+    ">
+        <div style="
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: {status_color};
+            border: 4px {stamp_border} {status_color};
+            padding: 10px 20px;
+            font-size: 24px;
+            font-weight: 900;
+            transform: rotate(-10deg);
+            opacity: 0.8;
+            letter-spacing: 2px;
+        ">{status_text}</div>
+
+        <div style="border-bottom: 3px solid #1e3a8a; padding-bottom: 15px; margin-bottom: 25px;">
+            <h2 style="margin:0; color:#1e3a8a; font-size:24px;">STRUCTURAL CALCULATION SHEET</h2>
+            <div style="color:#6b7280; font-size:14px; margin-top:5px;">Reference Code: AISC 360-16 (LRFD/ASD)</div>
+        </div>
+
+        <table style="width:100%; border-collapse: collapse; margin-bottom: 25px;">
+            <tr style="background-color: #f3f4f6;">
+                <td style="padding:8px; border:1px solid #d1d5db; font-weight:bold; width:150px;">Project:</td>
+                <td style="padding:8px; border:1px solid #d1d5db;">{proj_name}</td>
+                <td style="padding:8px; border:1px solid #d1d5db; font-weight:bold; width:100px;">Job No:</td>
+                <td style="padding:8px; border:1px solid #d1d5db;">2024-STD-01</td>
+            </tr>
+            <tr>
+                <td style="padding:8px; border:1px solid #d1d5db; font-weight:bold;">Client:</td>
+                <td style="padding:8px; border:1px solid #d1d5db;">{client_name}</td>
+                <td style="padding:8px; border:1px solid #d1d5db; font-weight:bold;">Date:</td>
+                <td style="padding:8px; border:1px solid #d1d5db;">{now_str}</td>
+            </tr>
+        </table>
+
+        <h3 style="background-color:#1e3a8a; color:white; padding:8px; font-size:16px; margin-bottom:10px;">1. BEAM DESIGN PARAMETERS</h3>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;">
+            <div>
+                <strong>Section Size:</strong> <span style="font-size:1.1em; color:#1d4ed8;">{sec_name}</span><br>
+                <strong>Steel Grade (Fy):</strong> {fy} ksc<br>
+                <strong>Span Length:</strong> {span} m<br>
             </div>
-
-            <h2>1. Design Parameters</h2>
-            <div class="grid">
-                <div>
-                    <div class="item"><span class="label">Section:</span> <span class="val" style="font-size:16px;">{sec_name}</span></div>
-                    <div class="item"><span class="label">Steel Grade:</span> <span class="val">{res_ctx.get('Fy',0)} ksc</span></div>
-                    <div class="item"><span class="label">Span (L):</span> <span class="val">{span} m</span></div>
-                    <div class="item"><span class="label">Unbraced (Lb):</span> <span class="val">{res_ctx.get('Lb',0)} m</span></div>
-                </div>
-                <div>
-                    <div class="item"><span class="label">Uniform Load:</span> <span class="val">{res_ctx.get('w_load',0):,.0f} kg/m</span></div>
-                    <div class="item"><span class="label">Point Load:</span> <span class="val">{res_ctx.get('p_load',0):,.0f} kg</span></div>
-                    <div class="item"><span class="label">Max Moment (Mu):</span> <span class="val">{res_ctx.get('m_act',0):,.0f} kg-m</span></div>
-                    <div class="item"><span class="label">Max Shear (Vu):</span> <span class="val">{res_ctx.get('v_act',0):,.0f} kg</span></div>
-                </div>
-            </div>
-
-            <h2>2. Member Capacity Check</h2>
-            <table>
-                <tr>
-                    <th>Check Type</th>
-                    <th>Demand</th>
-                    <th>Capacity</th>
-                    <th>Ratio</th>
-                    <th>Result</th>
-                </tr>
-                <tr>
-                    <td style="text-align:left;">Bending Moment</td>
-                    <td>{res_ctx.get('m_act',0):,.0f} kg-m</td>
-                    <td>{res_ctx.get('mn',0):,.0f} kg-m</td>
-                    <td style="font-weight:bold; color:{'red' if ratio_m>1 else 'black'}">{ratio_m:.2f}</td>
-                    <td>{'❌ Fail' if ratio_m>1 else '✅ Pass'}</td>
-                </tr>
-                <tr>
-                    <td style="text-align:left;">Shear Force</td>
-                    <td>{res_ctx.get('v_act',0):,.0f} kg</td>
-                    <td>{res_ctx.get('vn',0):,.0f} kg</td>
-                    <td style="font-weight:bold; color:{'red' if ratio_v>1 else 'black'}">{ratio_v:.2f}</td>
-                    <td>{'❌ Fail' if ratio_v>1 else '✅ Pass'}</td>
-                </tr>
-                <tr>
-                    <td style="text-align:left;">Deflection</td>
-                    <td>{res_ctx.get('defl_act',0):.2f} cm</td>
-                    <td>{res_ctx.get('defl_all',0):.2f} cm</td>
-                    <td style="font-weight:bold; color:{'red' if ratio_d>1 else 'black'}">{ratio_d:.2f}</td>
-                    <td>{'❌ Fail' if ratio_d>1 else '✅ Pass'}</td>
-                </tr>
-            </table>
-
-            <h2>3. Connection Design Summary</h2>
-            <div style="padding: 10px; background-color: #f8fafc; border: 1px dashed #ccc;">
-                <div class="item"><span class="label">Type:</span> <span class="val">{conn_type}</span></div>
-                <div class="item"><span class="label">Detail:</span> <span class="val">{conn_summ}</span></div>
-                <div class="item"><span class="label">Status:</span> <span class="val" style="color:{conn_color}">{conn_status_txt}</span></div>
-            </div>
-
-            <div class="signature">
-                <div class="sig-box">
-                    <br><br>
-                    ({eng_name})<br>
-                    <strong>Design Engineer</strong>
-                </div>
-                <div class="sig-box">
-                    <br><br>
-                    (..........................................)<br>
-                    <strong>Approver / Client</strong>
-                </div>
-            </div>
-
-            <div class="footer">
-                Generated by Python Steel Design App | {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+            <div>
+                <strong>Factored Moment (Mu):</strong> {res_ctx.get('m_act',0):,.0f} kg-m<br>
+                <strong>Factored Shear (Vu):</strong> {res_ctx.get('v_act',0):,.0f} kg<br>
+                <strong>Unbraced Length (Lb):</strong> {res_ctx.get('Lb',0):.2f} m
             </div>
         </div>
-    </body>
-    </html>
-    """
 
-    # --- 4. DISPLAY & DOWNLOAD ---
+        <h3 style="background-color:#1e3a8a; color:white; padding:8px; font-size:16px; margin-bottom:10px;">2. STABILITY & STRENGTH CHECK</h3>
+        <table style="width:100%; border-collapse:collapse; text-align:center;">
+            <tr style="background-color:#e5e7eb; font-weight:bold;">
+                <td style="border:1px solid #9ca3af; padding:8px;">Check Item</td>
+                <td style="border:1px solid #9ca3af; padding:8px;">Demand</td>
+                <td style="border:1px solid #9ca3af; padding:8px;">Capacity</td>
+                <td style="border:1px solid #9ca3af; padding:8px;">Ratio</td>
+                <td style="border:1px solid #9ca3af; padding:8px;">Result</td>
+            </tr>
+            <tr>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:left;">Flexural (Moment)</td>
+                <td style="border:1px solid #d1d5db;">{res_ctx.get('m_act',0):,.0f}</td>
+                <td style="border:1px solid #d1d5db;">{res_ctx.get('mn',0):,.0f}</td>
+                <td style="border:1px solid #d1d5db; font-weight:bold; color:{'red' if r_m > 1 else 'black'}">{r_m:.2f}</td>
+                <td style="border:1px solid #d1d5db;">{'✅' if r_m<=1 else '❌'}</td>
+            </tr>
+            <tr>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:left;">Shear Strength</td>
+                <td style="border:1px solid #d1d5db;">{res_ctx.get('v_act',0):,.0f}</td>
+                <td style="border:1px solid #d1d5db;">{res_ctx.get('vn',0):,.0f}</td>
+                <td style="border:1px solid #d1d5db; font-weight:bold; color:{'red' if r_v > 1 else 'black'}">{r_v:.2f}</td>
+                <td style="border:1px solid #d1d5db;">{'✅' if r_v<=1 else '❌'}</td>
+            </tr>
+            <tr>
+                <td style="border:1px solid #d1d5db; padding:8px; text-align:left;">Deflection</td>
+                <td style="border:1px solid #d1d5db;">{res_ctx.get('defl_act',0):.2f}</td>
+                <td style="border:1px solid #d1d5db;">{res_ctx.get('defl_all',0):.2f}</td>
+                <td style="border:1px solid #d1d5db; font-weight:bold; color:{'red' if r_d > 1 else 'black'}">{r_d:.2f}</td>
+                <td style="border:1px solid #d1d5db;">{'✅' if r_d<=1 else '❌'}</td>
+            </tr>
+        </table>
+
+        <h3 style="background-color:#1e3a8a; color:white; padding:8px; font-size:16px; margin-bottom:10px; margin-top:20px;">3. CONNECTION DESIGN</h3>
+        <div style="border:1px dashed #6b7280; padding:15px; background-color:#f9fafb;">
+            {conn_txt}
+        </div>
+
+        <div style="display:flex; justify-content:space-between; margin-top:50px; padding-top:20px;">
+            <div style="text-align:center; width:40%; border-top:1px solid black; padding-top:10px;">
+                ({eng_name})<br><strong>Structural Engineer</strong>
+            </div>
+            <div style="text-align:center; width:40%; border-top:1px solid black; padding-top:10px;">
+                (...........................................)<br><strong>Approved By</strong>
+            </div>
+        </div>
+        
+        <div style="text-align:center; font-size:12px; color:#9ca3af; margin-top:30px;">
+            Generated by Streamlit Steel Design App | {now_str}
+        </div>
+    </div>
+    """
     
-    # Preview
-    st.markdown(html_content, unsafe_allow_html=True)
-    st.markdown("---")
+    # --- 4. RENDER & DOWNLOAD ---
+    st.markdown(html_code, unsafe_allow_html=True)
     
-    # Download Button logic
-    b64 = base64.b64encode(html_content.encode()).decode()
-    href = f'<a href="data:text/html;base64,{b64}" download="Design_Report_{job_no}.html" style="text-decoration:none;">'
-    href += f'<button style="background-color:#2563eb; color:white; padding:10px 20px; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">📥 Download HTML Report</button></a>'
-    
-    c_btn1, c_btn2 = st.columns([1,4])
-    with c_btn1:
-        st.markdown(href, unsafe_allow_html=True)
-    with c_btn2:
-        st.caption("👈 Click to download report. You can open it in any browser and Print to PDF.")
+    st.markdown("###")
+    # ปุ่ม Download
+    b64 = base64.b64encode(html_code.encode()).decode()
+    href = f'<a href="data:text/html;base64,{b64}" download="Steel_Report_{sec_name}.html">' \
+           f'<button style="background-color:#2563eb; color:white; padding:12px 25px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:16px;">' \
+           f'📥 Download Report as HTML</button></a>'
+    st.markdown(href, unsafe_allow_html=True)
+    st.caption("Tip: Download ไฟล์ HTML แล้วเปิดด้วย Chrome/Edge เพื่อสั่ง Print to PDF")
