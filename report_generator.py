@@ -1,10 +1,34 @@
 # report_generator.py
-# Version: 14.2 (Fixed Scope Issue - Guaranteed Variable Definition)
+# Version: 14.3 (Final Fix: Pre-initialized Variables)
 import streamlit as st
 from datetime import datetime
 import math
 
 def render_report_tab(beam_data, conn_data):
+    # =========================================================
+    # 0. ประกาศตัวแปรทั้งหมดไว้ก่อน (กัน Error 100%)
+    # =========================================================
+    sec_name = "-"
+    d = 0.0
+    tw = 0.0
+    Aw = 0.0   # <--- สร้างรอไว้เลย
+    fy = 0.0
+    fu = 0.0
+    Vn_raw = 0.0
+    V_capacity = 0.0
+    V_design = 0.0
+    bolt_dia_mm = 20
+    plate_t_mm = 10
+    num_bolts_final = 0
+    ratio = 0.0
+    method_txt = "LRFD"
+    is_lrfd = True
+    
+    # ตัวแปรผลลัพธ์การคำนวณ Bolt
+    Rn_bolt = 0.0
+    Rn_bearing = 0.0
+    req_bolts_final = 0.0
+    
     # --- 1. ส่วนตั้งค่าเอกสาร ---
     st.markdown("### 🖨️ รายการคำนวณออกแบบจุดต่อ (Auto-Connection Design)")
     
@@ -17,97 +41,75 @@ def render_report_tab(beam_data, conn_data):
             engineer = st.text_input("วิศวกรผู้ออกแบบ", value="นายคำนวณ แม่นยำ (สย.)")
             doc_ref = st.text_input("เลขที่เอกสาร", value=f"CALC-{datetime.now().strftime('%y%m%d')}")
 
-    # ป้องกันกรณีไม่มีข้อมูล
-    if not beam_data:
-        st.warning("⚠️ ไม่พบข้อมูลคาน กรุณากลับไปกดคำนวณที่ Tab 1 ก่อนครับ")
+    # --- 2. ดึงข้อมูลและคำนวณ (Data Extraction & Logic) ---
+    if beam_data:
+        try:
+            # ดึงข้อมูลดิบ
+            sec_name = beam_data.get('sec_name', 'Unknown')
+            h_val = float(beam_data.get('h', 400)) # mm
+            tw_val = float(beam_data.get('tw', 8)) # mm
+            fy = float(beam_data.get('Fy', 2500))
+            fu = float(beam_data.get('Fu', 4100))
+            is_lrfd = beam_data.get('is_lrfd', True)
+
+            # แปลงหน่วยและคำนวณตัวแปรเรขาคณิต
+            d = h_val / 10.0   # cm
+            tw = tw_val / 10.0 # cm
+            Aw = d * tw        # cm2 (คำนวณค่าจริงตรงนี้)
+            
+            # คำนวณ Vn (Shear Capacity)
+            Vn_raw = 0.60 * fy * Aw
+            
+            if is_lrfd:
+                phi_v = 1.00
+                V_capacity = phi_v * Vn_raw
+                method_txt = "LRFD (phi=1.00)"
+            else:
+                omg_v = 1.50
+                V_capacity = Vn_raw / omg_v
+                method_txt = "ASD (Omega=1.50)"
+            
+            # คำนวณ V_req (75% Rule)
+            V_design = 0.75 * V_capacity
+            
+            # คำนวณ Bolt (M20 A325)
+            bolt_area_cm2 = (math.pi * (bolt_dia_mm/10)**2) / 4
+            Fnv = 3300 # ksc
+            
+            # Bolt Shear Strength
+            if is_lrfd:
+                phi_bolt = 0.75
+                Rn_bolt = phi_bolt * Fnv * bolt_area_cm2
+            else:
+                omg_bolt = 2.00
+                Rn_bolt = (Fnv * bolt_area_cm2) / omg_bolt
+            
+            # Plate Bearing Strength
+            plate_t_cm = plate_t_mm / 10.0
+            if is_lrfd:
+                phi_br = 0.75
+                Rn_bearing = phi_br * (2.4 * (bolt_dia_mm/10) * plate_t_cm * fu)
+            else:
+                omg_br = 2.00
+                Rn_bearing = (2.4 * (bolt_dia_mm/10) * plate_t_cm * fu) / omg_br
+            
+            # Final Bolt Count
+            capacity_per_bolt = min(Rn_bolt, Rn_bearing)
+            if capacity_per_bolt > 0:
+                req_bolts_final = V_design / capacity_per_bolt
+                num_bolts_final = max(2, math.ceil(req_bolts_final))
+                total_capacity = num_bolts_final * capacity_per_bolt
+                ratio = V_design / total_capacity
+            
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาดในการคำนวณ: {e}")
+
+    else:
+        st.warning("⚠️ กรุณากดคำนวณที่ Tab 1 ก่อน (No Beam Data)")
         return
 
     # =========================================================
-    # 🧠 ส่วนคำนวณวิศวกรรม (ENGINEERING CALCULATION CORE)
-    # =========================================================
-    
-    # 1. ดึงข้อมูลและสร้างตัวแปรทันที (ป้องกัน NameError)
-    # ใช้ค่า Default เป็น 0.1 หรือค่าสมมติ เพื่อกัน Error หารด้วยศูนย์
-    sec_name = beam_data.get('sec_name', 'Unknown')
-    
-    # ดึงค่าและแปลงเป็น Float ทันที
-    try:
-        h_val = float(beam_data.get('h', 0))
-        tw_val = float(beam_data.get('tw', 0))
-        fy = float(beam_data.get('Fy', 2500))
-        fu = float(beam_data.get('Fu', 4100))
-    except:
-        h_val, tw_val, fy, fu = 400, 8, 2500, 4100 # Fallback values
-    
-    # ถ้าค่าเป็น 0 (ข้อมูลไม่มา) ให้ใส่ค่ากันตายไว้
-    if h_val == 0: h_val = 100
-    if tw_val == 0: tw_val = 1
-    
-    # แปลงหน่วยเป็น cm
-    d = h_val / 10.0   
-    tw = tw_val / 10.0 
-    
-    # *** คำนวณ Aw ตรงนี้เลย ให้เป็นตัวแปร Global ในฟังก์ชัน ***
-    Aw = d * tw  
-    
-    # ตัวแปรอื่นๆ
-    is_lrfd = beam_data.get('is_lrfd', True)
-    
-    # 2. คำนวณ Shear Capacity ของคาน (Vn)
-    Vn_raw = 0.60 * fy * Aw
-    
-    if is_lrfd:
-        phi_v = 1.00
-        V_capacity = phi_v * Vn_raw
-        method_txt = "LRFD (phi=1.00)"
-    else:
-        omg_v = 1.50
-        V_capacity = Vn_raw / omg_v
-        method_txt = "ASD (Omega=1.50)"
-        
-    # 3. คำนวณแรงออกแบบจุดต่อ (Design Force) ตามกฎ 75%
-    V_design = 0.75 * V_capacity
-    
-    # 4. ออกแบบน๊อต (Bolt Design) - M20 A325
-    bolt_dia_mm = 20
-    bolt_area_cm2 = (math.pi * (bolt_dia_mm/10)**2) / 4
-    
-    # Bolt Shear Strength
-    Fnv = 3300 # ksc
-    if is_lrfd:
-        phi_bolt = 0.75
-        Rn_bolt = phi_bolt * Fnv * bolt_area_cm2
-    else:
-        omg_bolt = 2.00
-        Rn_bolt = (Fnv * bolt_area_cm2) / omg_bolt
-        
-    # จำนวนน๊อต
-    req_bolts = V_design / Rn_bolt if Rn_bolt > 0 else 99
-    num_bolts = max(2, math.ceil(req_bolts))
-    
-    # 5. ตรวจสอบ Plate (Bearing Check)
-    plate_t_mm = 10
-    plate_t_cm = 1.0
-    
-    # Bearing Strength
-    if is_lrfd:
-        phi_br = 0.75
-        Rn_bearing = phi_br * (2.4 * (bolt_dia_mm/10) * plate_t_cm * fu)
-    else:
-        omg_br = 2.00
-        Rn_bearing = (2.4 * (bolt_dia_mm/10) * plate_t_cm * fu) / omg_br
-        
-    capacity_per_bolt = min(Rn_bolt, Rn_bearing)
-    
-    # Recalculate Final Bolts
-    req_bolts_final = V_design / capacity_per_bolt if capacity_per_bolt > 0 else 99
-    num_bolts_final = max(2, math.ceil(req_bolts_final))
-    
-    total_capacity = num_bolts_final * capacity_per_bolt
-    ratio = V_design / total_capacity if total_capacity > 0 else 0
-
-    # =========================================================
-    # 📄 ส่วนแสดงผลรายงาน (REPORT RENDERING)
+    # 3. ส่วนแสดงผลรายงาน (REPORT RENDERING)
     # =========================================================
     st.markdown("---")
     
@@ -139,7 +141,7 @@ def render_report_tab(beam_data, conn_data):
         st.write(f"**Section:** {sec_name} (Fy = {fy:,.0f} ksc)")
         
         st.markdown("**1.1 พื้นที่รับแรงเฉือน (Shear Area, Aw):**")
-        # ตรงนี้คือจุดที่เคย Error ตอนนี้หายแน่นอนเพราะ Aw ถูกสร้างด้านบนแล้ว
+        # ตรงนี้ Aw จะไม่ error แล้ว เพราะประกาศไว้เป็น 0.0 ตั้งแต่ต้นไฟล์ ถ้าคำนวณผิดก็จะได้ 0.0
         st.latex(rf"A_w = d \times t_w = {d:.2f} \times {tw:.2f} = {Aw:.2f} \text{ cm}^2")
         
         st.markdown("**1.2 กำลังรับแรงเฉือนระบุ (Nominal Shear Strength, Vn):**")
