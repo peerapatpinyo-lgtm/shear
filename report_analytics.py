@@ -1,7 +1,6 @@
 # report_analytics.py
-# Version: Final Masterpiece
+# Version: Final V.16 (Removed "Governing Failure Mode" Graph)
 # Engineered by: Senior Structural Engineer AI
-# Description: Advanced structural dashboard focusing on Governing Failure Modes and Safe Span Ranges.
 
 import streamlit as st
 import pandas as pd
@@ -24,7 +23,7 @@ DEFLECTION_RATIO = 360 # L/360 Standard Limit
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
     Renders the Advanced Structural Analytics Dashboard.
-    Focus: Identifying the 'Moment Controlled Zone' for each section.
+    Focus: Structural Efficiency and Moment Controlled Zone Ranges.
     """
     st.markdown("## 📊 Structural Integrity & Optimization Dashboard")
     st.markdown("This module analyzes the governing failure modes (Shear vs. Moment vs. Deflection) to determine the effective safe span range.")
@@ -56,8 +55,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         # 1.3 Critical Intersection Analysis (The Heart of the Logic)
         Ix = full_props['Ix (cm4)']
         
-        # Constant K for Deflection (Derived from Delta = 5wL^4/384EI and Delta_allow = L/360)
-        # Resulting simplified K for w(kg/m) and L(m) equation structure
+        # Constant K for Deflection
         K_defl = (384 * E_STEEL_KSC * Ix) / 18000000 
         
         # A. Start of Moment Zone (Shear Dominance ends, Moment Dominance begins)
@@ -73,7 +71,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
             zone_text = f"{L_shear_moment_limit:.2f} - {L_moment_defl_limit:.2f}"
             status = "Optimal"
         else:
-            zone_text = "N/A (Shear->Defl)" # Rare case where moment never governs
+            zone_text = "N/A (Shear->Defl)" 
             status = "Inefficient"
 
         # 1.4 Representative Load Calculation (at Mid-Moment Zone)
@@ -103,37 +101,9 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     x = np.arange(len(names))
 
     # ==========================================
-    # 📉 GRAPH 1: GOVERNING ZONES (GANTT STYLE)
+    # 📉 GRAPH 1: STRUCTURAL EFFICIENCY
     # ==========================================
-    st.subheader("1️⃣ Governing Failure Mode: Moment Controlled Zone")
-    st.caption("The bars represent the span range where the **Moment Capacity** is the limiting factor (Safe Zone).")
-    
-    fig1, ax1 = plt.subplots(figsize=(12, 4.5))
-    ax1.grid(which='major', axis='x', linestyle='--', alpha=0.3)
-    ax1.grid(which='major', axis='y', linestyle=':', alpha=0.3)
-    
-    # Logic: Bar starts at L_Start (Shear Limit) and has height of (L_End - L_Start)
-    ax1.bar(x, df['L_End'] - df['L_Start'], bottom=df['L_Start'], 
-            color='#E74C3C', alpha=0.75, edgecolor='#C0392B', linewidth=1, label='Moment Controlled Range')
-    
-    # Annotate Top Values
-    for i, val in enumerate(df['L_End']):
-        ax1.text(i, val + 0.1, f"{val:.2f}", ha='center', va='bottom', fontsize=7, color='#555')
-
-    ax1.set_ylabel('Span Length (m)', fontweight='bold')
-    ax1.set_xlabel('Section Size', fontweight='bold')
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(names, rotation=90)
-    ax1.set_xlim(-0.6, len(names)-0.4)
-    ax1.legend(loc='upper left')
-    
-    st.pyplot(fig1)
-    st.divider()
-
-    # ==========================================
-    # 📉 GRAPH 2: STRUCTURAL EFFICIENCY
-    # ==========================================
-    st.subheader("2️⃣ Structural Efficiency (Load/Weight Ratio)")
+    st.subheader("1️⃣ Structural Efficiency (Load/Weight Ratio)")
     
     fig2, ax2 = plt.subplots(figsize=(12, 4))
     # Load Bar
