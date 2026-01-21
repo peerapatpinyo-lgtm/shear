@@ -1,5 +1,5 @@
 # report_analytics.py
-# Version: 17.0 (Remove Efficiency Graph | Add 75% Shear, Bolts, Plate to Table)
+# Version: 18.0 (Full Plate Sizing: PL-TxWxL | Fabrication Ready)
 # Engineered by: Senior Structural Engineer AI
 
 import streamlit as st
@@ -22,10 +22,10 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
     Renders the Structural Analytics Dashboard.
     - Deep Dive Graph (Critical Limits)
-    - Detailed Specification Table (Moment Zone, Shear 75%, Bolts, Plate)
+    - Detailed Specification Table with FULL PLATE SIZING.
     """
     st.markdown("## 📊 Structural Integrity & Optimization Dashboard")
-    st.markdown("Analysis of governing failure modes and connection specifications.")
+    st.markdown("Analysis of governing failure modes and fabrication specifications.")
     
     # --- 1. Data Processing ---
     all_sections = get_standard_sections()
@@ -57,21 +57,39 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         Ix = full_props['Ix (cm4)']
         K_defl = (384 * E_STEEL_KSC * Ix) / 18000000 
         
-        # Start (Shear Ends) & End (Deflection Starts)
         L_shear_moment_limit = (4 * M_allow_kgm) / V_allow if V_allow > 0 else 0
         L_moment_defl_limit = K_defl / (8 * M_allow_kgm) if M_allow_kgm > 0 else 0
         
-        # Format Zone Text
+        # Moment Zone Text
         if L_moment_defl_limit > L_shear_moment_limit:
             zone_text = f"{L_shear_moment_limit:.2f} - {L_moment_defl_limit:.2f}"
         else:
-            zone_text = "Check Design" # Rare case
+            zone_text = "Check Design"
 
-        # 1.4 Connection Details
+        # 1.4 Connection & Plate Sizing (Fabrication Ready)
         bolt_qty = r.get('Bolt Qty', 0)
         t_plate = r.get('t_plate', 0)
-        # Construct Plate Text (Thickness)
-        plate_str = f"t{t_plate:.0f} mm" if t_plate > 0 else "-"
+        
+        # --- Logic: Generate Exact Plate Size (PL-T x W x L) ---
+        # Height (L): Based on Bolt Pitch (3d) and Edge (e.g. 35-40mm)
+        # Width (W): Standard 100mm for single shear tab (or 120mm for larger bolts)
+        
+        pitch = 3 * bolt_dia * 10 # convert cm to mm
+        edge_dist = 40 # mm (Standard edge distance)
+        
+        if bolt_qty > 0:
+            # Height = (rows-1)*pitch + 2*edge
+            plate_h_mm = ((bolt_qty - 1) * pitch) + (2 * edge_dist)
+            
+            # Round up height to nearest 10mm
+            plate_h_mm = math.ceil(plate_h_mm / 10.0) * 10
+            
+            plate_w_mm = 100 # Standard Width
+            
+            # Format: PL-9x100x190
+            plate_str = f"PL-{t_plate:.0f}x{plate_w_mm}x{plate_h_mm:.0f}"
+        else:
+            plate_str = "-"
 
         # 1.5 Compiling Data
         data_list.append({
@@ -85,7 +103,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
             "Moment Zone Range": zone_text,
             "V_75": V_75_pct,
             "Bolts": bolt_qty,
-            "Plate": plate_str,
+            "Plate Size": plate_str, # The Full Size String
             # Deep Dive Context
             "V_allow": V_allow,         
             "M_allow_kgm": M_allow_kgm, 
@@ -99,8 +117,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     # 🔬 GRAPH: DEEP DIVE CRITICAL LIMIT ANALYSIS
     # ==========================================
     st.subheader("🔬 Deep Dive: Critical Limit Analysis")
-    st.info("Visualizing the transition between Shear, Moment, and Deflection control.")
-
+    
     if 'Section' not in df.columns or df.empty: return
 
     col_sel, col_empty = st.columns([1, 2])
@@ -158,7 +175,6 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     ax_d.legend(loc='upper right')
     st.pyplot(fig_d)
     
-    # Zone Summary
     col1, col2, col3 = st.columns(3)
     with col1: st.markdown(f"🟣 **Shear Zone:** <br>0.00 - {L_start:.2f} m", unsafe_allow_html=True)
     with col2: st.markdown(f"🔴 **Moment Zone:** <br><span style='color:#C0392B'><b>{L_start:.2f} - {L_end:.2f} m</b></span>", unsafe_allow_html=True)
@@ -170,15 +186,17 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     st.subheader("📋 Specification Table: Moment Controlled Ranges")
     
     st.dataframe(
-        df[["Section", "Moment Zone Range", "V_75", "Bolts", "Plate"]],
+        df[["Section", "Moment Zone Range", "V_75", "Bolts", "Plate Size"]],
         use_container_width=True,
         column_config={
             "Section": st.column_config.TextColumn("Section", width="small"),
             "Moment Zone Range": st.column_config.TextColumn("✅ Moment Zone (m)", width="medium"),
             "V_75": st.column_config.NumberColumn("75% Shear (kg)", format="%.0f"),
             "Bolts": st.column_config.NumberColumn("Bolts", format="%d pcs"),
-            "Plate": st.column_config.TextColumn("Plate Size", width="small"),
+            "Plate Size": st.column_config.TextColumn("Plate Size (PL-TxWxL)", width="medium", help="Calculated for Fabrication"),
         },
         height=500,
         hide_index=True
     )
+    
+import math # Ensure math is imported for plate sizing
