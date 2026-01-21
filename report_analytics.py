@@ -1,5 +1,5 @@
 # report_analytics.py
-# Version: 12.0 (Table Update: Added Shear Limit & Consistent Safe Span)
+# Version: 13.0 (Logic Update: Safe Span is governed by Moment Limit)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -14,9 +14,8 @@ except ImportError:
 
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
-    Dashboard V.12.0:
-    - Table now includes ALL Limits: Shear, Moment, Deflection.
-    - Safe Span in table is strictly min(L_Shear, L_Moment, L_Defl).
+    Dashboard V.13.0:
+    - Safe Span in Table is now EXPLICITLY the Moment Limit.
     """
     st.markdown("## 📊 Structural Analysis Dashboard")
     
@@ -31,67 +30,58 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     
     for sec in all_sections:
         full_props = calculate_full_properties(sec) 
+        # Calculate Limits (L_crit_moment comes from report_generator logic)
         r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
         
-        # --- Allowable Capacities ---
+        # --- Allowable Capacities (For Deep Dive) ---
         try:
             V_n = r.get('Vn_beam', 0)
             V_allow = V_n / factor if factor else V_n
         except: V_allow = 0
-            
         try:
             M_n_kgcm = sec['Fy'] * full_props['Zx (cm3)']
             M_allow_kgm = (M_n_kgcm / factor) / 100 if factor else 0
         except: M_allow_kgm = 0
 
-        # --- Calculate Safe W ---
-        L_m = r.get('L_safe', 0)
-        safe_w = 0
+        # --- Calculate Safe W (Based on Moment Limit Span) ---
+        # User defined: Safe Span = Moment Limit
+        L_moment_limit = r.get('L_crit_moment', 0)
         
-        if L_m > 0:
-            w_shear = (2 * V_allow) / L_m
-            w_moment = (8 * M_allow_kgm) / (L_m**2)
-            L_cm = L_m * 100; delta_allow = L_cm / 360
-            w_defl = ((384 * E_ksc * full_props['Ix (cm4)'] * delta_allow) / (5 * (L_cm**4))) * 100
-            safe_w = min(w_shear, w_moment, w_defl)
+        safe_w = 0
+        if L_moment_limit > 0:
+            # Calculate W based on Moment Capacity at this length
+            # w = 8 * M / L^2
+            safe_w = (8 * M_allow_kgm) / (L_moment_limit**2)
 
-        # --- Reverse Limits (Theoretical Spans) ---
-        # 1. Shear Limit Span
+        # --- Theoretical Limits ---
+        # L_Shear Limit
         try: l_shear = (2 * V_allow) / safe_w if safe_w > 0 else 0
         except: l_shear = 0
         
-        # 2. Moment Limit Span
-        try: l_moment = math.sqrt((8 * M_allow_kgm) / safe_w) if safe_w > 0 else 0
-        except: l_moment = 0
-        
-        # 3. Deflection Limit Span
+        # L_Deflection Limit
         try:
              w_cm = safe_w/100
              l_cube = (384 * E_ksc * full_props['Ix (cm4)']) / (1800 * w_cm) if w_cm > 0 else 0
              l_defl = (l_cube**(1/3)) / 100 
         except: l_defl = 0
         
-        # 4. Actual Safe Span (Strict Minimum)
-        # นี่คือค่า Safe Span จริงๆ ที่เกิดจากตัวคุมที่ต่ำที่สุด
-        l_safe_real = min(val for val in [l_shear, l_moment, l_defl] if val > 0) if any([l_shear, l_moment, l_defl]) else 0
-
         data_list.append({
             "Name": sec['name'].replace("H-", ""), 
             "Section": sec['name'],
-            "Moment Limit": r.get('L_crit_moment', 0),     # From Gen (Reference)
-            "Deflection Limit": r.get('L_crit_defl', 0),   # From Gen (Reference)
             "Weight (kg/m)": full_props['Area (cm2)']*0.785,
             "Safe W (kg/m)": safe_w,
-            # Limits for Table & Graphs
+            # Limits
             "L_Shear": l_shear, 
-            "L_Moment": l_moment, 
+            "L_Moment": L_moment_limit, # ใช้ค่าจริงจาก Solver
             "L_Defl": l_defl,
-            "Safe Span": l_safe_real, # ใช้ค่าที่คำนวณใหม่ตรงนี้
+            "Safe Span": L_moment_limit, # ✅ Set Safe Span = Moment Limit ตามที่ขอ
             # Deep Dive Data
             "V_allow": V_allow,         
             "M_allow_kgm": M_allow_kgm, 
             "Raw_Sec": sec,
-            "Full_Props": full_props
+            "Full_Props": full_props,
+            "Moment Limit": L_moment_limit, # For Graph 1
+            "Deflection Limit": r.get('L_crit_defl', 0) # For Graph 1
         })
 
     if not data_list: return
@@ -105,10 +95,11 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     st.subheader("1️⃣ Optimization Overview")
     fig1, ax1 = plt.subplots(figsize=(12, 4))
     ax1.grid(which='major', axis='y', linestyle='--', alpha=0.3)
-    ax1.plot(x, df['Moment Limit'], color='#E74C3C', linestyle='--', label='Limit: Moment')
-    ax1.plot(x, df['Deflection Limit'], color='#2980B9', linestyle='-', label='Limit: Deflection')
-    upper = np.minimum(df['Moment Limit'], df['Deflection Limit'])
-    ax1.fill_between(x, 0, upper, color='#2ECC71', alpha=0.2, label='Safe Zone')
+    ax1.plot(x, df['Moment Limit'], color='#E74C3C', linestyle='-', linewidth=2, label='Safe Span (Moment Limit)')
+    ax1.plot(x, df['Deflection Limit'], color='#2980B9', linestyle='--', label='Deflection Check')
+    
+    ax1.fill_between(x, 0, df['Moment Limit'], color='#E74C3C', alpha=0.1, label='Moment Capacity Zone')
+    
     ax1.set_ylabel('Span (m)'); ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=90)
     ax1.set_xlim(-0.5, len(names)-0.5)
     ax1.legend(loc='upper left', fontsize=8)
@@ -120,7 +111,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     # ==========================================
     st.subheader("2️⃣ Efficiency (Load vs Weight)")
     fig2, ax3 = plt.subplots(figsize=(12, 4))
-    ax3.bar(x, df['Safe W (kg/m)'], color='#3498DB', alpha=0.7, label='Safe W')
+    ax3.bar(x, df['Safe W (kg/m)'], color='#3498DB', alpha=0.7, label='Safe W (at Moment Limit)')
     ax4 = ax3.twinx()
     ax4.plot(x, df['Weight (kg/m)'], color='#E67E22', marker='o', markersize=4, label='Weight')
     ax3.set_ylabel('Safe W (kg/m)'); ax4.set_ylabel('Weight (kg/m)')
@@ -130,29 +121,10 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     st.divider()
 
     # ==========================================
-    # 📉 GRAPH 3: THEORETICAL LIMITS (3 Lines)
-    # ==========================================
-    st.subheader("3️⃣ Theoretical Limits (3 Lines)")
-    fig3, ax5 = plt.subplots(figsize=(12, 4))
-    ax5.grid(True, linestyle='--', alpha=0.3)
-    ax5.plot(x, df['L_Shear'], color='#9B59B6', linestyle=':', label='Limit: Shear')
-    ax5.plot(x, df['L_Moment'], color='#E74C3C', linestyle='-', label='Limit: Moment')
-    ax5.plot(x, df['L_Defl'], color='#2ECC71', linestyle='-', label='Limit: Deflection')
-    ax5.set_ylabel('Span (m)'); ax5.set_xticks(x); ax5.set_xticklabels(names, rotation=90)
-    ax5.set_xlim(-0.5, len(names)-0.5)
-    # Auto Scale
-    max_val = max(df['L_Moment'].max(), df['L_Defl'].max()) if not df.empty else 10
-    ax5.set_ylim(0, max_val * 1.5)
-    ax5.legend(loc='upper left', fontsize=8)
-    st.pyplot(fig3)
-    st.divider()
-
-    # ==========================================
     # 🔬 DEEP DIVE: INTERSECTION ANALYSIS
     # ==========================================
     st.markdown("## 🔬 Deep Dive: Critical Limit Zones")
-    if 'Section' not in df.columns or df.empty:
-        return
+    if 'Section' not in df.columns or df.empty: return
 
     col_sel, col_info = st.columns([1, 2])
     with col_sel:
@@ -184,6 +156,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     ax_d.plot(spans, wd, color='#2ECC71', linestyle='-.', alpha=0.5, label='Deflection Limit')
     ax_d.plot(spans, w_safe_curve, color='#34495E', linewidth=3, label='Governing Capacity')
 
+    # Vertical Lines
     if 0.5 < L_shear_moment < max_span_plot:
         ax_d.axvline(x=L_shear_moment, color='#E67E22', linestyle='--', linewidth=1.5)
         ax_d.text(L_shear_moment, max(w_safe_curve)*0.9, f" Shear Ends\n {L_shear_moment:.2f} m", 
@@ -209,18 +182,17 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     st.divider()
 
     # --- TABLE (UPDATED) ---
-    st.subheader("📋 Specification Table")
+    st.subheader("📋 Specification Table (Moment Controlled)")
     st.dataframe(
-        df[["Section", "Safe W (kg/m)", "Weight (kg/m)", "L_Shear", "L_Moment", "L_Defl", "Safe Span"]],
+        df[["Section", "Safe W (kg/m)", "Weight (kg/m)", "L_Shear", "L_Defl", "Safe Span"]],
         use_container_width=True,
         column_config={
             "Section": st.column_config.TextColumn("Section", width="small"),
             "Safe W (kg/m)": st.column_config.NumberColumn("Load W", format="%.0f"),
             "Weight (kg/m)": st.column_config.NumberColumn("Weight", format="%.1f"),
             "L_Shear": st.column_config.NumberColumn("Lim(Shr)", format="%.2f m"),
-            "L_Moment": st.column_config.NumberColumn("Lim(Mom)", format="%.2f m"),
             "L_Defl": st.column_config.NumberColumn("Lim(Def)", format="%.2f m"),
-            "Safe Span": st.column_config.NumberColumn("✅ Safe Span", format="%.2f m"),
+            "Safe Span": st.column_config.NumberColumn("✅ Span(Mom)", format="%.2f m", help="Max Span based on Moment Capacity"),
         },
         height=400,
         hide_index=True
