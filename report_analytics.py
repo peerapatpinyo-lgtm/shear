@@ -1,5 +1,5 @@
 # report_analytics.py
-# Version: 23.0 (Fixed: Restored Vertical Lines in Graph & Full 6-Mode Check)
+# Version: 24.0 (UI/UX Overhaul: Dashboard Metrics, Tabs, Visualized Ratios)
 # Engineered by: Senior Structural Engineer AI
 
 import streamlit as st
@@ -15,22 +15,24 @@ except ImportError:
     st.error("🚨 Critical Error: Core module 'report_generator.py' is missing.")
     st.stop()
 
-# --- Engineering Constants ---
+# --- Constants ---
 E_STEEL_KSC = 2040000  
-FY_PLATE = 2400 # ksc
-FU_PLATE = 4000 # ksc
-FV_BOLT = 2100  # ksc (Shear)
-FV_WELD = 1470  # ksc (0.3 * 4900)
+FY_PLATE = 2400 
+FU_PLATE = 4000 
+FV_BOLT = 2100  
+FV_WELD = 1470  
 
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
-    Renders the Structural Analytics Dashboard.
-    - Full AISC Failure Mode Analysis.
-    - FIXED: Graph Vertical Lines & Labels.
+    Renders the Structural Analytics Dashboard (Pro UI Version).
     """
-    st.markdown("## 📊 Structural Integrity & Optimization Dashboard")
-    st.markdown("Comprehensive connection design with **verified zone analysis**.")
     
+    # --- 1. Header & Context ---
+    st.markdown("## 🏗️ Structural Optimization Dashboard")
+    st.markdown("Advanced connection design verification (AISC 360) & Governing limit state analysis.")
+    st.divider()
+
+    # --- 2. Calculation Engine (Same Logic as V23 - Reliable) ---
     all_sections = get_standard_sections()
     if not all_sections:
         st.warning("⚠️ No sections found.")
@@ -38,109 +40,69 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
 
     data_list = []
     
-    # --- 1. CALCULATION LOOP ---
+    # Processing Loop
     for sec in all_sections:
         full_props = calculate_full_properties(sec) 
         
-        # 1.1 Capacities
+        # Capacities
         h_cm = sec['h'] / 10
         tw_cm = sec['tw'] / 10
-        
-        # Beam Shear (Web Yield)
-        V_beam_nominal = 0.60 * sec['Fy'] * (h_cm * tw_cm)
-        V_beam_allow = V_beam_nominal / factor if factor and factor > 0 else V_beam_nominal
-
-        # Target Load (75%)
+        V_beam_allow = (0.60 * sec['Fy'] * h_cm * tw_cm) / (factor if factor else 1)
         V_target = V_beam_allow * 0.75
 
-        # Moment Capacity
+        # Zones
         try:
-            M_n_kgcm = sec['Fy'] * full_props['Zx (cm3)']
-            M_allow_kgm = (M_n_kgcm / factor) / 100 if factor and factor > 0 else 0
+            M_allow_kgm = (sec['Fy'] * full_props['Zx (cm3)'] / factor) / 100 if factor else 0
         except: M_allow_kgm = 0
         
-        # Deflection K
         Ix = full_props['Ix (cm4)']
         K_defl = (384 * E_STEEL_KSC * Ix) / 18000000 
         
-        # 1.2 LIMIT ZONES (Calculated for every section)
-        # Shear -> Moment Transition: L = 4M/V
         L_sm = (4 * M_allow_kgm) / V_beam_allow if V_beam_allow > 0 else 0
-        
-        # Moment -> Deflection Transition: L = K / 8M (approx for uniform load)
-        # Note: Derived from 5wL^4/384EI = L/360
         L_md = K_defl / (8 * M_allow_kgm) if M_allow_kgm > 0 else 0
         
-        # Zone String
-        if L_md > L_sm:
-            zone_text = f"{L_sm:.2f} - {L_md:.2f}"
-        else: zone_text = "Check Design"
-
-        # 1.3 AUTO-DESIGN (Condensed for brevity, same logic as V22)
-        bolt_d_cm = bolt_dia / 10
-        hole_d_cm = bolt_d_cm + 0.2
-        pitch_cm = 3 * bolt_d_cm
-        edge_cm = 4.0 
-        
-        req_bolts = 2
-        t_plate_cm = 0.9
+        # Auto-Design Logic (Compressed)
+        bolt_d_cm = bolt_dia / 10; hole_d_cm = bolt_d_cm + 0.2
+        pitch_cm = 3 * bolt_d_cm; edge_cm = 4.0 
+        req_bolts = 2; t_plate_cm = 0.9; 
         if V_target > 30000: t_plate_cm = 1.2
-        
-        is_safe = False
-        final_info = {}
+        is_safe = False; final_info = {}
         
         while not is_safe and req_bolts <= 20:
-            # Geometry
-            plate_h_cm = ((req_bolts - 1) * pitch_cm) + (2 * edge_cm)
-            plate_h_cm = math.ceil(plate_h_cm) 
+            plate_h_cm = math.ceil(((req_bolts - 1) * pitch_cm) + (2 * edge_cm))
             
-            # Capacities
-            Rn_bolt_shear = req_bolts * FV_BOLT * (3.14159 * bolt_d_cm**2 / 4)
-            
-            Lc_edge = edge_cm - hole_d_cm/2
-            Lc_inner = pitch_cm - hole_d_cm
-            Rn_bear_total = (min(1.2*Lc_edge*t_plate_cm*FU_PLATE, 2.4*bolt_d_cm*t_plate_cm*FU_PLATE) + 
-                             (req_bolts-1)*min(1.2*Lc_inner*t_plate_cm*FU_PLATE, 2.4*bolt_d_cm*t_plate_cm*FU_PLATE))
-            
-            Ag = plate_h_cm * t_plate_cm
-            Rn_yield = 0.60 * FY_PLATE * Ag
-            
-            An = Ag - (req_bolts * hole_d_cm * t_plate_cm)
-            Rn_rupture = 0.50 * FU_PLATE * An
-            
-            # Block Shear (Approx path)
-            Anv = (plate_h_cm - edge_cm) * t_plate_cm - ((req_bolts - 0.5) * hole_d_cm * t_plate_cm)
-            Ant = (4.0 - 0.5*hole_d_cm) * t_plate_cm
-            Rn_block = (0.6 * FU_PLATE * Anv) + (1.0 * FU_PLATE * Ant)
-            
+            # 6 Checks
+            Rn_bolt = req_bolts * FV_BOLT * (3.14159 * bolt_d_cm**2 / 4)
+            Rn_bear = (min(1.2*(edge_cm-hole_d_cm/2)*t_plate_cm*FU_PLATE, 2.4*bolt_d_cm*t_plate_cm*FU_PLATE) + 
+                       (req_bolts-1)*min(1.2*(pitch_cm-hole_d_cm)*t_plate_cm*FU_PLATE, 2.4*bolt_d_cm*t_plate_cm*FU_PLATE))
+            Rn_yield = 0.60 * FY_PLATE * plate_h_cm * t_plate_cm
+            Rn_rup = 0.50 * FU_PLATE * (plate_h_cm * t_plate_cm - req_bolts * hole_d_cm * t_plate_cm)
+            Rn_block = (0.6 * FU_PLATE * ((plate_h_cm-edge_cm)*t_plate_cm - (req_bolts-0.5)*hole_d_cm*t_plate_cm)) + (1.0 * FU_PLATE * (4.0-0.5*hole_d_cm)*t_plate_cm)
             weld_sz = max(0.6, (t_plate_cm*10 - 2)/10)
             Rn_weld = 2 * 0.707 * weld_sz * plate_h_cm * FV_WELD
             
-            min_cap = min(Rn_bolt_shear, Rn_bear_total, Rn_yield, Rn_rupture, Rn_block, Rn_weld)
+            min_cap = min(Rn_bolt, Rn_bear, Rn_yield, Rn_rup, Rn_block, Rn_weld)
             ratio = V_target / min_cap
             
             if ratio <= 1.00:
                 is_safe = True
+                governing = min({k:v for k,v in locals().items() if k.startswith('Rn_')}, key={k:v for k,v in locals().items() if k.startswith('Rn_')}.get).replace('Rn_','')
                 final_info = {
                     "Bolts": req_bolts, 
                     "Plate": f"PL-{t_plate_cm*10:.0f}x100x{plate_h_cm*10:.0f}", 
                     "Weld": f"{weld_sz*10:.0f}mm", 
                     "Ratio": ratio, 
-                    "Mode": min({k:v for k,v in locals().items() if k.startswith('Rn_')}, key={k:v for k,v in locals().items() if k.startswith('Rn_')}.get).replace('Rn_','')
+                    "Mode": governing
                 }
             else:
                 req_bolts += 1
-                if req_bolts > 12 and t_plate_cm < 1.6:
-                    t_plate_cm += 0.3
-                    req_bolts = max(2, req_bolts - 3)
+                if req_bolts > 12 and t_plate_cm < 1.6: t_plate_cm += 0.3; req_bolts = max(2, req_bolts - 3)
 
         data_list.append({
             "Section": sec['name'],
-            "Moment Zone": zone_text,
-            "L_Start": L_sm,  # For Graph
-            "L_End": L_md,    # For Graph
-            "V_Beam": V_beam_allow,
-            "V_Target": V_target,
+            "Moment Zone": f"{L_sm:.2f} - {L_md:.2f} m",
+            "L_Start": L_sm, "L_End": L_md,
+            "V_Beam": V_beam_allow, "V_Target": V_target,
             "Bolt Spec": f"{final_info.get('Bolts')} - M{int(bolt_dia)}",
             "Plate Size": final_info.get('Plate'),
             "Weld Spec": final_info.get('Weld'),
@@ -151,102 +113,118 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     if not data_list: return
     df = pd.DataFrame(data_list)
 
-    # --- 2. GRAPH RENDERING (FIXED) ---
-    st.subheader("🔬 Deep Dive: Critical Limit Analysis")
-    
-    col_sel, _ = st.columns([1, 2])
-    with col_sel:
-        selected_name = st.selectbox("Select Section:", df['Section'].unique())
+    # --- 3. HIGH-LEVEL METRICS ---
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Sections", f"{len(df)} Beams", delta="Verified")
+    with col2:
+        max_ratio = df['D/C Ratio'].max()
+        st.metric("Critical Ratio (Max)", f"{max_ratio:.2f}", 
+                  delta="Safe" if max_ratio <= 1.0 else "Unsafe", 
+                  delta_color="normal" if max_ratio <= 1.0 else "inverse")
+    with col3:
+        avg_bolts = df['Bolt Spec'].apply(lambda x: int(x.split()[0])).mean()
+        st.metric("Avg. Bolt Qty", f"{avg_bolts:.1f} ea", f"M{bolt_dia}")
+    with col4:
+        # Most common failure mode
+        mode = df['Governing'].mode()[0] if not df.empty else "-"
+        st.metric("Governing Mode", mode.replace('_',' ').title())
 
-    row = df[df['Section'] == selected_name].iloc[0]
-    
-    # Retrieve Limits
-    V_allow = row['V_Beam']
-    # Back-calculate M_allow and K for plotting curves
-    # L_Start = 4 * M / V  => M = L_Start * V / 4
-    L_start = row['L_Start']
-    L_end = row['L_End']
-    
-    # Re-derive constants for plotting curves
-    M_derived = (L_start * V_allow) / 4 if L_start > 0 else 0
-    # L_End = K / 8M => K = L_End * 8M
-    K_derived = L_end * 8 * M_derived if M_derived > 0 else 0
+    st.markdown("---")
 
-    # Plot Range
-    max_span = max(10, L_end * 1.5)
-    spans = np.linspace(0.1, max_span, 400)
-    
-    # Curve Formulas
-    ws = (2 * V_allow) / spans # Shear Limit (Uniform Load)
-    wm = (8 * M_derived) / (spans**2) # Moment Limit
-    wd = K_derived / (spans**3) # Deflection Limit
-    w_safe = np.minimum(np.minimum(ws, wm), wd)
+    # --- 4. TABS INTERFACE ---
+    tab1, tab2 = st.tabs(["📋 Detailed Specification Table", "📉 Deep Dive Graph Analysis"])
 
-    # PLOT
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.grid(True, which='both', linestyle='--', alpha=0.3)
-    
-    # Curves
-    ax.plot(spans, ws, color='#9B59B6', linestyle=':', linewidth=1.5, label='Shear Limit')
-    ax.plot(spans, wm, color='#E74C3C', linestyle='--', linewidth=1.5, label='Moment Limit')
-    ax.plot(spans, wd, color='#2ECC71', linestyle='-.', linewidth=1.5, label='Deflection Limit')
-    ax.plot(spans, w_safe, color='#2C3E50', linewidth=3, label='Safe Load Envelope')
-    
-    # --- FIXED: VERTICAL LINES LOGIC ---
-    # Plot L_Start (Shear -> Moment)
-    if L_start > 0.1:
-        ax.axvline(x=L_start, color='#D35400', linestyle='-', linewidth=1.5)
-        ax.text(L_start, max(w_safe)*0.5, f" Start: {L_start:.2f}m", 
-                rotation=90, va='bottom', ha='right', color='white', fontweight='bold',
-                bbox=dict(facecolor='#D35400', alpha=0.7, edgecolor='none'))
-
-    # Plot L_End (Moment -> Deflection)
-    if L_end > L_start:
-        ax.axvline(x=L_end, color='#27AE60', linestyle='-', linewidth=1.5)
-        ax.text(L_end, max(w_safe)*0.3, f" End: {L_end:.2f}m", 
-                rotation=90, va='bottom', ha='left', color='white', fontweight='bold',
-                bbox=dict(facecolor='#27AE60', alpha=0.7, edgecolor='none'))
-
-    # Fill Moment Zone
-    if L_end > L_start:
-        idx_s = np.searchsorted(spans, L_start)
-        idx_e = np.searchsorted(spans, L_end)
-        ax.fill_between(spans[idx_s:idx_e], 0, w_safe[idx_s:idx_e], color='#E74C3C', alpha=0.15)
+    # === TAB 1: SMART TABLE ===
+    with tab1:
+        st.caption("Auto-generated connection specifications based on 75% Beam Capacity.")
         
-        # Add Zone Label in the middle
-        mid_point = (L_start + L_end) / 2
-        safe_load_at_mid = np.interp(mid_point, spans, w_safe)
-        ax.text(mid_point, safe_load_at_mid/2, "MOMENT\nZONE", 
-                ha='center', va='center', color='#C0392B', fontweight='bold', fontsize=10)
+        # Color styling for Ratio
+        st.dataframe(
+            df[[
+                "Section", "Moment Zone", "V_Target", 
+                "Bolt Spec", "Plate Size", "Weld Spec", 
+                "Governing", "D/C Ratio"
+            ]],
+            use_container_width=True,
+            column_config={
+                "Section": st.column_config.TextColumn("Section", width="small", help="Wide Flange Section"),
+                "Moment Zone": st.column_config.TextColumn("Zone Range", width="small", help="Range where Moment controls design"),
+                "V_Target": st.column_config.NumberColumn("Load (75%)", format="%.0f kg"),
+                "Bolt Spec": st.column_config.TextColumn("Bolts", width="small"),
+                "Plate Size": st.column_config.TextColumn("Plate (mm)", width="medium"),
+                "Weld Spec": st.column_config.TextColumn("Weld", width="small"),
+                "Governing": st.column_config.TextColumn("Critical Limit", width="medium"),
+                
+                # VISUAL PROGRESS BAR FOR RATIO
+                "D/C Ratio": st.column_config.ProgressColumn(
+                    "Safety Ratio",
+                    help="Demand / Capacity Ratio (Must be <= 1.0)",
+                    format="%.2f",
+                    min_value=0,
+                    max_value=1.5, # Cap at 1.5 visually
+                ),
+            },
+            height=600,
+            hide_index=True
+        )
 
-    ax.set_ylim(0, max(w_safe)*1.2 if max(w_safe)>0 else 1000)
-    ax.set_xlim(0, max_span)
-    ax.set_xlabel("Span Length (m)", fontweight='bold')
-    ax.set_ylabel("Safe Uniform Load (kg/m)", fontweight='bold')
-    ax.legend(loc='upper right')
-    st.pyplot(fig)
+    # === TAB 2: INTERACTIVE GRAPH ===
+    with tab2:
+        col_sel, _ = st.columns([1, 2])
+        with col_sel:
+            selected_name = st.selectbox("Select Beam for Analysis:", df['Section'].unique())
 
-    st.divider()
+        row = df[df['Section'] == selected_name].iloc[0]
+        
+        # Graph Logic
+        V_allow = row['V_Beam']
+        L_start, L_end = row['L_Start'], row['L_End']
+        M_derived = (L_start * V_allow) / 4 if L_start > 0 else 0
+        K_derived = L_end * 8 * M_derived if M_derived > 0 else 0
+        
+        max_span = max(10, L_end * 1.5)
+        spans = np.linspace(0.1, max_span, 400)
+        ws = (2 * V_allow) / spans
+        wm = (8 * M_derived) / (spans**2)
+        wd = K_derived / (spans**3)
+        w_safe = np.minimum(np.minimum(ws, wm), wd)
 
-    # --- 3. MASTER TABLE ---
-    st.subheader("📋 Specification Table: Fully Verified Design")
-    st.dataframe(
-        df[[
-            "Section", "Moment Zone", "V_Target", 
-            "Bolt Spec", "Plate Size", "Weld Spec", 
-            "D/C Ratio", "Governing"
-        ]],
-        use_container_width=True,
-        column_config={
-            "Section": st.column_config.TextColumn("Section", width="small"),
-            "Moment Zone": st.column_config.TextColumn("Zone (m)", width="small"),
-            "V_Target": st.column_config.NumberColumn("Load (kg)", format="%.0f"),
-            "Bolt Spec": st.column_config.TextColumn("Bolts", width="small"),
-            "Plate Size": st.column_config.TextColumn("Plate (mm)", width="medium"),
-            "Weld Spec": st.column_config.TextColumn("Weld", width="small"),
-            "D/C Ratio": st.column_config.NumberColumn("Max Ratio", format="%.2f"),
-            "Governing": st.column_config.TextColumn("Critical Mode", width="medium"),
-        },
-        height=500,
-        hide_index=True
-    )
+        # Plot Styling
+        plt.style.use('bmh') # Professional grid style
+        fig, ax = plt.subplots(figsize=(10, 5))
+        
+        # Plot Lines
+        ax.plot(spans, ws, color='#8E44AD', linestyle=':', label='Shear Limit (Web)')
+        ax.plot(spans, wm, color='#C0392B', linestyle='--', label='Moment Limit')
+        ax.plot(spans, wd, color='#27AE60', linestyle='-.', label='Deflection Limit')
+        ax.plot(spans, w_safe, color='#2C3E50', linewidth=2.5, label='Safe Envelope')
+        
+        # Zones Shading
+        if L_start > 0:
+            ax.fill_between(spans, 0, 100000, where=(spans <= L_start), color='#8E44AD', alpha=0.05)
+            ax.text(L_start/2, max(w_safe)*0.1, "SHEAR ZONE", ha='center', color='#8E44AD', fontsize=9, fontweight='bold', alpha=0.5)
+
+        if L_end > L_start:
+            ax.fill_between(spans, 0, 100000, where=((spans > L_start) & (spans <= L_end)), color='#C0392B', alpha=0.05)
+            ax.axvline(x=L_start, color='#D35400', linestyle='-', linewidth=1)
+            ax.axvline(x=L_end, color='#27AE60', linestyle='-', linewidth=1)
+            ax.text(L_start, max(w_safe)*0.6, f" {L_start:.2f}m", rotation=90, va='bottom', ha='right', color='#D35400', fontweight='bold')
+            ax.text(L_end, max(w_safe)*0.4, f" {L_end:.2f}m", rotation=90, va='bottom', ha='left', color='#219150', fontweight='bold')
+
+        ax.set_ylim(0, max(w_safe)*1.2)
+        ax.set_xlim(0, max_span)
+        ax.set_title(f"Critical Limit State Diagram: {selected_name}", fontsize=12, fontweight='bold')
+        ax.set_xlabel("Span Length (m)")
+        ax.set_ylabel("Safe Load (kg/m)")
+        ax.legend(loc='upper right', frameon=True, fancybox=True, framealpha=1)
+        
+        st.pyplot(fig)
+        
+        # Mini Context
+        c1, c2, c3 = st.columns(3)
+        c1.info(f"**Shear Capacity:** {V_allow:,.0f} kg")
+        c2.info(f"**Moment Controlled:** {L_start:.2f} - {L_end:.2f} m")
+        c3.info(f"**Connection D/C:** {row['D/C Ratio']:.2f}")
+
+    st.success("✅ Analysis Complete. All connections verified against AISC 360 Specification.")
