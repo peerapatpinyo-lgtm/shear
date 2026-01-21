@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 37.0 (Professional Shop Drawing + Deflection Limit Check)
+# Version: 38.0 (Zone Chart: Moment vs Deflection Control)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,7 +8,7 @@ from datetime import datetime
 import math
 
 # =========================================================
-# 🏗️ 1. FULL DATABASE (TIS Standard - ครบทุกตัว)
+# 🏗️ 1. FULL DATABASE (TIS Standard)
 # =========================================================
 def get_standard_sections():
     return [
@@ -90,9 +90,7 @@ def calculate_zx(h, b, tw, tf):
     return (b*tf*(h-tf)) + (tw*(h-2*tf)**2/4)
 
 def calculate_ix(h, b, tw, tf):
-    # Calculate Moment of Inertia (Ix) in cm4 from mm dimensions
     h, b, tw, tf = h/10, b/10, tw/10, tf/10
-    # I = (BH^3 - bh^3)/12
     outer_I = (b * h**3) / 12
     inner_w = b - tw
     inner_h = h - (2*tf)
@@ -100,39 +98,23 @@ def calculate_ix(h, b, tw, tf):
     return outer_I - inner_I
 
 def calculate_deflection_limit(Ix, V_target, case_name):
-    # Calculate max span (L) based on deflection limit L/360
-    # E for Steel = 2,040,000 ksc
     E = 2040000 
-    Reaction = V_target # kg (This is the design reaction)
+    Reaction = V_target # kg
     Limit_Factor = 360 # L/360
-    
-    # Derivation from Delta = L/360
-    # 1. Simple Uniform: Delta = 5wL^4/384EI. Reaction R = wL/2 -> w = 2R/L
-    #    Delta = 5(2R/L)L^4/384EI = 10RL^3/384EI = 5RL^3/192EI
-    #    Set 5RL^3/192EI = L/360 -> L^2 = (192*E*I) / (5*R*360)
     
     coeff = 0
     if case_name == "Simple Beam (Uniform Load)":
         coeff = 192 / (5 * Limit_Factor)
     elif case_name == "Simple Beam (Point Load @Center)":
-        # Delta = PL^3/48EI. R = P/2 -> P = 2R
-        # Delta = 2RL^3/48EI = RL^3/24EI
-        # RL^3/24EI = L/360 -> L^2 = (24*E*I) / (R*360)
         coeff = 24 / Limit_Factor
     elif case_name == "Cantilever (Uniform Load)":
-        # Delta = wL^4/8EI. R = wL -> w = R/L
-        # Delta = RL^3/8EI
-        # RL^3/8EI = L/360 -> L^2 = (8*E*I) / (R*360)
         coeff = 8 / Limit_Factor
     elif case_name == "Cantilever (Point Load @Tip)":
-        # Delta = PL^3/3EI. R = P
-        # Delta = RL^3/3EI
-        # RL^3/3EI = L/360 -> L^2 = (3*E*I) / (R*360)
         coeff = 3 / Limit_Factor
         
     if Reaction > 0 and coeff > 0:
         L_sq = (coeff * E * Ix) / Reaction
-        return math.sqrt(L_sq) / 100.0 # Convert cm to m
+        return math.sqrt(L_sq) / 100.0 
     return 0
 
 def calculate_connection(props, load_percent, bolt_dia, span_factor, case_name):
@@ -143,20 +125,20 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor, case_name):
     Vn_beam = 0.60 * fy * Aw_cm2
     V_target = (load_percent/100) * Vn_beam
     
-    # Moment Capacity Check (Strength)
+    # Moment
     Zx = calculate_zx(h, b, tw, tf)
     Mn_beam = fy * Zx
     phiMn = 0.90 * Mn_beam
     L_crit_moment = (span_factor * (phiMn / V_target)) / 100.0 if V_target > 0 else 0
     
-    # Deflection Check (Serviceability)
+    # Deflection
     Ix = calculate_ix(h, b, tw, tf)
     L_crit_defl = calculate_deflection_limit(Ix, V_target, case_name)
     
-    # Safe Span (Min of both)
+    # Safe Span
     L_safe = min(L_crit_moment, L_crit_defl) if L_crit_defl > 0 else L_crit_moment
     
-    # Bolt Calc
+    # Bolt
     DB_mm = float(bolt_dia)
     Ab_cm2 = 3.1416 * (DB_mm/10)**2 / 4
     Fnv = 3300
@@ -197,7 +179,7 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor, case_name):
     }
 
 # =========================================================
-# 🎨 3. DRAWING (Updated with X & Y Dimensions)
+# 🎨 3. DRAWING
 # =========================================================
 def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spacing_cm):
     fig, ax = plt.subplots(figsize=(5, 7.5))
@@ -348,37 +330,59 @@ $$ L_{{safe}} = \\min({res['L_crit_moment']:.2f}, {res['L_crit_defl']:.2f}) = \\
 
     st.divider()
 
-    # 3. Full Table
-    st.subheader("📊 ตารางเปรียบเทียบ (Full Comparison)")
-    if st.checkbox("Show Table", value=True):
-        batch_results = []
-        for sec in all_sections:
-            r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
-            
-            # Format logic for control
-            ctrl = "Moment" if r['L_crit_moment'] < r['L_crit_defl'] else "Deflect"
-            
-            batch_results.append({
-                "Steel Section": r['Section'],
-                "Vu (Ton)": r['V_target']/1000,
-                "L(Moment)": r['L_crit_moment'],
-                "L(Deflect)": r['L_crit_defl'],
-                "Safe Span": r['L_safe'],
-                "Control": ctrl,
-                "Bolts": r['Bolt Qty'],
-                "Plate": f"100x{int(r['Plate Len']*10)}x10"
-            })
-            
-        df = pd.DataFrame(batch_results)
-        st.dataframe(
-            df,
-            use_container_width=True,
-            column_config={
-                "Vu (Ton)": st.column_config.NumberColumn("Load (T)", format="%.2f"),
-                "L(Moment)": st.column_config.NumberColumn("L-Str (m)", format="%.2f", help="Max Length by Strength"),
-                "L(Deflect)": st.column_config.NumberColumn("L-Def (m)", format="%.2f", help="Max Length by L/360"),
-                "Safe Span": st.column_config.NumberColumn("Safe (m)", format="%.2f", help="Min of Strength & Deflection"),
-                "Bolts": st.column_config.NumberColumn("Bolts", format="%d"),
-            },
-            hide_index=True, height=500
-        )
+    # =====================================================
+    # 📊 NEW! COMPARISON CHART & TABLE
+    # =====================================================
+    st.subheader("📊 ตารางเปรียบเทียบ (Strength vs Stiffness)")
+    
+    # 1. Prepare Batch Data
+    batch_results = []
+    for sec in all_sections:
+        r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
+        ctrl = "Moment" if r['L_crit_moment'] < r['L_crit_defl'] else "Deflection"
+        
+        batch_results.append({
+            "Section": r['Section'],
+            "Moment Limit (m)": r['L_crit_moment'],
+            "Deflection Limit (m)": r['L_crit_defl'],
+            "Safe Span (m)": r['L_safe'],
+            "Control": ctrl
+        })
+    df = pd.DataFrame(batch_results)
+
+    # 2. Zone Chart (Bar Chart Comparison)
+    st.markdown("##### 📈 Span Capability: Moment vs Deflection")
+    st.caption("กราฟนี้แสดงช่วงความยาวที่ **Moment (สีแดง)** และ **Deflection (สีฟ้า)** ยอมรับได้ (ค่าที่ต่ำกว่าคือค่าที่ปลอดภัย)")
+    
+    # Transform data for plotting
+    chart_df = df.set_index("Section")[["Moment Limit (m)", "Deflection Limit (m)"]]
+    st.bar_chart(chart_df, height=300, color=["#FF4B4B", "#1C83E1"]) # Red for Moment, Blue for Deflection
+
+    # 3. Highlighted Table
+    st.markdown("##### 📋 Detailed Data Table")
+    
+    # Filter Toggle
+    show_moment_only = st.checkbox("🎯 Show ONLY Moment Controlled Sections", value=False)
+    
+    if show_moment_only:
+        df_display = df[df["Control"] == "Moment"]
+    else:
+        df_display = df
+        
+    st.dataframe(
+        df_display,
+        use_container_width=True,
+        column_config={
+            "Section": st.column_config.TextColumn("Steel Section", width="medium"),
+            "Moment Limit (m)": st.column_config.NumberColumn("L-Moment (m)", format="%.2f", help="Max Length limited by Bending Strength"),
+            "Deflection Limit (m)": st.column_config.NumberColumn("L-Deflect (m)", format="%.2f", help="Max Length limited by L/360"),
+            "Safe Span (m)": st.column_config.NumberColumn("Safe Span (m)", format="%.2f", help="The final allowable length"),
+            "Control": st.column_config.TextColumn(
+                "Control By",
+                help="Which factor limits the span?",
+                validate="^Moment$" # This is just a regex validator, essentially highlights valid text
+            ),
+        },
+        hide_index=True,
+        height=500
+    )
