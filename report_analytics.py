@@ -1,5 +1,7 @@
 # report_analytics.py
-# Version: 1.1 (Restored: Visual Normalization - Green Zone between Shear & Span)
+# Version: 3.0 (Professional Dashboard - Catalog Order)
+# Features: Visual Gap Graph, Weight Efficiency, Auto-Highlights, CSV Download
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -7,126 +9,186 @@ import numpy as np
 
 # Import Logic from main file
 try:
-    from report_generator import get_standard_sections, calculate_connection
+    from report_generator import get_standard_sections, calculate_connection, calculate_full_properties
 except ImportError:
-    st.error("ไม่พบไฟล์ report_generator.py กรุณาวางไฟล์ทั้งสองไว้ในโฟลเดอร์เดียวกัน")
+    st.error("❌ Critical Error: ไม่พบไฟล์ report_generator.py กรุณาวางไฟล์ทั้งสองไว้ในโฟลเดอร์เดียวกัน")
     st.stop()
 
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
-    แสดงผลกราฟแบบ Visual Normalization
-    ระบายสีเขียว "ระหว่าง" เส้น Shear (ที่ Scaled แล้ว) กับ เส้น Limit
+    แสดงผล Dashboard การวิเคราะห์ขั้นสูง
+    - คงการเรียงลำดับตาม Catalog (Size)
+    - แสดงกราฟ Visual Gap (Green Zone)
+    - วิเคราะห์ความคุ้มค่า (Weight Efficiency)
     """
-    st.markdown("## 📊 Analytics Dashboard")
     
+    # --- 1. DATA PREPARATION & BATCH CALCULATION ---
     all_sections = get_standard_sections()
-    names, moments, defls, shears = [], [], [], []
-    batch_results = []
+    data_list = []
 
-    # --- 1. Batch Calculation ---
     for sec in all_sections:
+        # 1.1 Structural Calc
         r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
+        # 1.2 Physical Properties (Weight)
+        props = calculate_full_properties(sec)
+        weight_kg_m = props['Area (cm2)'] * 0.785 # A * Density
         
-        # Data for Graph
-        names.append(sec['name'].replace("H-", "")) 
-        moments.append(r['L_crit_moment'])
-        defls.append(r['L_crit_defl'])
-        shears.append(r['Vn_beam']) 
+        # 1.3 Efficiency Metric (Span per kg of steel)
+        efficiency = r['L_safe'] / weight_kg_m if weight_kg_m > 0 else 0
         
-        # Data for Table
+        # 1.4 Capacity Check
         actual_cap = r['Bolt Qty'] * r['phiRn_bolt']
         util = (r['V_target'] / actual_cap) * 100 if actual_cap > 0 else 0
-        
-        batch_results.append({
-            "Section": r['Section'],
-            "Design Vu (kg)": r['V_target'],
+
+        data_list.append({
+            "Name": sec['name'].replace("H-", ""),
+            "Full_Name": sec['name'],
+            "Weight (kg/m)": weight_kg_m,
+            "Moment Limit": r['L_crit_moment'],
+            "Deflection Limit": r['L_crit_defl'],
             "Max Span (m)": r['L_safe'],
-            "Limit State": "Moment" if r['L_crit_moment'] < r['L_crit_defl'] else "Deflection",
-            "Bolt Qty": r['Bolt Qty'],
-            "Plate H (mm)": int(r['Plate Len']*10),
-            "Util. (%)": util
+            "Shear Cap (kg)": r['Vn_beam'],
+            "Bolts": r['Bolt Qty'],
+            "Util (%)": util,
+            "Efficiency": efficiency, # Span per kg
+            "Raw Data": r
         })
 
-    # --- 2. Structural Limit States Diagram (Visual Style) ---
-    st.subheader("📈 Structural Limit States Diagram")
-    
-    fig, ax1 = plt.subplots(figsize=(12, 6))
-    x = np.arange(len(names))
-    
-    # 2.1 Calculate Scaling Factor
-    # เพื่อดึงเส้น Shear (kg) ให้ขึ้นมาอยู่ในระดับเดียวกับ Span (m) ในเชิงภาพ
-    max_span_val = max(max(moments), max(defls)) * 1.15
-    max_shear_val = max(shears) * 1.15
-    
-    # Scale Factor: แปลง kg -> m (Visual only)
-    shear_scale_factor = max_span_val / max_shear_val
-    shears_visual = np.array(shears) * shear_scale_factor
+    df = pd.DataFrame(data_list)
 
-    # 2.2 Plot Limits (Left Axis - Meters)
-    ax1.set_ylabel('Safe Span (m)', color='#27AE60', fontweight='bold')
-    ax1.plot(x, moments, 'r--', label='Moment Limit', alpha=0.6, linewidth=1.5)
-    ax1.plot(x, defls, 'b-', label='Deflection Limit', alpha=0.6, linewidth=1.5)
+    # --- 2. EXECUTIVE SUMMARY (KPIs) ---
+    st.markdown("## 📊 Strategic Analysis Dashboard")
     
-    # 2.3 Custom Fill Between (Visual Gap)
-    # ระบายสีพื้นที่ระหว่าง "Visual Shear" กับ "Actual Limit"
+    # Find Best Performers
+    best_span = df.loc[df['Max Span (m)'].idxmax()]
+    best_eff = df.loc[df['Efficiency'].idxmax()]
+    
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("🔩 Current Bolt Size", f"M{bolt_dia}", f"Load {load_pct}%")
+    with c2:
+        st.metric("🏆 Strongest Beam", best_span['Name'], f"{best_span['Max Span (m)']:.2f} m")
+    with c3:
+        st.metric("💰 Best Value (Eco)", best_eff['Name'], "Most efficient")
+    with c4:
+        st.metric("📉 H-450 Drop Reason", "Low Inertia", "Deep but Narrow")
+
+    # --- 3. ADVANCED VISUALIZATION (THE GRAPH) ---
+    st.subheader("📈 Structural Limit States & Optimization Zone")
+    
+    # Setup Data
+    names = df['Name']
+    moments = df['Moment Limit']
+    defls = df['Deflection Limit']
+    shears = df['Shear Cap (kg)']
+    
+    # Create Plot
+    fig, ax1 = plt.subplots(figsize=(14, 7))
+    x = np.arange(len(names))
+
+    # 3.1 Visual Scaling (เพื่อดึงกราฟ Shear ขึ้นมาเทียบ Span)
+    # ใช้ Factor 1.2 เพื่อเผื่อที่ด้านบนสำหรับ Legend
+    max_span_val = max(max(moments), max(defls)) * 1.2
+    max_shear_val = max(shears) * 1.2
+    shear_scale = max_span_val / max_shear_val
+    shears_visual = shears * shear_scale
+
+    # 3.2 Plot Limits (Left Axis - Meters)
+    ax1.set_ylabel('Safe Span Limit (m)', color='#27AE60', fontweight='bold', fontsize=12)
+    # Plot Limits
+    line_m, = ax1.plot(x, moments, 'r--', label='Moment Limit', alpha=0.5, linewidth=1.5)
+    line_d, = ax1.plot(x, defls, 'b-', label='Deflection Limit', alpha=0.6, linewidth=1.5)
+    
+    # 3.3 The "Green Zone" (Gap between Visual Shear and Actual Limit)
     upper_bound = np.minimum(moments, defls)
     lower_bound = shears_visual
     
+    # ระบายสีเฉพาะพื้นที่ที่ Span > Shear Trend (Gap ที่คุ้มค่า)
     ax1.fill_between(
-        x, 
-        lower_bound, 
-        upper_bound, 
+        x, lower_bound, upper_bound, 
         where=(upper_bound > lower_bound),
-        color='#2ECC71', 
-        alpha=0.4, 
-        label='Optimal Zone (Span vs Shear Trend)'
+        color='#2ECC71', alpha=0.35, 
+        label='Optimization Zone (Span > Shear Trend)'
     )
     
-    # Setup Left Axis
+    # Annotate Max Point
+    idx_max = df['Max Span (m)'].idxmax()
+    ax1.annotate(f'Max: {df.iloc[idx_max]["Max Span (m)"]:.2f}m', 
+                 xy=(idx_max, df.iloc[idx_max]["Max Span (m)"]), 
+                 xytext=(idx_max, df.iloc[idx_max]["Max Span (m)"] + 0.5),
+                 arrowprops=dict(facecolor='black', shrink=0.05),
+                 ha='center', fontsize=9, fontweight='bold')
+
+    # Annotate The Drop (H-450) - เพื่อความเป็นมืออาชีพ อธิบายว่าทำไมกราฟตก
+    try:
+        idx_drop = df[df['Name'].str.contains("450x200")].index[0]
+        ax1.annotate('Low Inertia ($I_x$)', 
+                     xy=(idx_drop, df.iloc[idx_drop]["Max Span (m)"]), 
+                     xytext=(idx_drop, df.iloc[idx_drop]["Max Span (m)"] + 1.5),
+                     arrowprops=dict(facecolor='red', arrowstyle='->'),
+                     color='red', ha='center', fontsize=8)
+    except:
+        pass
+
+    # Axis Settings
     ax1.set_ylim(0, max_span_val)
-    ax1.legend(loc='upper left')
     ax1.set_xticks(x)
-    ax1.set_xticklabels(names, rotation=90, fontsize=8)
-    ax1.grid(True, linestyle=':', alpha=0.5)
-    
-    # 2.4 Plot Shear Capacity (Right Axis - kg)
+    ax1.set_xticklabels(names, rotation=90, fontsize=9)
+    ax1.grid(True, linestyle='--', alpha=0.4)
+
+    # 3.4 Right Axis (Shear Capacity)
     ax2 = ax1.twinx()
-    ax2.set_ylabel('Shear Capacity (kg)', color='purple', fontweight='bold')
+    ax2.set_ylabel('Shear Capacity (kg)', color='purple', fontweight='bold', fontsize=12)
+    line_v, = ax2.plot(x, shears, color='purple', linestyle=':', linewidth=2, label='Shear Trend ($V_n$)')
+    ax2.set_ylim(0, max_shear_val) # Sync Scale!
     
-    # Plot เส้นจริง (kg) ทับลงไปที่ตำแหน่งเดียวกับเส้น Visual
-    ax2.plot(x, shears, color='purple', linestyle=':', linewidth=2, label='Shear Capacity ($V_n$)')
-    
-    # *สำคัญ* ต้องล็อค Scale แกนขวาให้สัมพันธ์กับแกนซ้าย เพื่อให้เส้นทับกันเป๊ะ
-    ax2.set_ylim(0, max_shear_val) 
-    
-    ax2.legend(loc='upper right')
-    
+    # Unified Legend
+    lines = [line_m, line_d, line_v]
+    labels = [l.get_label() for l in lines]
+    ax1.legend(lines, labels, loc='upper left', frameon=True, facecolor='white', framealpha=0.9)
+
     st.pyplot(fig)
+    
+    # 📝 Caption อธิบายกราฟ
+    st.info("""
+    **💡 วิธีอ่านกราฟ:**
+    * **พื้นที่สีเขียว:** แสดง "ระยะปลอดภัย" ที่เหลืออยู่เมื่อเทียบกับแนวโน้มของแรงเฉือน (ยิ่งกว้างยิ่งแสดงว่าหน้าตัดนั้นรับ Span ได้ดีมากเมื่อเทียบกับขนาดตัว)
+    * **เส้นประสีม่วง:** คือแนวโน้มการรับแรงเฉือน (Shear) ยิ่งหน้าตัดใหญ่ เส้นนี้จะยิ่งสูง
+    * **จุดสังเกต:** หน้าตัด H-450x200 กราฟตกลงมาเพราะเป็นหน้าตัดแบบบาง (Light Weight) มีค่า Inertia น้อยกว่า H-400x400 ที่เป็นแบบจัตุรัส
+    """)
 
     st.divider()
 
-    # --- 3. Comparative Analysis Table ---
-    st.subheader("📋 Comparative Analysis Table")
+    # --- 4. COMPREHENSIVE DATA TABLE ---
+    st.subheader("📋 Detailed Calculation Table")
     
-    col_sort, col_filter = st.columns(2)
-    with col_sort:
-        sort_by = st.selectbox("Sort By", ["Section", "Max Span (m)", "Util. (%)"], index=1)
-        
-    df_compare = pd.DataFrame(batch_results)
+    # Formatting for display
+    df_display = df.copy()
     
-    if sort_by == "Max Span (m)":
-        df_compare = df_compare.sort_values(by="Max Span (m)", ascending=False)
-    elif sort_by == "Util. (%)":
-        df_compare = df_compare.sort_values(by="Util. (%)", ascending=False)
-        
+    # เลือก Column ที่จะโชว์
+    cols = ["Name", "Weight (kg/m)", "Shear Cap (kg)", "Bolts", "Util (%)", "Max Span (m)", "Efficiency"]
+    
     st.dataframe(
-        df_compare,
+        df_display[cols],
         use_container_width=True,
         column_config={
-            "Design Vu (kg)": st.column_config.NumberColumn("Load (kg)", format="%.0f"),
-            "Max Span (m)": st.column_config.NumberColumn("Safe Span (m)", format="%.2f"),
-            "Bolt Qty": st.column_config.NumberColumn("Bolts", format="%d"),
-            "Util. (%)": st.column_config.ProgressColumn("Capacity Usage", format="%.0f%%", min_value=0, max_value=100),
+            "Name": st.column_config.TextColumn("Section Name", width="medium"),
+            "Weight (kg/m)": st.column_config.NumberColumn("Weight (kg/m)", format="%.1f"),
+            "Shear Cap (kg)": st.column_config.NumberColumn("Shear Cap ($V_n$)", format="%.0f"),
+            "Bolts": st.column_config.NumberColumn("Bolts Req.", format="%d pcs"),
+            "Util (%)": st.column_config.ProgressColumn("Bolt Util.", format="%.0f%%", min_value=0, max_value=100),
+            "Max Span (m)": st.column_config.NumberColumn("Safe Span", format="%.2f m"),
+            "Efficiency": st.column_config.LineChartColumn("Efficiency (Span/Wt)", y_min=0, y_max=df['Efficiency'].max())
         },
-        hide_index=True, height=600
+        height=600,
+        hide_index=True
+    )
+    
+    # Download Button
+    csv = df_display.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Download Full Report (CSV)",
+        data=csv,
+        file_name='structural_analysis_report.csv',
+        mime='text/csv',
     )
