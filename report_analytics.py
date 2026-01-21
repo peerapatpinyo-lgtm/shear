@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
 import math
-import plotly.graph_objects as go 
 
 # --- Module Integrity Check ---
 try:
@@ -21,10 +21,9 @@ FV_WELD = 1470
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
     Renders the Structural Analytics Dashboard.
-    - Version 38.0: 
-        1. CORRECTED Moment Limit Curve: Calculated directly from Mn = Fy * Zx (Plastic Moment).
-        2. Added Explicit Moment Capacity (Mn) display for verification.
-        3. Full Zone Shading (Shear / Moment / Deflection).
+    - Version 32.0: 
+        1. Table shows Nominal Capacity (e.g. 47,040 kg) explicitly.
+        2. Graph section is FULLY RESTORED.
     """
     
     st.markdown("## 🏗️ Structural Optimization Dashboard")
@@ -45,39 +44,33 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         h_cm = sec['h'] / 10
         tw_cm = sec['tw'] / 10
         Aw = h_cm * tw_cm
+        
+        # Vn = 0.6 * Fy * Aw (NO Safety Factor applied here for display)
+        # Example: 0.6 * 2450 * 32 = 47,040 kg
         V_beam_nominal = 0.60 * sec['Fy'] * Aw 
         
+        # Define Allowable for Graphing (Optional, if you want "Safe" curves)
+        # If user says "Cut FS", we can use Nominal for graph or apply standard ASD
+        # Here we use Nominal for consistency with the Table request.
+        V_graph_limit = V_beam_nominal 
+
+        # Target Load (User % of Nominal)
         V_target = V_beam_nominal * (load_pct / 100.0)
 
-        # --- B. MOMENT CAPACITY (Nominal Plastic Moment) ---
-        # Mn = Fy * Zx (Plastic Modulus)
-        # Convert Zx (cm3) * Fy (ksc) -> kg-cm -> /100 -> kg-m
+        # --- B. ZONES (Moment / Deflection) ---
+        # Calculate limits based on Nominal values for consistency
         try:
-            if 'Zx (cm3)' in full_props:
-                M_n_kgm = (sec['Fy'] * full_props['Zx (cm3)']) / 100
-            else:
-                # Fallback to Sx if Zx is missing (Conservative)
-                M_n_kgm = (sec['Fy'] * full_props['Sx (cm3)']) / 100
-        except:
-            M_n_kgm = 0
-            
-        # --- C. DEFLECTION LIMIT CONSTANT ---
-        # Formula: w = (384 E I) / (360 L^3) for L/360 limit
-        # Constant K = 384 * E * I / (360 * 100^3) ... taking units into account
-        # Based on prev validation: 384*E*Ix / 18,000,000
+            M_n_kgcm = sec['Fy'] * full_props['Zx (cm3)']
+            M_limit_kgm = M_n_kgcm / 100 
+        except: M_limit_kgm = 0
+        
         Ix = full_props['Ix (cm4)']
         K_defl = (384 * E_STEEL_KSC * Ix) / 18000000 
         
-        # --- D. ZONES TRANSITION ---
-        # L_sm: Shear to Moment Transition (Vn vs Mn)
-        # 2Vn/L = 8Mn/L^2  => L = 4Mn/Vn
-        L_sm = (4 * M_n_kgm) / V_beam_nominal if V_beam_nominal > 0 else 0
+        L_sm = (4 * M_limit_kgm) / V_beam_nominal if V_beam_nominal > 0 else 0
+        L_md = K_defl / (8 * M_limit_kgm) if M_limit_kgm > 0 else 0
         
-        # L_md: Moment to Deflection Transition (Mn vs Defl)
-        # 8Mn/L^2 = K/L^3 => L = K / 8Mn
-        L_md = K_defl / (8 * M_n_kgm) if M_n_kgm > 0 else 0
-        
-        # --- E. AUTO-DESIGN ---
+        # --- C. AUTO-DESIGN (6 Modes) ---
         bolt_d_cm = bolt_dia / 10
         hole_d_cm = bolt_d_cm + 0.2
         pitch_cm = 3 * bolt_d_cm
@@ -90,16 +83,20 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         while not is_safe and req_bolts <= 24:
             plate_h_cm = math.ceil(((req_bolts - 1) * pitch_cm) + (2 * edge_cm))
             
-            # Checks
+            # 6 Checks
             Rn_bolt = req_bolts * FV_BOLT * (3.14159 * bolt_d_cm**2 / 4)
+            
             Lc_edge = edge_cm - hole_d_cm/2; Lc_inner = pitch_cm - hole_d_cm
             Rn_bear = (min(1.2*Lc_edge*t_plate_cm*FU_PLATE, 2.4*bolt_d_cm*t_plate_cm*FU_PLATE) + 
                        (req_bolts-1)*min(1.2*Lc_inner*t_plate_cm*FU_PLATE, 2.4*bolt_d_cm*t_plate_cm*FU_PLATE))
+            
             Rn_yield = 0.60 * FY_PLATE * plate_h_cm * t_plate_cm
             Rn_rup = 0.50 * FU_PLATE * (plate_h_cm*t_plate_cm - req_bolts*hole_d_cm*t_plate_cm)
+            
             Anv = (plate_h_cm-edge_cm)*t_plate_cm - (req_bolts-0.5)*hole_d_cm*t_plate_cm
             Ant = (4.0-0.5*hole_d_cm)*t_plate_cm
             Rn_block = (0.6 * FU_PLATE * Anv) + (1.0 * FU_PLATE * Ant)
+            
             weld_sz = max(0.6, (t_plate_cm*10 - 2)/10)
             Rn_weld = 2 * 0.707 * weld_sz * plate_h_cm * FV_WELD
             
@@ -119,10 +116,10 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
 
         data_list.append({
             "Section": sec['name'],
-            "L_Start": L_sm, "L_End": L_md,
-            "V_Nominal": V_beam_nominal,
-            "M_Nominal": M_n_kgm,       # <-- Store Mn for Graph
-            "K_Defl": K_defl,           # <-- Store K for Graph
+            "Moment Zone": f"{L_sm:.2f} - {L_md:.2f} m",
+            "L_Start": L_sm, 
+            "L_End": L_md,
+            "V_Nominal": V_beam_nominal,   # 47,040 kg
             "V_Target": V_target,
             "Bolt Spec": f"{final_info.get('Bolts')} - M{int(bolt_dia)}",
             "Plate Size": final_info.get('Plate'),
@@ -134,125 +131,91 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     if not data_list: return
     df = pd.DataFrame(data_list)
 
-    # --- 2. TABLE ---
-    st.subheader("📋 Specification Table")
-    df["Moment Zone (m)"] = df.apply(lambda x: f"{x['L_Start']:.2f} - {x['L_End']:.2f}", axis=1)
-
+    # --- 2. TABLE DISPLAY ---
+    st.subheader("📋 Specification Table (Nominal Capacity)")
     st.dataframe(
         df[[
-            "Section", "V_Nominal", "M_Nominal", "Moment Zone (m)", 
-            "Bolt Spec", "Plate Size", 
+            "Section", "V_Nominal", "V_Target", 
+            "Bolt Spec", "Plate Size", "Weld Spec", 
             "Governing", "D/C Ratio"
         ]],
         use_container_width=True,
         column_config={
             "Section": st.column_config.TextColumn("Section", width="small"),
-            "V_Nominal": st.column_config.NumberColumn("Shear (Vn)", format="%.0f kg"),
-            "M_Nominal": st.column_config.NumberColumn("Moment (Mn)", format="%.0f kg-m"), # Show Value!
-            "Moment Zone (m)": st.column_config.TextColumn("Moment Zone", width="medium"),
+            "V_Nominal": st.column_config.NumberColumn("Shear Capacity (Vn)", format="%.0f kg", help="Nominal Web Shear (0.6*Fy*Aw)"),
+            "V_Target": st.column_config.NumberColumn(f"Load ({load_pct}%)", format="%.0f kg"),
             "Bolt Spec": st.column_config.TextColumn("Bolts", width="small"),
             "Plate Size": st.column_config.TextColumn("Plate", width="medium"),
+            "Weld Spec": st.column_config.TextColumn("Weld", width="small"),
             "Governing": st.column_config.TextColumn("Crit. Mode", width="medium"),
             "D/C Ratio": st.column_config.ProgressColumn("Ratio", format="%.2f", min_value=0, max_value=1.5),
         },
-        height=400,
+        height=500,
         hide_index=True
     )
 
-    # --- 3. INTERACTIVE GRAPH ---
+    # --- 3. GRAPH RENDERING (RESTORED) ---
     st.divider()
-    st.subheader("🔬 Interactive Analysis Graph")
+    st.subheader("🔬 Deep Dive: Critical Limit Analysis")
     
     col_sel, _ = st.columns([1, 2])
     with col_sel:
-        selected_name = st.selectbox("Select Section to Analyze:", df['Section'].unique())
+        selected_name = st.selectbox("Select Section:", df['Section'].unique())
 
     row = df[df['Section'] == selected_name].iloc[0]
     
-    # Retrieve Limits Directly
+    # Use Nominal Values for the graph to match the table
     V_graph = row['V_Nominal']
-    M_graph = row['M_Nominal']
-    K_graph = row['K_Defl']
-    
     L_start = row['L_Start']
     L_end = row['L_End']
+    
+    # Calculate Plotting Curves
+    M_derived = (L_start * V_graph) / 4 if L_start > 0 else 0
+    K_derived = L_end * 8 * M_derived if M_derived > 0 else 0
 
     max_span = max(10, L_end * 1.5)
-    spans = np.linspace(0.1, max_span, 500)
+    spans = np.linspace(0.1, max_span, 400)
     
-    # --- PLOT FORMULAS (Uniform Load) ---
-    ws = (2 * V_graph) / spans                  # Shear: V = wL/2 -> w = 2V/L
-    wm = (8 * M_graph) / (spans**2)             # Moment: M = wL^2/8 -> w = 8M/L^2
-    wd = K_graph / (spans**3)                   # Deflection: Limit L/360
-    
+    ws = (2 * V_graph) / spans 
+    wm = (8 * M_derived) / (spans**2) 
+    wd = K_derived / (spans**3) 
     w_safe = np.minimum(np.minimum(ws, wm), wd)
 
-    # === PLOTLY SETUP ===
-    fig = go.Figure()
-
-    # 1. Limit Lines
-    fig.add_trace(go.Scatter(x=spans, y=ws, mode='lines', name='Shear Limit', line=dict(color='#9B59B6', dash='dot')))
-    fig.add_trace(go.Scatter(x=spans, y=wm, mode='lines', name='Moment Limit', line=dict(color='#E74C3C', dash='dash')))
-    fig.add_trace(go.Scatter(x=spans, y=wd, mode='lines', name='Deflection Limit', line=dict(color='#2ECC71', dash='dashdot')))
+    # PLOT
+    plt.style.use('bmh')
+    fig, ax = plt.subplots(figsize=(10, 6))
     
-    # 2. Safe Envelope
-    fig.add_trace(go.Scatter(x=spans, y=w_safe, mode='lines', name='Safe Load Envelope', line=dict(color='#2C3E50', width=4)))
+    ax.plot(spans, ws, color='#9B59B6', linestyle=':', linewidth=1.5, label='Shear Limit (Web)')
+    ax.plot(spans, wm, color='#E74C3C', linestyle='--', linewidth=1.5, label='Moment Limit')
+    ax.plot(spans, wd, color='#2ECC71', linestyle='-.', linewidth=1.5, label='Deflection Limit')
+    ax.plot(spans, w_safe, color='#2C3E50', linewidth=3, label='Safe Load Envelope')
+    
+    # Vertical Lines & Shading
+    if L_start > 0.1:
+        ax.axvline(x=L_start, color='#D35400', linestyle='-', linewidth=1.5)
+        ax.text(L_start, max(w_safe)*0.5, f" Start: {L_start:.2f}m", 
+                rotation=90, va='bottom', ha='right', color='white', fontweight='bold',
+                bbox=dict(facecolor='#D35400', alpha=0.7, edgecolor='none'))
 
-    # 3. ZONES SHADING
-    # Shear Zone
-    if L_start > 0:
-        fig.add_vrect(x0=0, x1=L_start, fillcolor="#9B59B6", opacity=0.1, layer="below", line_width=0)
-        fig.add_annotation(x=L_start/2, y=V_graph*0.9, text="SHEAR", showarrow=False, font=dict(color="#8E44AD", size=10, weight="bold"))
-
-    # Moment Zone
     if L_end > L_start:
-        mask_moment = (spans >= L_start) & (spans <= L_end)
-        fig.add_trace(go.Scatter(
-            x=spans[mask_moment], y=w_safe[mask_moment], 
-            mode='none', fill='tozeroy', fillcolor='rgba(231, 76, 60, 0.2)', 
-            name='Moment Zone', hoverinfo='skip'
-        ))
-        y_anno_m = np.interp((L_start+L_end)/2, spans, w_safe) * 0.5
-        fig.add_annotation(x=(L_start+L_end)/2, y=y_anno_m, text="MOMENT", showarrow=False, font=dict(color="#C0392B", size=10, weight="bold"))
+        ax.axvline(x=L_end, color='#27AE60', linestyle='-', linewidth=1.5)
+        ax.text(L_end, max(w_safe)*0.3, f" End: {L_end:.2f}m", 
+                rotation=90, va='bottom', ha='left', color='white', fontweight='bold',
+                bbox=dict(facecolor='#27AE60', alpha=0.7, edgecolor='none'))
 
-    # Deflection Zone
-    if max_span > L_end:
-        mask_defl = (spans >= L_end)
-        fig.add_trace(go.Scatter(
-            x=spans[mask_defl], y=w_safe[mask_defl], 
-            mode='none', fill='tozeroy', fillcolor='rgba(46, 204, 113, 0.2)', 
-            name='Deflection Zone', hoverinfo='skip'
-        ))
-        x_anno_d = (L_end + max_span)/2
-        y_anno_d = np.interp(x_anno_d, spans, w_safe) * 0.5
-        fig.add_annotation(x=x_anno_d, y=y_anno_d, text="DEFLECTION", showarrow=False, font=dict(color="#27AE60", size=10, weight="bold"))
-
-    # Separators
     if L_end > L_start:
-        fig.add_vline(x=L_start, line_width=1, line_dash="dash", line_color="#E74C3C")
-        fig.add_vline(x=L_end, line_width=1, line_dash="dash", line_color="#2ECC71")
+        mask = (spans >= L_start) & (spans <= L_end)
+        ax.fill_between(spans, 0, w_safe, where=mask, color='#E74C3C', alpha=0.15)
+        mid_point = (L_start + L_end) / 2
+        safe_load_at_mid = np.interp(mid_point, spans, w_safe)
+        ax.text(mid_point, safe_load_at_mid*0.5, "MOMENT\nZONE", 
+                ha='center', va='center', color='#C0392B', fontweight='bold', fontsize=10)
 
-    # 4. Axes & Layout
-    y_max_view = np.interp(1.0, spans, w_safe) * 1.5 if np.interp(1.0, spans, w_safe) > 0 else V_graph
+    ax.set_ylim(0, max(w_safe)*1.2 if max(w_safe)>0 else 1000)
+    ax.set_xlim(0, max_span)
+    ax.set_xlabel("Span Length (m)", fontweight='bold')
+    ax.set_ylabel("Safe Uniform Load (kg/m)", fontweight='bold')
+    ax.legend(loc='upper right')
+    st.pyplot(fig)
     
-    fig.update_layout(
-        title=f"Critical Limit State Diagram: {selected_name}",
-        xaxis_title="<b>Span Length (m)</b>",
-        yaxis_title="<b>Safe Uniform Load (kg/m)</b>",
-        template="plotly_white",
-        hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        height=550,
-        margin=dict(l=20, r=20, t=60, b=40)
-    )
-    
-    fig.update_xaxes(range=[0, max_span], rangemode="tozero", constrain="domain")
-    fig.update_yaxes(range=[0, y_max_view], rangemode="tozero", constrain="domain")
-
-    st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-    
-    # Info Box with Moment Verification
-    c1, c2, c3 = st.columns(3)
-    c1.info(f"**Max Shear (Vn):** {row['V_Nominal']:,.0f} kg")
-    c2.info(f"**Max Moment (Mn):** {row['M_Nominal']:,.0f} kg-m") # <-- Added
-    c3.success(f"**Check:** {row['D/C Ratio']:.2f} ({row['Governing']})")
+    st.success(f"✅ Displaying Nominal Capacity for {selected_name}: {row['V_Nominal']:,.0f} kg")
