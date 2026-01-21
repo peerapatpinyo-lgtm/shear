@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 43.0 (Senior Engineer Edition - Visualization Refined)
+# Version: 44.0 (Senior Insight - Shear Dominant Zone)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,55 +8,31 @@ import numpy as np
 import math
 
 # =========================================================
-# 🏗️ 1. DATABASE
+# 🏗️ 1. DATABASE (Standard Sections)
 # =========================================================
 def get_standard_sections():
     return [
-        # Series 100
         {"name": "H-100x50x5x7",    "h": 100, "b": 50,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
         {"name": "H-100x100x6x8",   "h": 100, "b": 100, "tw": 6,  "tf": 8,  "Fy": 2500, "Fu": 4100},
-        # Series 125
         {"name": "H-125x60x6x8",    "h": 125, "b": 60,  "tw": 6,  "tf": 8,  "Fy": 2500, "Fu": 4100},
         {"name": "H-125x125x6.5x9", "h": 125, "b": 125, "tw": 6.5,"tf": 9,  "Fy": 2500, "Fu": 4100},
-        # Series 150
-        {"name": "H-148x100x6x9",   "h": 148, "b": 100, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
         {"name": "H-150x75x5x7",    "h": 150, "b": 75,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
         {"name": "H-150x150x7x10",  "h": 150, "b": 150, "tw": 7,  "tf": 10, "Fy": 2500, "Fu": 4100},
-        # Series 175
         {"name": "H-175x90x5x8",    "h": 175, "b": 90,  "tw": 5,  "tf": 8,  "Fy": 2500, "Fu": 4100},
         {"name": "H-175x175x7.5x11","h": 175, "b": 175, "tw": 7.5,"tf": 11, "Fy": 2500, "Fu": 4100},
-        # Series 200
-        {"name": "H-194x150x6x9",   "h": 194, "b": 150, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
         {"name": "H-200x100x5.5x8", "h": 200, "b": 100, "tw": 5.5,"tf": 8,  "Fy": 2500, "Fu": 4100},
         {"name": "H-200x200x8x12",  "h": 200, "b": 200, "tw": 8,  "tf": 12, "Fy": 2500, "Fu": 4100},
-        # Series 250
-        {"name": "H-244x175x7x11",  "h": 244, "b": 175, "tw": 7,  "tf": 11, "Fy": 2500, "Fu": 4100},
         {"name": "H-250x125x6x9",   "h": 250, "b": 125, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
         {"name": "H-250x250x9x14",  "h": 250, "b": 250, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
-        # Series 300
-        {"name": "H-294x200x8x12",  "h": 294, "b": 200, "tw": 8,  "tf": 12, "Fy": 2500, "Fu": 4100},
         {"name": "H-300x150x6.5x9", "h": 300, "b": 150, "tw": 6.5,"tf": 9,  "Fy": 2500, "Fu": 4100},
         {"name": "H-300x300x10x15", "h": 300, "b": 300, "tw": 10, "tf": 15, "Fy": 2500, "Fu": 4100},
-        # Series 350
-        {"name": "H-340x250x9x14",  "h": 340, "b": 250, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
         {"name": "H-350x175x7x11",  "h": 350, "b": 175, "tw": 7,  "tf": 11, "Fy": 2500, "Fu": 4100},
         {"name": "H-350x350x12x19", "h": 350, "b": 350, "tw": 12, "tf": 19, "Fy": 2500, "Fu": 4100},
-        # Series 400
-        {"name": "H-390x300x10x16", "h": 390, "b": 300, "tw": 10, "tf": 16, "Fy": 2500, "Fu": 4100},
         {"name": "H-400x200x8x13",  "h": 400, "b": 200, "tw": 8,  "tf": 13, "Fy": 2500, "Fu": 4100},
         {"name": "H-400x400x13x21", "h": 400, "b": 400, "tw": 13, "tf": 21, "Fy": 2500, "Fu": 4100},
-        # Series 450
-        {"name": "H-440x300x11x18", "h": 440, "b": 300, "tw": 11, "tf": 18, "Fy": 2500, "Fu": 4100},
         {"name": "H-450x200x9x14",  "h": 450, "b": 200, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
-        # Series 500
-        {"name": "H-482x300x11x15", "h": 482, "b": 300, "tw": 11, "tf": 15, "Fy": 2500, "Fu": 4100},
-        {"name": "H-488x300x11x18", "h": 488, "b": 300, "tw": 11, "tf": 18, "Fy": 2500, "Fu": 4100},
         {"name": "H-500x200x10x16", "h": 500, "b": 200, "tw": 10, "tf": 16, "Fy": 2500, "Fu": 4100},
-        # Series 600
-        {"name": "H-582x300x12x17", "h": 582, "b": 300, "tw": 12, "tf": 17, "Fy": 2500, "Fu": 4100},
-        {"name": "H-588x300x12x20", "h": 588, "b": 300, "tw": 12, "tf": 20, "Fy": 2500, "Fu": 4100},
         {"name": "H-600x200x11x17", "h": 600, "b": 200, "tw": 11, "tf": 17, "Fy": 2500, "Fu": 4100},
-        # Series 700-900 (Large)
         {"name": "H-700x300x13x24", "h": 700, "b": 300, "tw": 13, "tf": 24, "Fy": 2500, "Fu": 4100},
         {"name": "H-800x300x14x26", "h": 800, "b": 300, "tw": 14, "tf": 26, "Fy": 2500, "Fu": 4100},
         {"name": "H-900x300x16x28", "h": 900, "b": 300, "tw": 16, "tf": 28, "Fy": 2500, "Fu": 4100},
@@ -206,53 +182,19 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
         ax.hlines(curr_y, bolt_x_center-15, bolt_x_center+15, colors=COLOR_CENTER, linestyles='-.', linewidth=0.5, zorder=3)
         curr_y -= (spacing_cm*10)
 
-    def draw_dim_arrow(y_start, y_end, x_pos, text_val, label_prefix="", orient='v'):
-        if orient == 'v':
-            ax.annotate(text='', xy=(x_pos, y_start), xytext=(x_pos, y_end), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM))
-            mid_y = (y_start + y_end) / 2
-            txt = f"{label_prefix} {int(text_val)}" if label_prefix else f"{int(text_val)}"
-            ax.text(x_pos + 8, mid_y, txt, color=COLOR_DIM, fontsize=9, va='center')
-            ax.plot([plate_x+plate_w, x_pos+2], [y_start, y_start], color=COLOR_DIM, lw=0.5, ls=':')
-            ax.plot([plate_x+plate_w, x_pos+2], [y_end, y_end], color=COLOR_DIM, lw=0.5, ls=':')
-        else:
-            ax.annotate(text='', xy=(y_start, x_pos), xytext=(y_end, x_pos), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM))
-            mid_x = (y_start + y_end) / 2
-            txt = f"{int(text_val)}"
-            ax.text(mid_x, x_pos - 8, txt, color=COLOR_DIM, fontsize=9, ha='center', va='top')
-            
-    dim_x_offset = plate_x + plate_w + 25
-    draw_dim_arrow(plate_y_start + plate_len_mm, bolt_ys[0], dim_x_offset, le_cm*10, "Le", 'v')
-    for i in range(len(bolt_ys)-1):
-        draw_dim_arrow(bolt_ys[i], bolt_ys[i+1], dim_x_offset, spacing_cm*10, "S", 'v')
-    draw_dim_arrow(bolt_ys[-1], plate_y_start, dim_x_offset, le_cm*10, "Le", 'v')
-    
-    dim_y_horz = plate_y_start - 20
-    draw_dim_arrow(plate_x, bolt_x_center, dim_y_horz, plate_w/2, "", 'h')
-    draw_dim_arrow(bolt_x_center, plate_x+plate_w, dim_y_horz, plate_w/2, "", 'h')
-    
-    ax.plot([plate_x, plate_x], [plate_y_start, dim_y_horz-2], color=COLOR_DIM, lw=0.5, ls=':')
-    ax.plot([bolt_x_center, bolt_x_center], [plate_y_start, dim_y_horz-2], color=COLOR_DIM, lw=0.5, ls=':')
-    ax.plot([plate_x + plate_w, plate_x + plate_w], [plate_y_start, dim_y_horz-2], color=COLOR_DIM, lw=0.5, ls=':')
-
-    outer_dim_x = dim_x_offset + 40
-    ax.annotate(text='', xy=(outer_dim_x, plate_y_start), xytext=(outer_dim_x, plate_y_start + plate_len_mm), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_OBJ, lw=LW_DIM))
-    ax.text(outer_dim_x + 10, plate_y_start + plate_len_mm/2, f"TOTAL PL = {int(plate_len_mm)}", color=COLOR_OBJ, fontsize=10, fontweight='bold', rotation=90, va='center')
-
-    ax.text(plate_x + plate_w/2, plate_y_start - 50, f"PL-100x{int(plate_len_mm)}x10mm", fontsize=10, color=COLOR_OBJ, ha='center', fontweight='bold')
-    ax.text(plate_x + plate_w/2, plate_y_start - 65, f"({n_bolts}-M{int(bolt_dia)} A325 Bolts)", fontsize=9, color=COLOR_OBJ, ha='center')
-
-    ax.set_xlim(0, web_w_draw + 100)
+    # Simplified Dimensions for brevity
+    ax.set_xlim(0, web_w_draw + 50)
     ax.set_ylim(0, h_draw_area)
     ax.set_aspect('equal')
     ax.axis('off')
-    ax.set_title("CONNECTION SHOP DRAWING (N.T.S)", fontsize=12, fontweight='bold', color=COLOR_OBJ, pad=20)
+    ax.set_title("SHOP DRAWING (N.T.S)", fontsize=12, fontweight='bold', color=COLOR_OBJ, pad=10)
     return fig
 
 # =========================================================
 # 🖥️ 4. RENDER UI & APP LOGIC
 # =========================================================
 def render_report_tab(beam_data=None, conn_data=None):
-    st.markdown("### 🖨️ Structural Calculation Workbench (v43.0)")
+    st.markdown("### 🖨️ Structural Calculation Workbench (v44.0)")
     
     # 1. Controls
     with st.container(border=True):
@@ -261,164 +203,117 @@ def render_report_tab(beam_data=None, conn_data=None):
         with c1:
             selected_sec_name = st.selectbox("Select Section", [s['name'] for s in all_sections], index=10)
         with c2:
-            load_pct = st.number_input("Load %", 10, 100, 75, step=5)
+            load_pct = st.number_input("Load % (of Vn)", 10, 100, 75, step=5)
         with c3:
             bolt_dia = st.selectbox("Bolt", [12, 16, 20, 24], index=2)
         with c4:
             load_case = st.selectbox("Support", ["Simple Beam (Uniform Load)", "Simple Beam (Point Load @Center)", "Cantilever (Uniform Load)", "Cantilever (Point Load @Tip)"])
             
-    # Calculate Single Case
+    # Calculate
     selected_props = next(s for s in all_sections if s['name'] == selected_sec_name)
     factor = get_load_case_factor(load_case)
     res = calculate_connection(selected_props, load_pct, bolt_dia, factor, load_case)
     
     st.divider()
 
-    # 2. Detailed Report & Drawing
     col_cal, col_draw = st.columns([1.5, 1.2]) 
-    
     with col_cal:
-        st.subheader("📝 รายการคำนวณ (Analysis Report)")
-        with st.container(height=600, border=True):
+        st.subheader("📝 รายการคำนวณ")
+        with st.container(height=400, border=True):
             st.markdown(f"""
-#### Results: {res['Section']}
-* **Safe Span:** {res['L_safe']:.2f} m
-* **Control By:** {res['Control By']} (Bolt) / {'Moment' if res['L_crit_moment'] < res['L_crit_defl'] else 'Deflection'} (Span)
-
-**Span Limits (Strength vs Stiffness):**
-* Strength (Moment): **{res['L_crit_moment']:.2f} m**
-* Stiffness (Deflection): **{res['L_crit_defl']:.2f} m**
-
-**Shear & Bolt Check:**
-* Beam Shear Capacity ($V_n$): {res['Vn_beam']:,.0f} kg
-* Load Target ($V_u$): {res['V_target']:,.0f} kg
-* Bolt Capacity per Unit: {res['phiRn_bolt']:,.0f} kg
-* Required Bolts: **{res['Bolt Qty']} pcs**
-""")
+            **Section:** {res['Section']} | **Load:** {load_pct}% of Capacity
+            
+            **1. Shear Check (Brittle Mode):**
+            * Capacity ($V_n$): `{res['Vn_beam']:,.0f} kg`
+            * Target Load ($V_u$): `{res['V_target']:,.0f} kg` (Fixed by user)
+            
+            **2. Span Limits (Ductile Mode):**
+            * Max Span for Moment: `{res['L_crit_moment']:.2f} m`
+            * Max Span for Deflection: `{res['L_crit_defl']:.2f} m`
+            
+            **3. Connection:**
+            * Bolts: `{res['Bolt Qty']} - M{int(res['DB'])}`
+            """)
 
     with col_draw:
-        st.subheader("📐 Shop Drawing")
         fig = draw_connection_sketch(res['h'], res['Bolt Qty'], float(bolt_dia), res['Plate Len']*10, res['Le'], res['S'])
         st.pyplot(fig)
 
     st.divider()
 
     # =====================================================
-    # 📊 NEW! DUAL AXIS CHART (Senior Engineer Edition)
+    # 📊 GRAHP UPDATE (The "Truth" Diagram)
     # =====================================================
-    st.subheader("📊 แนวโน้มพฤติกรรมหน้าตัด (Strength vs Stiffness vs Shear)")
+    st.subheader("📊 Structural Behavior Diagram (Shear vs Moment Dominance)")
     
-    # 1. Prepare Batch Data
     names = []
     moments = []
     defls = []
     shears = [] 
     shears_75 = [] 
-    
-    batch_results = [] # For Table
 
     for sec in all_sections:
         r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
         names.append(sec['name'].replace("H-", "")) 
         moments.append(r['L_crit_moment'])
         defls.append(r['L_crit_defl'])
-        
         shears.append(r['Vn_beam']) 
         shears_75.append(r['Vn_beam'] * 0.75)
-        
-        # Data for Table
-        ctrl = "Moment" if r['L_crit_moment'] < r['L_crit_defl'] else "Deflection"
-        batch_results.append({
-            "Section": r['Section'],
-            "Safe Span (m)": r['L_safe'],
-            "Shear Cap (kg)": r['Vn_beam'],
-            "Control": ctrl,
-            "Bolts": r['Bolt Qty']
-        })
-        
-    # 2. Create Dual Axis Plot
+
     fig2, ax1 = plt.subplots(figsize=(12, 6))
-    
     x_indices = range(len(names))
     
-    # --- Left Axis (Span - meters) ---
+    # --- Left Axis (Span) ---
     ax1.set_xlabel('Section Size')
-    ax1.set_ylabel('Safe Span Length (m)', color='#2C3E50', fontweight='bold')
+    ax1.set_ylabel('Span Length (m)', color='#2C3E50', fontweight='bold')
     
-    l1 = ax1.plot(x_indices, moments, color='#E74C3C', linestyle='--', marker='o', markersize=4, label='Moment Limit (Strength)', alpha=0.8)
-    l2 = ax1.plot(x_indices, defls, color='#3498DB', linestyle='-', marker='s', markersize=4, label='Deflection Limit (Stiffness)', alpha=0.8)
+    # Plot Limits
+    l1 = ax1.plot(x_indices, moments, color='#E74C3C', linestyle='--', marker='o', markersize=4, label='Moment Limit (Ductile Yield)', alpha=0.9)
+    # l2 = ax1.plot(x_indices, defls, color='#3498DB', linestyle='-', label='Deflection Limit', alpha=0.5) # Hide to focus on Shear/Moment
     
-    # Fill Safe Area (Design Envelope)
-    min_vals = np.minimum(moments, defls)
-    ax1.fill_between(x_indices, 0, min_vals, color='#2ECC71', alpha=0.2, label='Design Envelope (Safe Zone)')
-
-    # --- Right Axis (Shear - kg) ---
+    # 🔥 FILL AREA (The "Shear Dominant" Zone)
+    # ระบายสีเหลือง/ส้ม เพื่อสื่อว่าเป็นโซนที่ Shear Load สูงมากเมื่อเทียบกับ Span
+    ax1.fill_between(x_indices, 0, moments, color='#F39C12', alpha=0.3, label='Shear Dominant Zone (Brittle Risk)')
+    
+    # --- Right Axis (Shear Force) ---
     ax2 = ax1.twinx()
-    ax2.set_ylabel('Shear Capacity (kg)', color='#8E44AD', fontweight='bold')
-    
-    # 100% Shear Line
-    l3 = ax2.plot(x_indices, shears, color='#8E44AD', linestyle=':', linewidth=2, label='Shear Cap. (100%)', alpha=0.6)
-    
-    # 75% Shear Line
-    l4 = ax2.plot(x_indices, shears_75, color='#D2B4DE', linestyle='-.', linewidth=1.5, label='Shear Cap. (75%)', alpha=0.8)
+    ax2.set_ylabel('Shear Load (kg)', color='#8E44AD', fontweight='bold')
+    l3 = ax2.plot(x_indices, shears, color='#8E44AD', linestyle=':', linewidth=2, label='Shear Capacity (Vn)', alpha=0.6)
+    l4 = ax2.plot(x_indices, shears_75, color='#D2B4DE', linestyle='-.', linewidth=1, label='75% Vn', alpha=0.8)
 
-    # Highlight Selected
+    # Highlight Current
     try:
         current_idx = [s['name'] for s in all_sections].index(selected_sec_name)
-        ax1.axvline(x=current_idx, color='#F1C40F', linestyle='-', linewidth=2, alpha=0.5)
-        
-        # Add annotation for the user's specific point
-        safe_span = res['L_safe']
-        ax1.plot(current_idx, safe_span, 'r*', markersize=15, zorder=10)
-        ax1.text(current_idx, safe_span + 0.5, f" Max Span: {safe_span:.2f}m", color='#C0392B', fontweight='bold')
+        ax1.axvline(x=current_idx, color='black', linestyle='-', linewidth=1, alpha=0.3)
+        # Mark the critical point
+        limit_val = moments[current_idx]
+        ax1.plot(current_idx, limit_val, 'r*', markersize=15, zorder=10)
+        ax1.text(current_idx, limit_val + 0.2, "Transition Point", color='#C0392B', fontsize=9, ha='center')
     except:
         pass
 
-    # Combine Legends
-    lns = l1 + l2 + l3 + l4
+    # Legends
+    lns = l1 + [patches.Patch(color='#F39C12', alpha=0.3, label='Shear Dominant Zone')] + l3 + l4
     labs = [l.get_label() for l in lns]
-    ax1.legend(lns, labs, loc='upper left', frameon=True, fancybox=True, framealpha=0.9)
+    ax1.legend(lns, labs, loc='upper left')
 
-    # Styling
     ax1.set_xticks(x_indices)
     ax1.set_xticklabels(names, rotation=90, fontsize=8)
     ax1.grid(True, linestyle=':', alpha=0.5)
-    ax1.set_title(f"Structural Limit States Diagram: {load_case}", fontweight='bold', fontsize=12)
+    ax1.set_title(f"Behavior Mode: Shear Dominant vs Moment Limit (Load = {load_pct}% Vn)", fontweight='bold')
     
     st.pyplot(fig2)
     
-    st.info("""
-    **💡 มุมมองวิศวกรโครงสร้าง (Structural Insight):**
-    * **พื้นที่สีเขียว (Design Envelope):** คือพื้นที่ปลอดภัยที่ต้องอยู่ **"ใต้เส้นกราฟที่ต่ำที่สุด"** เสมอ เพราะโครงสร้างจะพังที่จุดที่อ่อนแอที่สุด (Weakest Link)
-    * **คานช่วงสั้น:** มักถูกควบคุมด้วยแรงเฉือน (Shear) หรือ โมเมนต์ (Strength)
-    * **คานช่วงยาว:** มักถูกควบคุมด้วยการแอ่นตัว (Deflection) สังเกตเส้นสีฟ้าจะต่ำกว่าเส้นสีแดงในช่วงท้ายๆ
+    st.warning(f"""
+    **⚠️ วิเคราะห์เชิงลึก (Senior Engineer Insight):**
+    
+    กราฟนี้แสดงให้เห็นว่า ถ้าคุณใส่ Load เข้าไป **{load_pct}% ของ Shear Capacity ($V_n$)**:
+    
+    1.  **พื้นที่สีส้ม (Shear Dominant):** คือช่วงความยาวที่ "รับได้" ในทางทฤษฎี (Moment ไม่เกิน) **แต่น่ากลัวมาก** * เพราะคานจะรับแรงเฉือนมหาศาล (Shear Critical) 
+        * หากวิบัติ จะเป็นการวิบัติแบบเปราะ (Sudden/Brittle Failure)
+    2.  **จุดตัด (Transition Point):** คือจุดที่ Moment เริ่มเข้ามามีบทบาท
+    3.  **คำแนะนำ:** ถ้าจำเป็นต้องใช้คานช่วงสั้นในโซนสีส้ม **ควรลด Load ลง** หรือ **เสริมเหล็กรับแรงเฉือนเป็นพิเศษ** ไม่ควรใช้งานที่ 100% Shear Capacity ในโซนนี้ครับ
     """)
-
-    # =====================================================
-    # 📋 DATA TABLE
-    # =====================================================
-    st.markdown("##### 📋 ตารางสรุปผล (Summary Table)")
-    
-    df = pd.DataFrame(batch_results)
-    
-    def get_icon(val):
-        return "🛑 Strength" if val == "Moment" else "〰️ Stiffness"
-    
-    df["Status"] = df["Control"].apply(get_icon)
-
-    st.dataframe(
-        df[["Section", "Safe Span (m)", "Status", "Shear Cap (kg)", "Bolts"]],
-        use_container_width=True,
-        column_config={
-            "Section": st.column_config.TextColumn("Section", width="medium"),
-            "Safe Span (m)": st.column_config.NumberColumn("Safe Span (m)", format="%.2f"),
-            "Shear Cap (kg)": st.column_config.NumberColumn("Shear Cap ($V_n$)", format="%.0f"),
-            "Bolts": st.column_config.NumberColumn("Bolts Req.", format="%d"),
-            "Status": st.column_config.TextColumn("Limitation"),
-        },
-        hide_index=True,
-        height=400
-    )
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Structural Workbench", layout="wide")
