@@ -1,14 +1,14 @@
 # report_generator.py
-# Version: 39.0 (Easy Read Chart - Color Coded by Failure Mode)
+# Version: 40.0 (Full Code: Dual Line Chart Strength vs Stiffness)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from datetime import datetime
+import numpy as np  # Required for chart fill logic
 import math
 
 # =========================================================
-# 🏗️ 1. FULL DATABASE (TIS Standard)
+# 🏗️ 1. FULL DATABASE (TIS Standard Wide Flange)
 # =========================================================
 def get_standard_sections():
     return [
@@ -168,7 +168,7 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor, case_name):
     }
 
 # =========================================================
-# 🎨 3. DRAWING
+# 🎨 3. DRAWING LOGIC (Matplotlib)
 # =========================================================
 def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spacing_cm):
     fig, ax = plt.subplots(figsize=(5, 7.5))
@@ -249,10 +249,10 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
     return fig
 
 # =========================================================
-# 🖥️ 4. RENDER UI
+# 🖥️ 4. RENDER UI & APP LOGIC
 # =========================================================
-def render_report_tab(beam_data_ignored, conn_data_ignored):
-    st.markdown("### 🖨️ Structural Calculation Workbench")
+def render_report_tab():
+    st.markdown("### 🖨️ Structural Calculation Workbench (v40.0)")
     
     # 1. Controls
     with st.container(border=True):
@@ -267,48 +267,32 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
         with c4:
             load_case = st.selectbox("Support", ["Simple Beam (Uniform Load)", "Simple Beam (Point Load @Center)", "Cantilever (Uniform Load)", "Cantilever (Point Load @Tip)"])
             
-    # Calculate
+    # Calculate Single Case
     selected_props = next(s for s in all_sections if s['name'] == selected_sec_name)
     factor = get_load_case_factor(load_case)
     res = calculate_connection(selected_props, load_pct, bolt_dia, factor, load_case)
     
     st.divider()
 
-    # 2. Detailed Report Layout
+    # 2. Detailed Report & Drawing
     col_cal, col_draw = st.columns([1.5, 1.2]) 
     
     with col_cal:
-        st.subheader("📝 รายการคำนวณ (Detailed Calculation)")
-        with st.container(height=700, border=True):
+        st.subheader("📝 รายการคำนวณ (Analysis Report)")
+        with st.container(height=600, border=True):
             st.markdown(f"""
-#### 1. Design Parameters
-* **Section:** {res['Section']}
-* **Check Limit:** Deflection < L/360
-* **Inertia ($I_x$):** {res['Ix']:,.1f} cm$^4$
+#### Results: {res['Section']}
+* **Safe Span:** {res['L_safe']:.2f} m
+* **Control By:** {res['Control By']} (Bolt) / {'Moment' if res['L_crit_moment'] < res['L_crit_defl'] else 'Deflection'} (Span)
 
----
-#### 2. Load Calculation
-$$ V_n = 0.60 F_y A_w = 0.60({res['Fy']:,})({res['Aw']:.2f}) = {res['Vn_beam']:,.2f} \\; kg $$
-$$ V_u = {load_pct/100:.2f} \\times V_n = \\mathbf{{{res['V_target']:,.2f} \\; kg}} $$
+**Span Limits (Strength vs Stiffness):**
+* Strength (Moment): **{res['L_crit_moment']:.2f} m**
+* Stiffness (Deflection): **{res['L_crit_defl']:.2f} m**
 
----
-#### 3. Bolt Capacity Check
-$$ \\phi R_{{bolt}} = \\min({res['Rn_shear']:,.0f}, {res['Rn_pl']:,.0f}, {res['Rn_web']:,.0f}) = \\mathbf{{{res['phiRn_bolt']:,.0f} \\; kg}} $$
-$$ n = {res['V_target']:,.0f} / {res['phiRn_bolt']:,.0f} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\mathbf{{{res['Bolt Qty']} \\; pcs}} $$
-
----
-#### 4. Critical Span Check ($L_{{max}}$)
-**4.1 Moment Limit (Strength)**
-$$ \\phi M_n = 0.90 F_y Z_x = {res['Mn_beam']*0.9/100:,.0f} \\; kg.m $$
-$$ L_{{moment}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit_moment']:.2f} \\; m}} $$
-
-**4.2 Deflection Limit (L/360)**
-$$ I_x = {res['Ix']:,.0f} \\; cm^4, \\; E = 2.04 \\times 10^6 \\; ksc $$
-$$ L_{{deflect}} \\; (Allow \\; L/360) = \\mathbf{{{res['L_crit_defl']:.2f} \\; m}} $$
-
-**4.3 Conclusion**
-$$ L_{{safe}} = \\min({res['L_crit_moment']:.2f}, {res['L_crit_defl']:.2f}) = \\mathbf{{{res['L_safe']:.2f} \\; m}} $$
-*(Control by: {'Moment Capacity' if res['L_crit_moment'] < res['L_crit_defl'] else 'Deflection Limit'})*
+**Connection Check (Shear & Bearing):**
+* Load: {res['V_target']:,.0f} kg
+* Capacity: {res['phiRn_bolt']:,.0f} kg/bolt
+* Required: **{res['Bolt Qty']} bolts**
 """)
 
     with col_draw:
@@ -319,70 +303,60 @@ $$ L_{{safe}} = \\min({res['L_crit_moment']:.2f}, {res['L_crit_defl']:.2f}) = \\
     st.divider()
 
     # =====================================================
-    # 📊 NEW! SIMPLIFIED CHART & TABLE
+    # 📊 NEW! DUAL LINE CHART (Strength vs Stiffness)
     # =====================================================
-    st.subheader("📊 เปรียบเทียบระยะปลอดภัย (Safe Span Analysis)")
+    st.subheader("📊 แนวโน้มพฤติกรรมหน้าตัด (Strength vs Stiffness Trend)")
     
-    # 1. Prepare Data
-    batch_results = []
+    # 1. Prepare Batch Data
+    names = []
+    moments = []
+    defls = []
+    
     for sec in all_sections:
         r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
-        ctrl = "Moment" if r['L_crit_moment'] < r['L_crit_defl'] else "Deflection"
+        names.append(sec['name'].replace("H-", "")) # Shorten name
+        moments.append(r['L_crit_moment'])
+        defls.append(r['L_crit_defl'])
         
-        batch_results.append({
-            "Section": r['Section'],
-            "Safe Span (m)": r['L_safe'],
-            "Control": ctrl
-        })
-    df = pd.DataFrame(batch_results)
+    # 2. Create Dual Line Chart
+    fig2, ax = plt.subplots(figsize=(12, 6))
     
-    # 2. Sort by Safe Span (Step-ladder look)
-    df = df.sort_values(by="Safe Span (m)", ascending=True)
+    x_indices = range(len(names))
+    
+    # Plot Lines
+    ax.plot(x_indices, moments, color='#E74C3C', linestyle='--', marker='o', markersize=4, label='Moment Limit (Strength)', alpha=0.8)
+    ax.plot(x_indices, defls, color='#3498DB', linestyle='-', marker='s', markersize=4, label='Deflection Limit (Stiffness)', alpha=0.8)
+    
+    # Fill Safe Area (The area under the minimum of the two curves)
+    min_vals = np.minimum(moments, defls)
+    ax.fill_between(x_indices, 0, min_vals, color='#2ECC71', alpha=0.2, label='Safe Span Zone')
 
-    # 3. Create Simplified Plot
-    st.markdown("##### 📈 กราฟแสดงความยาวที่ทำได้ (เรียงจากสั้นไปยาว)")
-    st.caption("🔴 **สีแดง = Moment Control** (พังที่แรงดัด) | 🔵 **สีฟ้า = Deflection Control** (พังที่การแอ่นตัว)")
-    
-    fig2, ax2 = plt.subplots(figsize=(10, 6))
-    
-    # Color mapping
-    colors = ['#FF4B4B' if x == 'Moment' else '#1C83E1' for x in df['Control']]
-    
-    bars = ax2.bar(df['Section'], df['Safe Span (m)'], color=colors, alpha=0.9)
-    
-    # Clean up Chart
-    ax2.set_ylabel("Max Safe Span (m)", fontsize=10, fontweight='bold')
-    ax2.set_xlabel("Section Size (Sorted)", fontsize=10, fontweight='bold')
-    plt.xticks(rotation=90, fontsize=8)
-    ax2.grid(axis='y', linestyle='--', alpha=0.5)
-    
-    # Add Legend Manually
-    from matplotlib.lines import Line2D
-    legend_elements = [
-        Line2D([0], [0], color='#FF4B4B', lw=4, label='Moment Limit (Strength)'),
-        Line2D([0], [0], color='#1C83E1', lw=4, label='Deflection Limit (Stiffness)')
-    ]
-    ax2.legend(handles=legend_elements, loc='upper left')
+    # Highlight Selected Section
+    try:
+        current_idx = [s['name'] for s in all_sections].index(selected_sec_name)
+        ax.axvline(x=current_idx, color='#F1C40F', linestyle='-', linewidth=2)
+        ax.text(current_idx, max(moments)*0.95, " SELECTED", color='#F39C12', fontweight='bold', rotation=90)
+    except:
+        pass
+
+    # Styling
+    ax.set_xticks(x_indices)
+    ax.set_xticklabels(names, rotation=90, fontsize=8)
+    ax.set_ylabel("Max Span Length (m)", fontweight='bold')
+    ax.set_title(f"Comparison: Moment vs Deflection Control ({load_case})", fontweight='bold')
+    ax.grid(True, linestyle=':', alpha=0.6)
+    ax.legend(loc='upper left')
     
     st.pyplot(fig2)
+    
+    st.info("""
+    **วิธีอ่านกราฟ:**
+    * 🔴 **เส้นปะสีแดง (Moment):** ถ้าเส้นนี้ต่ำกว่า แปลว่าเหล็กจะพังเพราะรับแรงดัดไม่ไหว (มักเกิดกับหน้าตัดเล็ก)
+    * 🔵 **เส้นทึบสีฟ้า (Deflection):** ถ้าเส้นนี้ต่ำกว่า แปลว่าเหล็กจะแอ่นเกินกำหนด (L/360) (มักเกิดกับหน้าตัดใหญ่และยาว)
+    * 🟩 **พื้นที่สีเขียว (Safe Zone):** คือช่วงความยาวที่คุณใช้งานได้จริง (ค่าที่น้อยกว่าระหว่างสองเส้น)
+    """)
 
-    # 4. Table with Status Icons
-    st.markdown("##### 📋 ตารางสรุปผล")
-    
-    # Add readable icons
-    def get_icon(val):
-        return "🛑 Strength" if val == "Moment" else "〰️ Stiffness"
-    
-    df["Status"] = df["Control"].apply(get_icon)
-    
-    st.dataframe(
-        df[["Section", "Safe Span (m)", "Status"]],
-        use_container_width=True,
-        column_config={
-            "Section": st.column_config.TextColumn("Section", width="medium"),
-            "Safe Span (m)": st.column_config.NumberColumn("Safe Span (m)", format="%.2f"),
-            "Status": st.column_config.TextColumn("Limitation Factor"),
-        },
-        hide_index=True,
-        height=400
-    )
+# Main entry point
+if __name__ == "__main__":
+    st.set_page_config(page_title="Structural Workbench", layout="wide")
+    render_report_tab()
