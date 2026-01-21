@@ -1,210 +1,145 @@
-# report_generator.py
-# Version: 3.2 (Fixed: KeyError 'd' by normalizing input keys and units)
+# report_analytics.py
+# Version: 6.1 (Synced with new report_generator logic)
 import streamlit as st
-import math
 import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
 
-def get_standard_sections():
-    """
-    Database หน้าตัดเหล็ก Wide Flange (H-Beam) มาตรฐาน (Internal Database)
-    Key format: Short names, Units: cm
-    """
-    return [
-        {"name": "H-100x100x6x8", "d": 10, "b": 10, "tw": 0.6, "tf": 0.8, "Zx": 76.5, "Ix": 378, "Area": 21.9},
-        {"name": "H-150x75x5x7", "d": 15, "b": 7.5, "tw": 0.5, "tf": 0.7, "Zx": 88.8, "Ix": 666, "Area": 17.85},
-        {"name": "H-150x150x7x10", "d": 15, "b": 15, "tw": 0.7, "tf": 1.0, "Zx": 232, "Ix": 1620, "Area": 39.65},
-        {"name": "H-200x100x5.5x8", "d": 20, "b": 10, "tw": 0.55, "tf": 0.8, "Zx": 184, "Ix": 1840, "Area": 27.16},
-        {"name": "H-200x200x8x12", "d": 20, "b": 20, "tw": 0.8, "tf": 1.2, "Zx": 472, "Ix": 4720, "Area": 63.53},
-        {"name": "H-250x125x6x9", "d": 25, "b": 12.5, "tw": 0.6, "tf": 0.9, "Zx": 324, "Ix": 4050, "Area": 37.66},
-        {"name": "H-300x150x6.5x9", "d": 30, "b": 15, "tw": 0.65, "tf": 0.9, "Zx": 481, "Ix": 7210, "Area": 46.78},
-        {"name": "H-350x175x7x11", "d": 35, "b": 17.5, "tw": 0.7, "tf": 1.1, "Zx": 775, "Ix": 13600, "Area": 63.14},
-        {"name": "H-400x200x8x13", "d": 40, "b": 20, "tw": 0.8, "tf": 1.3, "Zx": 1190, "Ix": 23700, "Area": 84.12},
-        {"name": "H-400x400x13x21", "d": 40, "b": 40, "tw": 1.3, "tf": 2.1, "Zx": 3330, "Ix": 66600, "Area": 218.7},
-        {"name": "H-450x200x9x14", "d": 45, "b": 20, "tw": 0.9, "tf": 1.4, "Zx": 1490, "Ix": 33500, "Area": 96.76},
-        {"name": "H-500x200x10x16", "d": 50, "b": 20, "tw": 1.0, "tf": 1.6, "Zx": 1910, "Ix": 47800, "Area": 114.2},
-    ]
+# Import Logic จากไฟล์ report_generator (สมองของระบบ)
+try:
+    from report_generator import get_standard_sections, calculate_connection
+except ImportError:
+    st.error("⚠️ Error: Missing report_generator.py. Please make sure both files exist.")
+    st.stop()
 
-def calculate_full_properties(sec):
+def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
-    Generate display properties (Human readable keys)
+    Dashboard Updated:
+    - เชื่อมต่อกับ report_generator ตัวใหม่
+    - แสดงกราฟ Green Zone และ ตารางช่วงระยะ (Range)
     """
-    return {
-        "Name": sec['name'],
-        "Depth (mm)": sec['d']*10,
-        "Width (mm)": sec['b']*10,
-        "Web t (mm)": sec['tw']*10,
-        "Flange t (mm)": sec['tf']*10,
-        "Zx (cm3)": sec['Zx'],
-        "Ix (cm4)": sec['Ix'],
-        "Area (cm2)": sec['Area']
-    }
-
-def normalize_section_data(data):
-    """
-    🛠️ Helper: แปลงข้อมูลจาก UI Format (mm, Long keys) -> Calculation Format (cm, Short keys)
-    เพื่อป้องกัน KeyError: 'd', 'tw', etc.
-    """
-    # กรณี 1: ข้อมูลเป็น Internal Format อยู่แล้ว (มี key 'd')
-    if 'd' in data:
-        return data.copy()
+    st.markdown("## 📊 Structural Analysis")
     
-    # กรณี 2: ข้อมูลมาจาก UI (มี key 'Depth (mm)') -> แปลงหน่วยเป็น cm
-    normalized = {}
-    normalized['name'] = data.get('Name', 'Unknown Section')
+    # --- 1. Data Processing ---
+    # ดึงข้อมูลหน้าตัดทั้งหมดจาก Database กลาง
+    all_sections = get_standard_sections()
+    data_list = []
     
-    # แปลง mm -> cm (/10)
-    normalized['d'] = data.get('Depth (mm)', 0) / 10.0
-    normalized['b'] = data.get('Width (mm)', 0) / 10.0
-    normalized['tw'] = data.get('Web t (mm)', 0) / 10.0
-    normalized['tf'] = data.get('Flange t (mm)', 0) / 10.0
-    
-    # ค่าคงที่ (cm อยู่แล้ว)
-    normalized['Zx'] = data.get('Zx (cm3)', 0)
-    normalized['Ix'] = data.get('Ix (cm4)', 0)
-    normalized['Area'] = data.get('Area (cm2)', 0)
-    
-    return normalized
-
-def calculate_connection(sec_input, load_pct, bolt_dia, factor, load_case):
-    """
-    Core Calculation Logic
-    """
-    # ✅ Step 0: Normalize Data (ป้องกัน KeyError)
-    sec = normalize_section_data(sec_input)
-
-    Fy = 2500 # ksc
-    Fu = 4100 # ksc
-    E = 2.04e6 # ksc
-    
-    # 1. Beam Shear Capacity
-    Aw = sec['d'] * sec['tw'] # cm2
-    Vn_beam = 0.6 * Fy * Aw # kg
-    V_target = Vn_beam * (load_pct / 100.0)
-    
-    # 2. Bolt Capacity (Single Shear)
-    # A325 / 8.8 (Standard Approx)
-    Fub = 8250 # ksc
-    Ab = 3.1416 * (bolt_dia/10/2)**2 # cm2
-    # phi Rn = 0.75 * 0.45 * Fub * Ab (Threads included)
-    phiRn_bolt = 0.75 * 0.45 * Fub * Ab 
-    
-    # 3. Bolt Quantity
-    if phiRn_bolt > 0:
-        req_bolts = V_target / phiRn_bolt
-        n_bolts = math.ceil(req_bolts)
-        if n_bolts < 2: n_bolts = 2
-    else:
-        n_bolts = 0
-
-    # 4. Connection Plate Sizing
-    pitch = 3 * bolt_dia # mm
-    edge = 1.5 * bolt_dia # mm
-    plate_len_mm = (2 * edge) + ((n_bolts - 1) * pitch)
-    plate_len_cm = plate_len_mm / 10.0
-    
-    # 5. Span Calculation
-    Mn = sec['Zx'] * Fy # kg-cm
-    if V_target > 0:
-        L_crit_moment_cm = (4 * Mn) / V_target
-        L_crit_moment_m = L_crit_moment_cm / 100.0
-    else:
-        L_crit_moment_m = 0
+    for sec in all_sections:
+        # ส่งข้อมูลไปคำนวณ (ใช้ฟังก์ชันกลางจาก report_generator)
+        r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
         
-    if V_target > 0:
-        val = (384 * E * sec['Ix']) / (3600 * V_target)
-        L_crit_defl_cm = math.sqrt(val)
-        L_crit_defl_m = L_crit_defl_cm / 100.0
-    else:
-        L_crit_defl_m = 0
+        # คำนวณ % Usage
+        actual_cap = r['Bolt Qty'] * r['phiRn_bolt']
+        util = (r['V_target'] / actual_cap) * 100 if actual_cap > 0 else 0
         
-    L_safe = min(L_crit_moment_m, L_crit_defl_m)
+        data_list.append({
+            "Name": r['Section'].replace("H-", ""), 
+            "Section": r['Section'], 
+            "Moment Limit": r['L_crit_moment'],
+            "Deflection Limit": r['L_crit_defl'],
+            "Shear Cap": r['Vn_beam'],
+            "Max Span": r['L_safe'],
+            "Bolts": r['Bolt Qty'],
+            "Load (kg)": r['V_target'],
+            "Util": util
+        })
 
-    return {
-        "Section": sec['name'],
-        "Vn_beam": Vn_beam,
-        "V_target": V_target,
-        "phiRn_bolt": phiRn_bolt,
-        "Bolt Qty": n_bolts,
-        "Plate Len": plate_len_cm,
-        "L_crit_moment": L_crit_moment_m,
-        "L_crit_defl": L_crit_defl_m,
-        "L_safe": L_safe,
-        "Zx": sec['Zx'],
-        "Ix": sec['Ix'],
-        "Area": sec['Area'],
-        "Depth": sec['d'],
-        "Web": sec['tw']
-    }
+    df = pd.DataFrame(data_list)
 
-def render_detailed_report(section_input, load_pct, bolt_dia, factor, load_case):
-    """
-    ฟังก์ชันหลักสำหรับแสดงรายงาน (Core Function)
-    """
-    # ✅ Normalize Data สำหรับใช้แสดงผลใน Latex
-    section = normalize_section_data(section_input)
+    # --- 2. Calculate Scaling Factor (Global) ---
+    # แปลง Shear (kg) -> Visual Span (m) สำหรับกราฟ
+    if not df.empty:
+        max_moment_defl = max(df['Moment Limit'].max(), df['Deflection Limit'].max())
+        max_span_val = max_moment_defl * 1.10
+        max_shear_val = df['Shear Cap'].max() * 1.10
+        
+        # Scale Factor
+        scale_factor = max_span_val / max_shear_val if max_shear_val > 0 else 0
+    else:
+        st.warning("No data available.")
+        return
 
-    # คำนวณค่าต่างๆ
-    res = calculate_connection(section, load_pct, bolt_dia, factor, load_case)
+    # --- 3. Add Range Column ---
+    def create_range_string(row):
+        start_m = row['Shear Cap'] * scale_factor # จุดเริ่ม (Shear Baseline)
+        end_m = row['Max Span']                   # จุดจบ (Safe Limit)
+        if start_m >= end_m:
+            return f"N/A (Shear > Span)"
+        return f"{start_m:.2f} - {end_m:.2f}"
+
+    df['Safe Range'] = df.apply(create_range_string, axis=1)
+
+    # Prepare Data for Plotting
+    names = df['Name']
+    moments = df['Moment Limit']
+    defls = df['Deflection Limit']
+    shears = df['Shear Cap']
+    shears_visual = shears * scale_factor 
+
+    # --- 4. The Graph (Green Zone) ---
+    st.subheader("📈 Optimization Gap (Span vs Shear Trend)")
     
-    Fy = 2500
-    Fu = 4100
-    E = 2.04e6
-    Fub = 8250 
+    plt.style.use('default') 
+    fig, ax1 = plt.subplots(figsize=(12, 5.5))
     
-    st.markdown(f"## 📝 รายการคำนวณ: จุดต่อคานเหล็ก {section['name']}")
-    st.markdown("---")
+    # Grid
+    ax1.grid(which='major', axis='y', linestyle='--', linewidth=0.5, color='gray', alpha=0.3)
+    ax1.grid(which='major', axis='x', linestyle=':', linewidth=0.5, color='gray', alpha=0.2)
 
-    # Part 1: Parameters
-    st.subheader("1. ข้อกำหนดการออกแบบ (Design Parameters)")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Properties of Beam:**")
-        st.latex(f"Section: \\text{{{section['name']}}}")
-        # ใช้ค่าที่ Normalize แล้ว (cm)
-        st.latex(f"d = {section['d']:.1f} \\, cm, \\; t_w = {section['tw']:.2f} \\, cm")
-        st.latex(f"Z_x = {section['Zx']:.1f} \\, cm^3, \\; I_x = {section['Ix']:.1f} \\, cm^4")
-    with c2:
-        st.markdown("**Bolt Properties:**")
-        st.latex(f"Dia (\\O) = {bolt_dia} \\, mm")
-        st.latex(f"Load: {load_pct}\\% \\, of \\, V_n")
+    x = np.arange(len(names))
 
-    st.markdown("---")
-
-    # Part 2: Design Loads
-    st.subheader("2. แรงเฉือนออกแบบ (Design Shear Force)")
-    Ab = 3.1416 * (bolt_dia/10/2)**2
-    st.latex(r"A_w = d \times t_w")
-    st.latex(f"V_{{n(beam)}} = 0.60 \\times {Fy} \\times {section['d']*section['tw']:.2f} = {res['Vn_beam']:,.2f} \\, kg")
-    st.latex(f"V_{{u(design)}} = V_{{n(beam)}} \\times {load_pct}\\% = \\mathbf{{{res['V_target']:,.0f} \\, kg}}")
+    # 4.1 Plot Limits
+    ax1.plot(x, moments, color='#E74C3C', linestyle='--', linewidth=1.2, label='Moment Limit', alpha=0.8)
+    ax1.plot(x, defls, color='#2980B9', linestyle='-', linewidth=1.2, label='Deflection Limit', alpha=0.8)
     
-    st.markdown("---")
-
-    # Part 3: Bolt Design
-    st.subheader("3. การออกแบบจุดต่อสลักเกลียว (Bolt Design)")
-    st.latex(f"A_b = {Ab:.3f} \\, cm^2")
-    st.latex(r"\phi R_n = 0.75 \times 0.45 \times F_{ub} \times A_b")
-    st.latex(f"\\phi R_n = 0.75 \\times 0.45 \\times {Fub} \\times {Ab:.3f} = {res['phiRn_bolt']:,.2f} \\, kg/bolt")
-    st.latex(f"N = \\frac{{{res['V_target']:,.0f}}}{{{res['phiRn_bolt']:,.0f}}} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\mathbf{{{res['Bolt Qty']} \\, pcs.}}")
+    # 4.2 The "Green Zone" (Gap)
+    upper_bound = np.minimum(moments, defls)
+    lower_bound = shears_visual
     
-    st.markdown("---")
+    ax1.fill_between(
+        x, lower_bound, upper_bound, 
+        where=(upper_bound > lower_bound),
+        color='#2ECC71', alpha=0.3, label='Safe Operating Zone'
+    )
+    
+    # Axes Setup
+    ax1.set_ylabel('Span Range (m)', fontweight='bold', color='#333333')
+    ax1.set_ylim(0, max_span_val)
+    ax1.set_xlim(-0.5, len(names)-0.5)
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(names, rotation=90, fontsize=9)
+    ax1.tick_params(axis='x', which='both', bottom=False)
 
-    # Part 4: Safe Span
-    st.subheader("4. การวิเคราะห์ระยะปลอดภัย (Safe Span Analysis)")
-    st.latex(f"M_n = {section['Zx']} \\times {Fy} = {section['Zx']*Fy:,.0f} \\, kg\\cdot cm")
-    st.latex(f"L_{{moment}} = \\frac{{4 \\times M_n}}{{V_u}} = \\mathbf{{{res['L_crit_moment']:.2f} \\, m}}")
-    st.latex(f"L_{{defl}} = \\sqrt{{\\frac{{384 E I}}{{3600 V_u}}}} = \\mathbf{{{res['L_crit_defl']:.2f} \\, m}}")
+    # 4.3 Shear (Floor) - Right Axis
+    ax2 = ax1.twinx()
+    ax2.plot(x, shears, color='#663399', linestyle=':', linewidth=2, label='Shear Capacity ($V_n$)')
+    ax2.set_ylabel('Shear Capacity (kg)', fontweight='bold', color='#663399')
+    ax2.set_ylim(0, max_shear_val) 
 
-    st.success(f"✅ **Safe Max Span: {res['L_safe']:.2f} m**")
+    # Legend
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper left', frameon=True, framealpha=0.9, fontsize=9)
 
-def render_report_tab(beam_data, conn_data):
-    """
-    Wrapper function to handle calls from app.py
-    """
-    # ดึงค่าจาก conn_data
-    load_pct = conn_data.get('load_pct', conn_data.get('load_percent', 50))
-    bolt_dia = conn_data.get('bolt_dia', conn_data.get('bolt_diameter', 16))
-    factor = conn_data.get('factor', conn_data.get('safety_factor', 1.0))
-    load_case = conn_data.get('load_case', conn_data.get('load_case_name', 'Design Load'))
+    st.pyplot(fig)
 
-    # เรียกฟังก์ชันหลัก (ตัวนี้จะ Normalize ข้อมูลเองข้างใน)
-    render_detailed_report(beam_data, load_pct, bolt_dia, factor, load_case)
+    st.divider()
+
+    # --- 5. Table with Synced Range ---
+    st.subheader("📋 Specification Table (Optimization Range)")
+    
+    st.dataframe(
+        df[["Section", "Load (kg)", "Shear Cap", "Safe Range", "Bolts", "Util"]],
+        use_container_width=True,
+        column_config={
+            "Section": st.column_config.TextColumn("Section Size", width="medium"),
+            "Load (kg)": st.column_config.NumberColumn("Load ($V_u$)", format="%.0f"),
+            "Shear Cap": st.column_config.NumberColumn("Capacity ($V_n$)", format="%.0f kg"),
+            "Safe Range": st.column_config.TextColumn("Opt. Span Range (m)", width="medium"),
+            "Bolts": st.column_config.NumberColumn("Bolts", format="%d"),
+            "Util": st.column_config.ProgressColumn("Utilization", format="%.0f%%", min_value=0, max_value=100)
+        },
+        height=500,
+        hide_index=True
+    )
