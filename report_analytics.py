@@ -1,11 +1,12 @@
 # report_analytics.py
-# Version: 18.0 (Full Plate Sizing: PL-TxWxL | Fabrication Ready)
+# Version: 19.0 (Full Spec: 100% Shear vs 75%, Bolt Qty+Size, Full Plate Size)
 # Engineered by: Senior Structural Engineer AI
 
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 
 # --- Module Integrity Check ---
 try:
@@ -22,10 +23,10 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
     Renders the Structural Analytics Dashboard.
     - Deep Dive Graph (Critical Limits)
-    - Detailed Specification Table with FULL PLATE SIZING.
+    - Master Specification Table (Detailed Fabrication Data)
     """
     st.markdown("## 📊 Structural Integrity & Optimization Dashboard")
-    st.markdown("Analysis of governing failure modes and fabrication specifications.")
+    st.markdown("Analysis of governing failure modes and detailed fabrication specifications.")
     
     # --- 1. Data Processing ---
     all_sections = get_standard_sections()
@@ -50,7 +51,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
             M_allow_kgm = (M_n_kgcm / factor) / 100 if factor and factor > 0 else 0
         except: M_allow_kgm = 0
 
-        # 1.2 Calculate 75% Shear Capacity
+        # 1.2 Shear Capacities (Full vs 75%)
         V_75_pct = V_allow * 0.75
 
         # 1.3 Critical Intersection Analysis (Moment Zone)
@@ -66,27 +67,25 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         else:
             zone_text = "Check Design"
 
-        # 1.4 Connection & Plate Sizing (Fabrication Ready)
+        # 1.4 Connection Details (Fabrication Ready)
         bolt_qty = r.get('Bolt Qty', 0)
         t_plate = r.get('t_plate', 0)
         
-        # --- Logic: Generate Exact Plate Size (PL-T x W x L) ---
-        # Height (L): Based on Bolt Pitch (3d) and Edge (e.g. 35-40mm)
-        # Width (W): Standard 100mm for single shear tab (or 120mm for larger bolts)
-        
-        pitch = 3 * bolt_dia * 10 # convert cm to mm
-        edge_dist = 40 # mm (Standard edge distance)
+        # --- Bolt String: "Qty - Size" ---
+        # Example: "3 - M16"
+        if bolt_qty > 0:
+            bolt_spec = f"{int(bolt_qty)} - M{int(bolt_dia)}"
+        else:
+            bolt_spec = "-"
+
+        # --- Plate Sizing Logic ---
+        pitch = 3 * bolt_dia * 10 
+        edge_dist = 40 
         
         if bolt_qty > 0:
-            # Height = (rows-1)*pitch + 2*edge
             plate_h_mm = ((bolt_qty - 1) * pitch) + (2 * edge_dist)
-            
-            # Round up height to nearest 10mm
             plate_h_mm = math.ceil(plate_h_mm / 10.0) * 10
-            
-            plate_w_mm = 100 # Standard Width
-            
-            # Format: PL-9x100x190
+            plate_w_mm = 100 
             plate_str = f"PL-{t_plate:.0f}x{plate_w_mm}x{plate_h_mm:.0f}"
         else:
             plate_str = "-"
@@ -101,9 +100,10 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
             "L_End": L_moment_defl_limit,
             # Table Data
             "Moment Zone Range": zone_text,
-            "V_75": V_75_pct,
-            "Bolts": bolt_qty,
-            "Plate Size": plate_str, # The Full Size String
+            "V_Allow": V_allow,   # 100% Capacity
+            "V_75": V_75_pct,     # 75% Capacity (Design)
+            "Bolt Spec": bolt_spec, # "3 - M16"
+            "Plate Size": plate_str, 
             # Deep Dive Context
             "V_allow": V_allow,         
             "M_allow_kgm": M_allow_kgm, 
@@ -135,7 +135,6 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     max_span_plot = max(8, L_end * 1.4)
     spans = np.linspace(0.5, max_span_plot, 300)
     
-    # Calculate Curves
     ws = (2 * V_allow) / spans
     wm = (8 * M_allow_kgm) / (spans**2)
     wd = K_defl / (spans**3)
@@ -145,19 +144,17 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     fig_d, ax_d = plt.subplots(figsize=(10, 6))
     ax_d.grid(True, which='both', linestyle='--', alpha=0.4)
     
-    ax_d.plot(spans, ws, color='#9B59B6', linestyle=':', linewidth=1.5, alpha=0.6, label='Shear Limit')
+    ax_d.plot(spans, ws, color='#9B59B6', linestyle=':', linewidth=1.5, alpha=0.6, label='Shear Limit (100% V_allow)')
     ax_d.plot(spans, wd, color='#2ECC71', linestyle='-.', linewidth=1.5, alpha=0.6, label='Deflection Limit')
     ax_d.plot(spans, wm, color='#E74C3C', linestyle='--', linewidth=1.5, alpha=0.6, label='Moment Limit')
     ax_d.plot(spans, w_safe_envelope, color='#2C3E50', linewidth=3, label='Safe Envelope')
     
-    # Fill Moment Zone
     if L_end > L_start:
         idx_start = np.searchsorted(spans, L_start)
         idx_end = np.searchsorted(spans, L_end)
         ax_d.fill_between(spans[idx_start:idx_end], 0, w_safe_envelope[idx_start:idx_end], 
                           color='#E74C3C', alpha=0.15, label='Moment Zone')
 
-    # Vertical Lines
     if 0.5 < L_start < max_span_plot:
         ax_d.axvline(x=L_start, color='#E67E22', linestyle='-', linewidth=1)
         ax_d.text(L_start, max(w_safe_envelope)*0.8, f" Start: {L_start:.2f} m", 
@@ -186,17 +183,18 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     st.subheader("📋 Specification Table: Moment Controlled Ranges")
     
     st.dataframe(
-        df[["Section", "Moment Zone Range", "V_75", "Bolts", "Plate Size"]],
+        df[["Section", "Moment Zone Range", "V_Allow", "V_75", "Bolt Spec", "Plate Size"]],
         use_container_width=True,
         column_config={
             "Section": st.column_config.TextColumn("Section", width="small"),
             "Moment Zone Range": st.column_config.TextColumn("✅ Moment Zone (m)", width="medium"),
-            "V_75": st.column_config.NumberColumn("75% Shear (kg)", format="%.0f"),
-            "Bolts": st.column_config.NumberColumn("Bolts", format="%d pcs"),
-            "Plate Size": st.column_config.TextColumn("Plate Size (PL-TxWxL)", width="medium", help="Calculated for Fabrication"),
+            "V_Allow": st.column_config.NumberColumn("100% Shear (kg)", format="%.0f", help="Full Allowable Capacity"),
+            "V_75": st.column_config.NumberColumn("75% Shear (kg)", format="%.0f", help="Design Connection Load"),
+            "Bolt Spec": st.column_config.TextColumn("Bolts (Qty-Size)", width="small"),
+            "Plate Size": st.column_config.TextColumn("Plate Size (PL-TxWxL)", width="medium", help="Fabrication Size"),
         },
         height=500,
         hide_index=True
     )
     
-import math # Ensure math is imported for plate sizing
+import math
