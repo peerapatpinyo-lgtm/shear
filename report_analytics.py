@@ -21,9 +21,10 @@ FV_WELD = 1470
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
     Renders the Structural Analytics Dashboard.
-    - Version 37.0: 
-        1. Fixed MISSING DATA: Brought back 'Moment Zone' span range into the table.
-        2. Retained all Graph features (Authentic shading, Zero-lock axes).
+    - Version 38.0: 
+        1. CORRECTED Moment Limit Curve: Calculated directly from Mn = Fy * Zx (Plastic Moment).
+        2. Added Explicit Moment Capacity (Mn) display for verification.
+        3. Full Zone Shading (Shear / Moment / Deflection).
     """
     
     st.markdown("## 🏗️ Structural Optimization Dashboard")
@@ -48,19 +49,35 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         
         V_target = V_beam_nominal * (load_pct / 100.0)
 
-        # --- B. ZONES ---
+        # --- B. MOMENT CAPACITY (Nominal Plastic Moment) ---
+        # Mn = Fy * Zx (Plastic Modulus)
+        # Convert Zx (cm3) * Fy (ksc) -> kg-cm -> /100 -> kg-m
         try:
-            M_n_kgcm = sec['Fy'] * full_props['Zx (cm3)']
-            M_limit_kgm = M_n_kgcm / 100 
-        except: M_limit_kgm = 0
-        
+            if 'Zx (cm3)' in full_props:
+                M_n_kgm = (sec['Fy'] * full_props['Zx (cm3)']) / 100
+            else:
+                # Fallback to Sx if Zx is missing (Conservative)
+                M_n_kgm = (sec['Fy'] * full_props['Sx (cm3)']) / 100
+        except:
+            M_n_kgm = 0
+            
+        # --- C. DEFLECTION LIMIT CONSTANT ---
+        # Formula: w = (384 E I) / (360 L^3) for L/360 limit
+        # Constant K = 384 * E * I / (360 * 100^3) ... taking units into account
+        # Based on prev validation: 384*E*Ix / 18,000,000
         Ix = full_props['Ix (cm4)']
         K_defl = (384 * E_STEEL_KSC * Ix) / 18000000 
         
-        L_sm = (4 * M_limit_kgm) / V_beam_nominal if V_beam_nominal > 0 else 0
-        L_md = K_defl / (8 * M_limit_kgm) if M_limit_kgm > 0 else 0
+        # --- D. ZONES TRANSITION ---
+        # L_sm: Shear to Moment Transition (Vn vs Mn)
+        # 2Vn/L = 8Mn/L^2  => L = 4Mn/Vn
+        L_sm = (4 * M_n_kgm) / V_beam_nominal if V_beam_nominal > 0 else 0
         
-        # --- C. AUTO-DESIGN ---
+        # L_md: Moment to Deflection Transition (Mn vs Defl)
+        # 8Mn/L^2 = K/L^3 => L = K / 8Mn
+        L_md = K_defl / (8 * M_n_kgm) if M_n_kgm > 0 else 0
+        
+        # --- E. AUTO-DESIGN ---
         bolt_d_cm = bolt_dia / 10
         hole_d_cm = bolt_d_cm + 0.2
         pitch_cm = 3 * bolt_d_cm
@@ -104,6 +121,8 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
             "Section": sec['name'],
             "L_Start": L_sm, "L_End": L_md,
             "V_Nominal": V_beam_nominal,
+            "M_Nominal": M_n_kgm,       # <-- Store Mn for Graph
+            "K_Defl": K_defl,           # <-- Store K for Graph
             "V_Target": V_target,
             "Bolt Spec": f"{final_info.get('Bolts')} - M{int(bolt_dia)}",
             "Plate Size": final_info.get('Plate'),
@@ -115,26 +134,24 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     if not data_list: return
     df = pd.DataFrame(data_list)
 
-    # --- 2. TABLE (FIXED: Added Moment Zone Column) ---
+    # --- 2. TABLE ---
     st.subheader("📋 Specification Table")
-    
-    # Create formatted string column for display
     df["Moment Zone (m)"] = df.apply(lambda x: f"{x['L_Start']:.2f} - {x['L_End']:.2f}", axis=1)
 
     st.dataframe(
         df[[
-            "Section", "V_Nominal", "Moment Zone (m)", # <-- Added Back
-            "Bolt Spec", "Plate Size", "Weld Spec", 
+            "Section", "V_Nominal", "M_Nominal", "Moment Zone (m)", 
+            "Bolt Spec", "Plate Size", 
             "Governing", "D/C Ratio"
         ]],
         use_container_width=True,
         column_config={
             "Section": st.column_config.TextColumn("Section", width="small"),
-            "V_Nominal": st.column_config.NumberColumn("Shear Cap (Vn)", format="%.0f kg"),
-            "Moment Zone (m)": st.column_config.TextColumn("Moment Zone", width="medium"), # <-- Config
+            "V_Nominal": st.column_config.NumberColumn("Shear (Vn)", format="%.0f kg"),
+            "M_Nominal": st.column_config.NumberColumn("Moment (Mn)", format="%.0f kg-m"), # Show Value!
+            "Moment Zone (m)": st.column_config.TextColumn("Moment Zone", width="medium"),
             "Bolt Spec": st.column_config.TextColumn("Bolts", width="small"),
             "Plate Size": st.column_config.TextColumn("Plate", width="medium"),
-            "Weld Spec": st.column_config.TextColumn("Weld", width="small"),
             "Governing": st.column_config.TextColumn("Crit. Mode", width="medium"),
             "D/C Ratio": st.column_config.ProgressColumn("Ratio", format="%.2f", min_value=0, max_value=1.5),
         },
@@ -152,19 +169,22 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
 
     row = df[df['Section'] == selected_name].iloc[0]
     
+    # Retrieve Limits Directly
     V_graph = row['V_Nominal']
+    M_graph = row['M_Nominal']
+    K_graph = row['K_Defl']
+    
     L_start = row['L_Start']
     L_end = row['L_End']
-    
-    M_derived = (L_start * V_graph) / 4 if L_start > 0 else 0
-    K_derived = L_end * 8 * M_derived if M_derived > 0 else 0
 
     max_span = max(10, L_end * 1.5)
     spans = np.linspace(0.1, max_span, 500)
     
-    ws = (2 * V_graph) / spans 
-    wm = (8 * M_derived) / (spans**2) 
-    wd = K_derived / (spans**3) 
+    # --- PLOT FORMULAS (Uniform Load) ---
+    ws = (2 * V_graph) / spans                  # Shear: V = wL/2 -> w = 2V/L
+    wm = (8 * M_graph) / (spans**2)             # Moment: M = wL^2/8 -> w = 8M/L^2
+    wd = K_graph / (spans**3)                   # Deflection: Limit L/360
+    
     w_safe = np.minimum(np.minimum(ws, wm), wd)
 
     # === PLOTLY SETUP ===
@@ -179,10 +199,12 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     fig.add_trace(go.Scatter(x=spans, y=w_safe, mode='lines', name='Safe Load Envelope', line=dict(color='#2C3E50', width=4)))
 
     # 3. ZONES SHADING
+    # Shear Zone
     if L_start > 0:
         fig.add_vrect(x0=0, x1=L_start, fillcolor="#9B59B6", opacity=0.1, layer="below", line_width=0)
         fig.add_annotation(x=L_start/2, y=V_graph*0.9, text="SHEAR", showarrow=False, font=dict(color="#8E44AD", size=10, weight="bold"))
 
+    # Moment Zone
     if L_end > L_start:
         mask_moment = (spans >= L_start) & (spans <= L_end)
         fig.add_trace(go.Scatter(
@@ -193,6 +215,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         y_anno_m = np.interp((L_start+L_end)/2, spans, w_safe) * 0.5
         fig.add_annotation(x=(L_start+L_end)/2, y=y_anno_m, text="MOMENT", showarrow=False, font=dict(color="#C0392B", size=10, weight="bold"))
 
+    # Deflection Zone
     if max_span > L_end:
         mask_defl = (spans >= L_end)
         fig.add_trace(go.Scatter(
@@ -209,7 +232,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         fig.add_vline(x=L_start, line_width=1, line_dash="dash", line_color="#E74C3C")
         fig.add_vline(x=L_end, line_width=1, line_dash="dash", line_color="#2ECC71")
 
-    # 4. Axes & Layout (STRICT LOCK)
+    # 4. Axes & Layout
     y_max_view = np.interp(1.0, spans, w_safe) * 1.5 if np.interp(1.0, spans, w_safe) > 0 else V_graph
     
     fig.update_layout(
@@ -228,7 +251,8 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
 
     st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
     
+    # Info Box with Moment Verification
     c1, c2, c3 = st.columns(3)
-    c1.info(f"**Max Capacity (Vn):** {row['V_Nominal']:,.0f} kg")
-    c2.info(f"**Moment Zone:** {L_start:.2f} - {L_end:.2f} m")
-    c3.success(f"**Governing Mode:** {row['Governing']}")
+    c1.info(f"**Max Shear (Vn):** {row['V_Nominal']:,.0f} kg")
+    c2.info(f"**Max Moment (Mn):** {row['M_Nominal']:,.0f} kg-m") # <-- Added
+    c3.success(f"**Check:** {row['D/C Ratio']:.2f} ({row['Governing']})")
