@@ -1,13 +1,13 @@
 # report_generator.py
-# Version: 3.1 (Fixed: Added render_report_tab compatibility)
+# Version: 3.2 (Fixed: KeyError 'd' by normalizing input keys and units)
 import streamlit as st
 import math
 import pandas as pd
 
 def get_standard_sections():
     """
-    Database หน้าตัดเหล็ก Wide Flange (H-Beam) มาตรฐาน
-    หน่วย: cm
+    Database หน้าตัดเหล็ก Wide Flange (H-Beam) มาตรฐาน (Internal Database)
+    Key format: Short names, Units: cm
     """
     return [
         {"name": "H-100x100x6x8", "d": 10, "b": 10, "tw": 0.6, "tf": 0.8, "Zx": 76.5, "Ix": 378, "Area": 21.9},
@@ -25,6 +25,9 @@ def get_standard_sections():
     ]
 
 def calculate_full_properties(sec):
+    """
+    Generate display properties (Human readable keys)
+    """
     return {
         "Name": sec['name'],
         "Depth (mm)": sec['d']*10,
@@ -36,7 +39,39 @@ def calculate_full_properties(sec):
         "Area (cm2)": sec['Area']
     }
 
-def calculate_connection(sec, load_pct, bolt_dia, factor, load_case):
+def normalize_section_data(data):
+    """
+    🛠️ Helper: แปลงข้อมูลจาก UI Format (mm, Long keys) -> Calculation Format (cm, Short keys)
+    เพื่อป้องกัน KeyError: 'd', 'tw', etc.
+    """
+    # กรณี 1: ข้อมูลเป็น Internal Format อยู่แล้ว (มี key 'd')
+    if 'd' in data:
+        return data.copy()
+    
+    # กรณี 2: ข้อมูลมาจาก UI (มี key 'Depth (mm)') -> แปลงหน่วยเป็น cm
+    normalized = {}
+    normalized['name'] = data.get('Name', 'Unknown Section')
+    
+    # แปลง mm -> cm (/10)
+    normalized['d'] = data.get('Depth (mm)', 0) / 10.0
+    normalized['b'] = data.get('Width (mm)', 0) / 10.0
+    normalized['tw'] = data.get('Web t (mm)', 0) / 10.0
+    normalized['tf'] = data.get('Flange t (mm)', 0) / 10.0
+    
+    # ค่าคงที่ (cm อยู่แล้ว)
+    normalized['Zx'] = data.get('Zx (cm3)', 0)
+    normalized['Ix'] = data.get('Ix (cm4)', 0)
+    normalized['Area'] = data.get('Area (cm2)', 0)
+    
+    return normalized
+
+def calculate_connection(sec_input, load_pct, bolt_dia, factor, load_case):
+    """
+    Core Calculation Logic
+    """
+    # ✅ Step 0: Normalize Data (ป้องกัน KeyError)
+    sec = normalize_section_data(sec_input)
+
     Fy = 2500 # ksc
     Fu = 4100 # ksc
     E = 2.04e6 # ksc
@@ -101,11 +136,16 @@ def calculate_connection(sec, load_pct, bolt_dia, factor, load_case):
         "Web": sec['tw']
     }
 
-def render_detailed_report(section, load_pct, bolt_dia, factor, load_case):
+def render_detailed_report(section_input, load_pct, bolt_dia, factor, load_case):
     """
     ฟังก์ชันหลักสำหรับแสดงรายงาน (Core Function)
     """
+    # ✅ Normalize Data สำหรับใช้แสดงผลใน Latex
+    section = normalize_section_data(section_input)
+
+    # คำนวณค่าต่างๆ
     res = calculate_connection(section, load_pct, bolt_dia, factor, load_case)
+    
     Fy = 2500
     Fu = 4100
     E = 2.04e6
@@ -120,8 +160,9 @@ def render_detailed_report(section, load_pct, bolt_dia, factor, load_case):
     with c1:
         st.markdown("**Properties of Beam:**")
         st.latex(f"Section: \\text{{{section['name']}}}")
-        st.latex(f"d = {section['d']} \\, cm, \\; t_w = {section['tw']} \\, cm")
-        st.latex(f"Z_x = {section['Zx']} \\, cm^3, \\; I_x = {section['Ix']} \\, cm^4")
+        # ใช้ค่าที่ Normalize แล้ว (cm)
+        st.latex(f"d = {section['d']:.1f} \\, cm, \\; t_w = {section['tw']:.2f} \\, cm")
+        st.latex(f"Z_x = {section['Zx']:.1f} \\, cm^3, \\; I_x = {section['Ix']:.1f} \\, cm^4")
     with c2:
         st.markdown("**Bolt Properties:**")
         st.latex(f"Dia (\\O) = {bolt_dia} \\, mm")
@@ -155,17 +196,15 @@ def render_detailed_report(section, load_pct, bolt_dia, factor, load_case):
 
     st.success(f"✅ **Safe Max Span: {res['L_safe']:.2f} m**")
 
-# --- 🟢 ส่วนที่เพิ่มใหม่เพื่อแก้ Error (Compatibility Fix) ---
 def render_report_tab(beam_data, conn_data):
     """
     Wrapper function to handle calls from app.py
-    แปลงข้อมูลจาก Dictionary มาเป็น Argument ที่ถูกต้อง
     """
-    # ดึงค่าจาก conn_data (ใช้ .get เพื่อกัน error กรณี key ไม่ตรง)
+    # ดึงค่าจาก conn_data
     load_pct = conn_data.get('load_pct', conn_data.get('load_percent', 50))
     bolt_dia = conn_data.get('bolt_dia', conn_data.get('bolt_diameter', 16))
     factor = conn_data.get('factor', conn_data.get('safety_factor', 1.0))
     load_case = conn_data.get('load_case', conn_data.get('load_case_name', 'Design Load'))
 
-    # เรียกฟังก์ชันหลัก
+    # เรียกฟังก์ชันหลัก (ตัวนี้จะ Normalize ข้อมูลเองข้างใน)
     render_detailed_report(beam_data, load_pct, bolt_dia, factor, load_case)
