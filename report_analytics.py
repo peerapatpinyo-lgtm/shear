@@ -21,9 +21,9 @@ FV_WELD = 1470
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
     Renders the Structural Analytics Dashboard.
-    - Version 35.0: 
-        1. Authentic Shading: Moment zone is shaded UNDER the curve (fill_tozeroy), mimicking Matplotlib style.
-        2. Constraints: Axes are locked to non-negative values (rangemode='nonnegative').
+    - Version 36.0: 
+        1. Added 'Deflection Zone' (Green shading under curve).
+        2. Implemented Strict Axis Locking (rangemode='tozero') to prevent negative panning.
     """
     
     st.markdown("## 🏗️ Structural Optimization Dashboard")
@@ -138,7 +138,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         hide_index=True
     )
 
-    # --- 3. INTERACTIVE GRAPH (REFINED SHADING) ---
+    # --- 3. INTERACTIVE GRAPH (3 ZONES) ---
     st.divider()
     st.subheader("🔬 Interactive Analysis Graph")
     
@@ -167,46 +167,52 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     fig = go.Figure()
 
     # 1. Limit Lines
-    fig.add_trace(go.Scatter(x=spans, y=ws, mode='lines', name='Shear Limit (Web)', line=dict(color='#9B59B6', dash='dot')))
+    fig.add_trace(go.Scatter(x=spans, y=ws, mode='lines', name='Shear Limit', line=dict(color='#9B59B6', dash='dot')))
     fig.add_trace(go.Scatter(x=spans, y=wm, mode='lines', name='Moment Limit', line=dict(color='#E74C3C', dash='dash')))
     fig.add_trace(go.Scatter(x=spans, y=wd, mode='lines', name='Deflection Limit', line=dict(color='#2ECC71', dash='dashdot')))
     
-    # 2. Safe Envelope
+    # 2. Safe Envelope (Main Curve)
     fig.add_trace(go.Scatter(x=spans, y=w_safe, mode='lines', name='Safe Load Envelope', line=dict(color='#2C3E50', width=4)))
 
-    # 3. Authentic Shading (Area Under Curve)
-    # 3A. Moment Zone Shading
-    if L_end > L_start:
-        # Create a mask for the Moment Zone range
-        mask_moment = (spans >= L_start) & (spans <= L_end)
-        spans_moment = spans[mask_moment]
-        w_safe_moment = w_safe[mask_moment]
-        
-        # Add a filled area ONLY under the curve in this zone
-        fig.add_trace(go.Scatter(
-            x=spans_moment, 
-            y=w_safe_moment, 
-            mode='none', # No line border
-            fill='tozeroy', # Fill down to X-axis
-            fillcolor='rgba(231, 76, 60, 0.2)', # Transparent Red
-            name='Moment Zone',
-            hoverinfo='skip'
-        ))
-        
-        # Add Vertical Lines for boundaries
-        fig.add_vline(x=L_start, line_width=1, line_dash="dash", line_color="#E74C3C")
-        fig.add_vline(x=L_end, line_width=1, line_dash="dash", line_color="#2ECC71")
-        
-        # Annotation (Inside Top Right)
-        y_anno = np.interp((L_start+L_end)/2, spans, w_safe) * 0.6
-        fig.add_annotation(x=(L_start+L_end)/2, y=y_anno, text="Moment Zone", showarrow=False, font=dict(color="#C0392B"))
-
-    # 3B. Shear Zone Shading (Full height is standard for Shear, but we can make it subtle)
+    # 3. ZONES SHADING (Area Under Curve)
+    
+    # A. Shear Zone (Purple Rectangle - Since it's flat)
     if L_start > 0:
         fig.add_vrect(x0=0, x1=L_start, fillcolor="#9B59B6", opacity=0.1, layer="below", line_width=0)
-        fig.add_annotation(x=L_start/2, y=V_graph*0.1, text="Shear", showarrow=False, font=dict(color="#8E44AD"))
+        # Annotation for Shear
+        fig.add_annotation(x=L_start/2, y=V_graph*0.9, text="SHEAR", showarrow=False, font=dict(color="#8E44AD", size=10, weight="bold"))
 
-    # 4. Axes & Layout (Prevent Negative)
+    # B. Moment Zone (Red Fill Under Curve)
+    if L_end > L_start:
+        mask_moment = (spans >= L_start) & (spans <= L_end)
+        fig.add_trace(go.Scatter(
+            x=spans[mask_moment], y=w_safe[mask_moment], 
+            mode='none', fill='tozeroy', fillcolor='rgba(231, 76, 60, 0.2)', 
+            name='Moment Zone', hoverinfo='skip'
+        ))
+        # Annotation for Moment
+        y_anno_m = np.interp((L_start+L_end)/2, spans, w_safe) * 0.5
+        fig.add_annotation(x=(L_start+L_end)/2, y=y_anno_m, text="MOMENT", showarrow=False, font=dict(color="#C0392B", size=10, weight="bold"))
+
+    # C. Deflection Zone (Green Fill Under Curve) - NEW!
+    if max_span > L_end:
+        mask_defl = (spans >= L_end)
+        fig.add_trace(go.Scatter(
+            x=spans[mask_defl], y=w_safe[mask_defl], 
+            mode='none', fill='tozeroy', fillcolor='rgba(46, 204, 113, 0.2)', 
+            name='Deflection Zone', hoverinfo='skip'
+        ))
+        # Annotation for Deflection
+        x_anno_d = (L_end + max_span)/2
+        y_anno_d = np.interp(x_anno_d, spans, w_safe) * 0.5
+        fig.add_annotation(x=x_anno_d, y=y_anno_d, text="DEFLECTION", showarrow=False, font=dict(color="#27AE60", size=10, weight="bold"))
+
+    # Vertical Separators
+    if L_end > L_start:
+        fig.add_vline(x=L_start, line_width=1, line_dash="dash", line_color="#E74C3C")
+        fig.add_vline(x=L_end, line_width=1, line_dash="dash", line_color="#2ECC71")
+
+    # 4. Axes & Layout (STRICT LOCK)
     y_max_view = np.interp(1.0, spans, w_safe) * 1.5 if np.interp(1.0, spans, w_safe) > 0 else V_graph
     
     fig.update_layout(
@@ -216,12 +222,14 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         template="plotly_white",
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        height=550
+        height=550,
+        margin=dict(l=20, r=20, t=60, b=40)
     )
     
-    # --- KEY FIX: Prevent Negative Scrolling ---
-    fig.update_xaxes(range=[0, max_span], rangemode="nonnegative", constrain="domain")
-    fig.update_yaxes(range=[0, y_max_view], rangemode="nonnegative", constrain="domain")
+    # --- HARD LOCK: rangemode="tozero" ---
+    # This forces the axis to ALWAYS start at 0, preventing negative panning.
+    fig.update_xaxes(range=[0, max_span], rangemode="tozero", constrain="domain")
+    fig.update_yaxes(range=[0, y_max_view], rangemode="tozero", constrain="domain")
 
     st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
     
