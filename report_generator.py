@@ -1,17 +1,15 @@
 # report_generator.py
-# Version: 51.0 (Ultimate Merge + Restored Comparison Table)
+# Version: 52.0 (Core Engine + Shop Drawing Only)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-import numpy as np 
 import math
 
 # =========================================================
-# 🏗️ 1. DATABASE & PROPERTIES
+# 🏗️ 1. DATABASE & PROPERTIES (Shareable)
 # =========================================================
 def get_standard_sections():
-    # ข้อมูลดิบ (Raw Data)
     return [
         {"name": "H-100x50x5x7",    "h": 100, "b": 50,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
         {"name": "H-100x100x6x8",   "h": 100, "b": 100, "tw": 6,  "tf": 8,  "Fy": 2500, "Fu": 4100},
@@ -52,10 +50,7 @@ def calculate_full_properties(props):
     return {
         "Name": props['name'],
         "h": props['h'], "b": props['b'], "tw": props['tw'], "tf": props['tf'],
-        "Area (cm2)": round(A, 2),
-        "Ix (cm4)": round(Ix, 0),
-        "Zx (cm3)": round(Zx, 0),
-        "Sx (cm3)": round(Sx, 0)
+        "Area (cm2)": round(A, 2), "Ix (cm4)": round(Ix, 0), "Zx (cm3)": round(Zx, 0)
     }
 
 def get_full_database_df():
@@ -64,7 +59,7 @@ def get_full_database_df():
     return pd.DataFrame(data)
 
 # =========================================================
-# ⚙️ 2. CALCULATION ENGINE (V50)
+# ⚙️ 2. CALCULATION ENGINE
 # =========================================================
 def get_load_case_factor(case_name):
     cases = {"Simple Beam (Uniform Load)": 4.0, "Simple Beam (Point Load @Center)": 2.0, "Cantilever (Uniform Load)": 2.0, "Cantilever (Point Load @Tip)": 1.0}
@@ -104,15 +99,10 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor, case_name):
     DB_mm = float(bolt_dia)
     Ab_cm2 = 3.1416 * (DB_mm/10)**2 / 4
     Rn_shear = 0.75 * 3300 * Ab_cm2 
-    
     plate_t_mm = 10.0; Le_cm = 3.5; Lc_cm = Le_cm - ((DB_mm+2)/10)/2
     Rn_pl = 0.75 * min(1.2 * Lc_cm * (plate_t_mm/10) * 4050, 2.4 * (DB_mm/10) * (plate_t_mm/10) * 4050)
     Rn_web = 0.75 * min(1.2 * Lc_cm * (tw/10) * fu, 2.4 * (DB_mm/10) * (tw/10) * fu)
     phiRn_bolt = min(Rn_shear, Rn_pl, Rn_web)
-    
-    control_mode = "Bolt Shear"
-    if Rn_pl < Rn_shear and Rn_pl < Rn_web: control_mode = "Plate Bear"
-    if Rn_web < Rn_shear and Rn_web < Rn_pl: control_mode = "Web Bear"
     
     n_bolts = max(2, math.ceil(V_target / phiRn_bolt)) if phiRn_bolt > 0 else 99
     spacing = 7.0
@@ -122,12 +112,12 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor, case_name):
         "Section": props['name'], "h": h, "b": props['b'], "tw": tw, "tf": props['tf'], 
         "Vn_beam": Vn_beam, "V_target": V_target, 
         "L_crit_moment": L_crit_moment, "L_crit_defl": L_crit_defl, "L_safe": L_safe,
-        "DB": DB_mm, "phiRn_bolt": phiRn_bolt, "Bolt Qty": n_bolts, "Control By": control_mode,
+        "DB": DB_mm, "phiRn_bolt": phiRn_bolt, "Bolt Qty": n_bolts,
         "Plate Len": L_plate, "Le": Le_cm, "S": spacing
     }
 
 # =========================================================
-# 🎨 3. DRAWING LOGIC (V50 - Dimensions + Views)
+# 🎨 3. DRAWING LOGIC (Single Beam)
 # =========================================================
 def draw_professional_shop_drawing(res):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 7), gridspec_kw={'width_ratios': [2, 1]})
@@ -200,16 +190,14 @@ def draw_professional_shop_drawing(res):
     return fig
 
 # =========================================================
-# 🖥️ 4. APP UI
+# 🖥️ 4. SINGLE REPORT RENDERER
 # =========================================================
-def render_report_tab(beam_data=None, conn_data=None, *args, **kwargs):
-    st.markdown("### 🖨️ Structural Calculation Workbench (Ultimate)")
+def render_report_tab():
+    st.markdown("### 🏗️ Structural Calculation Workbench (Single Beam)")
     
-    # 1. Database Table
-    with st.expander("📂 ดูตารางเหล็กทั้งหมด (Standard Sections Database)", expanded=False):
+    with st.expander("📂 ดูตารางเหล็กทั้งหมด", expanded=False):
         st.dataframe(get_full_database_df(), use_container_width=True, hide_index=True)
 
-    # 2. Controls
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns([2, 1, 1, 1.5])
         all_sections = get_standard_sections()
@@ -218,14 +206,11 @@ def render_report_tab(beam_data=None, conn_data=None, *args, **kwargs):
         with c3: bolt_dia = st.selectbox("Bolt Size", [12, 16, 20, 24], index=2)
         with c4: load_case = st.selectbox("Case", ["Simple Beam (Uniform Load)", "Simple Beam (Point Load @Center)", "Cantilever (Uniform Load)", "Cantilever (Point Load @Tip)"])
             
-    # Calculate
     selected_props = next(s for s in all_sections if s['name'] == selected_sec_name)
     factor = get_load_case_factor(load_case)
     res = calculate_connection(selected_props, load_pct, bolt_dia, factor, load_case)
     
     st.divider()
-
-    # 3. Results & Drawing
     c_left, c_right = st.columns([1, 1.5])
     with c_left:
         st.subheader("📝 Summary Result")
@@ -235,70 +220,18 @@ def render_report_tab(beam_data=None, conn_data=None, *args, **kwargs):
         st.markdown(f"- Bolts Req: `{res['Bolt Qty']} pcs` (M{int(res['DB'])})")
     with c_right:
         st.pyplot(draw_professional_shop_drawing(res))
-
-    st.divider()
-
-    # 4. Graph
-    st.subheader("📊 Structural Limit States Diagram")
-    names, moments, defls, shears = [], [], [], []
-    for sec in all_sections:
-        r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
-        names.append(sec['name'].replace("H-", "")) 
-        moments.append(r['L_crit_moment'])
-        defls.append(r['L_crit_defl'])
-        shears.append(r['Vn_beam']) 
-
-    fig2, ax1 = plt.subplots(figsize=(12, 5))
-    x = range(len(names))
-    ax1.set_ylabel('Span (m)', color='#27AE60', fontweight='bold')
-    ax1.plot(x, moments, 'r--', label='Moment Limit', alpha=0.5)
-    ax1.plot(x, defls, 'b-', label='Deflection Limit', alpha=0.5)
-    ax1.fill_between(x, 0, np.minimum(moments, defls), color='#2ECC71', alpha=0.3, label='Safe Zone')
-    
-    ax2 = ax1.twinx()
-    ax2.set_ylabel('Shear Capacity (kg)', color='purple', fontweight='bold')
-    ax2.plot(x, shears, color='purple', linestyle=':', label='Shear Check (Ref)')
-
-    idx = [s['name'] for s in all_sections].index(selected_sec_name)
-    ax1.plot(idx, res['L_safe'], 'g*', markersize=15)
-    ax1.axvline(x=idx, color='orange', alpha=0.5)
-    ax1.legend(loc='upper left'); ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=90, fontsize=8); ax1.grid(True, linestyle=':', alpha=0.5)
-    st.pyplot(fig2)
-
-    st.divider()
-
-    # 5. Full Comparison Table (Restored!)
-    st.subheader("📋 Comparative Analysis Table")
-    if st.checkbox("Show Detail Table", value=True):
-        batch_results = []
-        for sec in all_sections:
-            r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
-            actual_cap = r['Bolt Qty'] * r['phiRn_bolt']
-            util = (r['V_target'] / actual_cap) * 100 if actual_cap > 0 else 0
-            
-            batch_results.append({
-                "Section": r['Section'],
-                "Design Vu (kg)": r['V_target'],
-                "Max Span (m)": r['L_safe'],  # Use L_safe from V50
-                "Limit State": "Moment" if r['L_crit_moment'] < r['L_crit_defl'] else "Deflection",
-                "Bolt Qty": r['Bolt Qty'],
-                "Plate H (mm)": int(r['Plate Len']*10),
-                "Util. (%)": util
-            })
-            
-        df_compare = pd.DataFrame(batch_results)
-        st.dataframe(
-            df_compare,
-            use_container_width=True,
-            column_config={
-                "Design Vu (kg)": st.column_config.NumberColumn("Load (kg)", format="%.0f"),
-                "Max Span (m)": st.column_config.NumberColumn("Safe Span (m)", format="%.2f"),
-                "Bolt Qty": st.column_config.NumberColumn("Bolts", format="%d"),
-                "Util. (%)": st.column_config.ProgressColumn("Capacity Usage", format="%.0f%%", min_value=0, max_value=100),
-            },
-            hide_index=True, height=500
-        )
+        
+    return load_pct, bolt_dia, load_case, factor # Export params for analytics
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Structural Workbench", layout="wide")
-    render_report_tab()
+    # Run the single report
+    params = render_report_tab()
+    
+    # Import and run analytics below (Optional - if running as one app)
+    st.divider()
+    try:
+        import report_analytics
+        report_analytics.render_analytics_section(*params)
+    except ImportError:
+        st.info("💡 สร้างไฟล์ report_analytics.py เพื่อดู Diagram และ Comparative Table")
