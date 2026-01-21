@@ -1,234 +1,262 @@
 # report_generator.py
-# Version: 52.1 (Fix Argument Error + Auto-Link Analytics)
+# Version: 3.0 (Added Detailed Calculation Report)
 import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import math
+import pandas as pd
 
-# =========================================================
-# 🏗️ 1. DATABASE & PROPERTIES
-# =========================================================
 def get_standard_sections():
+    """
+    Database หน้าตัดเหล็ก Wide Flange (H-Beam) มาตรฐาน
+    หน่วย: cm
+    """
     return [
-        {"name": "H-100x50x5x7",    "h": 100, "b": 50,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-100x100x6x8",   "h": 100, "b": 100, "tw": 6,  "tf": 8,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-125x60x6x8",    "h": 125, "b": 60,  "tw": 6,  "tf": 8,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-125x125x6.5x9", "h": 125, "b": 125, "tw": 6.5,"tf": 9,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-150x75x5x7",    "h": 150, "b": 75,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-150x150x7x10",  "h": 150, "b": 150, "tw": 7,  "tf": 10, "Fy": 2500, "Fu": 4100},
-        {"name": "H-175x90x5x8",    "h": 175, "b": 90,  "tw": 5,  "tf": 8,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-175x175x7.5x11","h": 175, "b": 175, "tw": 7.5,"tf": 11, "Fy": 2500, "Fu": 4100},
-        {"name": "H-200x100x5.5x8", "h": 200, "b": 100, "tw": 5.5,"tf": 8,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-200x200x8x12",  "h": 200, "b": 200, "tw": 8,  "tf": 12, "Fy": 2500, "Fu": 4100},
-        {"name": "H-250x125x6x9",   "h": 250, "b": 125, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-250x250x9x14",  "h": 250, "b": 250, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
-        {"name": "H-300x150x6.5x9", "h": 300, "b": 150, "tw": 6.5,"tf": 9,  "Fy": 2500, "Fu": 4100},
-        {"name": "H-300x300x10x15", "h": 300, "b": 300, "tw": 10, "tf": 15, "Fy": 2500, "Fu": 4100},
-        {"name": "H-350x175x7x11",  "h": 350, "b": 175, "tw": 7,  "tf": 11, "Fy": 2500, "Fu": 4100},
-        {"name": "H-350x350x12x19", "h": 350, "b": 350, "tw": 12, "tf": 19, "Fy": 2500, "Fu": 4100},
-        {"name": "H-400x200x8x13",  "h": 400, "b": 200, "tw": 8,  "tf": 13, "Fy": 2500, "Fu": 4100},
-        {"name": "H-400x400x13x21", "h": 400, "b": 400, "tw": 13, "tf": 21, "Fy": 2500, "Fu": 4100},
-        {"name": "H-450x200x9x14",  "h": 450, "b": 200, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
-        {"name": "H-500x200x10x16", "h": 500, "b": 200, "tw": 10, "tf": 16, "Fy": 2500, "Fu": 4100},
-        {"name": "H-600x200x11x17", "h": 600, "b": 200, "tw": 11, "tf": 17, "Fy": 2500, "Fu": 4100},
-        {"name": "H-700x300x13x24", "h": 700, "b": 300, "tw": 13, "tf": 24, "Fy": 2500, "Fu": 4100},
-        {"name": "H-800x300x14x26", "h": 800, "b": 300, "tw": 14, "tf": 26, "Fy": 2500, "Fu": 4100},
-        {"name": "H-900x300x16x28", "h": 900, "b": 300, "tw": 16, "tf": 28, "Fy": 2500, "Fu": 4100},
+        {"name": "H-100x100x6x8", "d": 10, "b": 10, "tw": 0.6, "tf": 0.8, "Zx": 76.5, "Ix": 378, "Area": 21.9},
+        {"name": "H-150x75x5x7", "d": 15, "b": 7.5, "tw": 0.5, "tf": 0.7, "Zx": 88.8, "Ix": 666, "Area": 17.85},
+        {"name": "H-150x150x7x10", "d": 15, "b": 15, "tw": 0.7, "tf": 1.0, "Zx": 232, "Ix": 1620, "Area": 39.65},
+        {"name": "H-200x100x5.5x8", "d": 20, "b": 10, "tw": 0.55, "tf": 0.8, "Zx": 184, "Ix": 1840, "Area": 27.16},
+        {"name": "H-200x200x8x12", "d": 20, "b": 20, "tw": 0.8, "tf": 1.2, "Zx": 472, "Ix": 4720, "Area": 63.53},
+        {"name": "H-250x125x6x9", "d": 25, "b": 12.5, "tw": 0.6, "tf": 0.9, "Zx": 324, "Ix": 4050, "Area": 37.66},
+        {"name": "H-300x150x6.5x9", "d": 30, "b": 15, "tw": 0.65, "tf": 0.9, "Zx": 481, "Ix": 7210, "Area": 46.78},
+        {"name": "H-350x175x7x11", "d": 35, "b": 17.5, "tw": 0.7, "tf": 1.1, "Zx": 775, "Ix": 13600, "Area": 63.14},
+        {"name": "H-400x200x8x13", "d": 40, "b": 20, "tw": 0.8, "tf": 1.3, "Zx": 1190, "Ix": 23700, "Area": 84.12},
+        {"name": "H-400x400x13x21", "d": 40, "b": 40, "tw": 1.3, "tf": 2.1, "Zx": 3330, "Ix": 66600, "Area": 218.7},
+        {"name": "H-450x200x9x14", "d": 45, "b": 20, "tw": 0.9, "tf": 1.4, "Zx": 1490, "Ix": 33500, "Area": 96.76},
+        {"name": "H-500x200x10x16", "d": 50, "b": 20, "tw": 1.0, "tf": 1.6, "Zx": 1910, "Ix": 47800, "Area": 114.2},
     ]
 
-def calculate_full_properties(props):
-    h, b, tw, tf = props['h']/10, props['b']/10, props['tw']/10, props['tf']/10 # cm
-    A = (2 * b * tf) + ((h - 2*tf) * tw)
-    outer_I = (b * h**3) / 12
-    inner_w = b - tw
-    inner_h = h - (2*tf)
-    inner_I = (inner_w * inner_h**3) / 12
-    Ix = outer_I - inner_I
-    Sx = Ix / (h/2) 
-    Zx = (b*tf*(h-tf)) + (tw*(h-2*tf)**2/4) 
+def calculate_full_properties(sec):
+    """
+    Helper function to normalize property names for display
+    """
     return {
-        "Name": props['name'],
-        "h": props['h'], "b": props['b'], "tw": props['tw'], "tf": props['tf'],
-        "Area (cm2)": round(A, 2), "Ix (cm4)": round(Ix, 0), "Zx (cm3)": round(Zx, 0)
+        "Name": sec['name'],
+        "Depth (mm)": sec['d']*10,
+        "Width (mm)": sec['b']*10,
+        "Web t (mm)": sec['tw']*10,
+        "Flange t (mm)": sec['tf']*10,
+        "Zx (cm3)": sec['Zx'],
+        "Ix (cm4)": sec['Ix'],
+        "Area (cm2)": sec['Area']
     }
 
-def get_full_database_df():
-    sections = get_standard_sections()
-    data = [calculate_full_properties(s) for s in sections]
-    return pd.DataFrame(data)
+def calculate_connection(sec, load_pct, bolt_dia, factor, load_case):
+    """
+    Core Calculation Logic
+    """
+    # Material Constants
+    Fy = 2500 # ksc
+    Fu = 4100 # ksc
+    E = 2.04e6 # ksc
+    
+    # 1. Beam Shear Capacity (Vn)
+    # Vn = 0.6 * Fy * Aw (Yielding)
+    Aw = sec['d'] * sec['tw'] # cm2
+    Vn_beam = 0.6 * Fy * Aw # kg
+    
+    # 2. Design Load (Vu)
+    V_target = Vn_beam * (load_pct / 100.0)
+    
+    # 3. Bolt Capacity (Single Shear)
+    # A325 / 8.8 (Approx shear strength ~ 0.6 * Fub * Ab)
+    # phi = 0.75
+    Fub = 8250 # ksc (Grade A325/8.8 Ultimate) - Assumed for calc
+    Ab = 3.1416 * (bolt_dia/10/2)**2 # cm2
+    phi_bolt = 0.75
+    # Nominal Shear Strength per bolt (assume threads excluded for conservative)
+    # Rn = 0.5 * Fub * Ab (Conservative approx standard) or 0.6
+    # Let's use EIT/AISC standard: phi * 0.45 * Fub * Ab (Threads included)
+    # Or simplified: Shear Stress Allowable ~ 1200-1500 ksc * Area.
+    # Let's use a standard value calculation:
+    rn_nominal = 0.6 * Fu * Ab # Use Beam Fu for simple bearing or Bolt Fub? 
+    # Let's use specific capacity for M-bolt
+    bolt_shear_strength = 3000 # ksc (Allowable/Design shear stress approx)
+    phiRn_bolt = bolt_shear_strength * Ab * 0.8 # approx factor
+    
+    # Re-cal for standard exactness (AISC LRFD style simplified)
+    # phi rn = 0.75 * 0.45 * Fub * Ab
+    phiRn_bolt = 0.75 * 0.45 * 8250 * Ab 
+    
+    # 4. Bolt Quantity
+    if phiRn_bolt > 0:
+        req_bolts = V_target / phiRn_bolt
+        n_bolts = math.ceil(req_bolts)
+        if n_bolts < 2: n_bolts = 2 # Minimum 2 bolts
+    else:
+        n_bolts = 0
 
-# =========================================================
-# ⚙️ 2. CALCULATION ENGINE
-# =========================================================
-def get_load_case_factor(case_name):
-    cases = {"Simple Beam (Uniform Load)": 4.0, "Simple Beam (Point Load @Center)": 2.0, "Cantilever (Uniform Load)": 2.0, "Cantilever (Point Load @Tip)": 1.0}
-    return cases.get(case_name, 4.0)
+    # 5. Connection Plate Sizing
+    # Spacing 3d, Edge 1.5d
+    pitch = 3 * bolt_dia # mm
+    edge = 1.5 * bolt_dia # mm
+    # Plate Height
+    plate_len_mm = (2 * edge) + ((n_bolts - 1) * pitch)
+    plate_len_cm = plate_len_mm / 10.0
+    
+    # 6. Span Calculation
+    # 6.1 Limit by Moment (L_moment)
+    # Mn = Zx * Fy
+    Mn = sec['Zx'] * Fy # kg-cm
+    # Load w (kg/m) from Beam Capacity or Target?
+    # Usually we find Lmax such that Moment = Mn under uniform load w
+    # Let's assume w is derived from V_target being the Reaction (R = wL/2)
+    # V_target = wL/2  => w = 2*V_target / L
+    # Moment = wL^2/8 = (2*V/L) * L^2 / 8 = V*L / 4
+    # Mn = V_target * L / 4  => L = 4 * Mn / V_target
+    if V_target > 0:
+        L_crit_moment_cm = (4 * Mn) / V_target
+        L_crit_moment_m = L_crit_moment_cm / 100.0
+    else:
+        L_crit_moment_m = 0
+        
+    # 6.2 Limit by Deflection (L_defl)
+    # Delta_allow = L/360
+    # Delta_max = 5wL^4 / 384EI
+    # Subst w = 2V/L => Delta = 5(2V/L)L^4 / 384EI = 10 V L^3 / 384 EI
+    # L/360 = 10 V L^3 / 384 EI
+    # 1/360 = 10 V L^2 / 384 EI
+    # L^2 = (384 * EI) / (3600 * V)
+    if V_target > 0:
+        val = (384 * E * sec['Ix']) / (3600 * V_target)
+        L_crit_defl_cm = math.sqrt(val)
+        L_crit_defl_m = L_crit_defl_cm / 100.0
+    else:
+        L_crit_defl_m = 0
+        
+    L_safe = min(L_crit_moment_m, L_crit_defl_m)
 
-def calculate_connection(props, load_percent, bolt_dia, span_factor, case_name):
-    full_props = calculate_full_properties(props) 
-    h, tw, fy, fu = props['h'], props['tw'], props['Fy'], props['Fu']
-    
-    # 1. Shear
-    Vn_beam = 0.60 * fy * (h/10)*(tw/10)
-    V_target = (load_percent/100) * Vn_beam
-    
-    # 2. Moment Limit
-    Mn_beam = fy * full_props['Zx (cm3)']
-    phiMn = 0.90 * Mn_beam
-    L_crit_moment = (span_factor * (phiMn / V_target)) / 100.0 if V_target > 0 else 0
-    
-    # 3. Deflection Limit
-    E = 2040000 
-    Reaction = V_target 
-    Limit_Factor = 360 
-    coeff = 0
-    if case_name == "Simple Beam (Uniform Load)": coeff = 192 / (5 * Limit_Factor)
-    elif case_name == "Simple Beam (Point Load @Center)": coeff = 24 / Limit_Factor
-    elif case_name == "Cantilever (Uniform Load)": coeff = 8 / Limit_Factor
-    elif case_name == "Cantilever (Point Load @Tip)": coeff = 3 / Limit_Factor
-    
-    L_crit_defl = 0
-    if Reaction > 0 and coeff > 0:
-        L_sq = (coeff * E * full_props['Ix (cm4)']) / Reaction
-        L_crit_defl = math.sqrt(L_sq) / 100.0 
-    
-    L_safe = min(L_crit_moment, L_crit_defl) if L_crit_defl > 0 else L_crit_moment
-    
-    # 4. Bolt Capacity
-    DB_mm = float(bolt_dia)
-    Ab_cm2 = 3.1416 * (DB_mm/10)**2 / 4
-    Rn_shear = 0.75 * 3300 * Ab_cm2 
-    plate_t_mm = 10.0; Le_cm = 3.5; Lc_cm = Le_cm - ((DB_mm+2)/10)/2
-    Rn_pl = 0.75 * min(1.2 * Lc_cm * (plate_t_mm/10) * 4050, 2.4 * (DB_mm/10) * (plate_t_mm/10) * 4050)
-    Rn_web = 0.75 * min(1.2 * Lc_cm * (tw/10) * fu, 2.4 * (DB_mm/10) * (tw/10) * fu)
-    phiRn_bolt = min(Rn_shear, Rn_pl, Rn_web)
-    
-    n_bolts = max(2, math.ceil(V_target / phiRn_bolt)) if phiRn_bolt > 0 else 99
-    spacing = 7.0
-    L_plate = (2*Le_cm) + ((n_bolts-1)*spacing)
-    
     return {
-        "Section": props['name'], "h": h, "b": props['b'], "tw": tw, "tf": props['tf'], 
-        "Vn_beam": Vn_beam, "V_target": V_target, 
-        "L_crit_moment": L_crit_moment, "L_crit_defl": L_crit_defl, "L_safe": L_safe,
-        "DB": DB_mm, "phiRn_bolt": phiRn_bolt, "Bolt Qty": n_bolts,
-        "Plate Len": L_plate, "Le": Le_cm, "S": spacing
+        "Section": sec['name'],
+        "Vn_beam": Vn_beam,
+        "V_target": V_target,
+        "phiRn_bolt": phiRn_bolt,
+        "Bolt Qty": n_bolts,
+        "Plate Len": plate_len_cm,
+        "L_crit_moment": L_crit_moment_m,
+        "L_crit_defl": L_crit_defl_m,
+        "L_safe": L_safe,
+        "Zx": sec['Zx'],
+        "Ix": sec['Ix'],
+        "Area": sec['Area'],
+        "Depth": sec['d'],
+        "Web": sec['tw']
     }
 
-# =========================================================
-# 🎨 3. DRAWING LOGIC (Single Beam)
-# =========================================================
-def draw_professional_shop_drawing(res):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 7), gridspec_kw={'width_ratios': [2, 1]})
-    
-    # Styles
-    COLOR_OBJ = '#2C3E50'; COLOR_DIM = '#E74C3C'; COLOR_CENTER = '#95A5A6'
-    LW_OBJ = 1.5; LW_DIM = 0.8
-    
-    # --- VIEW 1: ELEVATION ---
-    h, tw, L_plate_mm = res['h'], res['tw'], res['Plate Len']*10
-    web_w_draw = 220; h_draw_area = h + 150
-    plate_w = 100; plate_x = (web_w_draw - plate_w) / 2
-    plate_y_start = (h - L_plate_mm) / 2 + 75
-    
-    ax1.add_patch(patches.Rectangle((0, 0), web_w_draw, h_draw_area, facecolor='#ECF0F1', zorder=0))
-    ax1.add_patch(patches.Rectangle((plate_x, plate_y_start), plate_w, L_plate_mm, linewidth=LW_OBJ, edgecolor=COLOR_OBJ, facecolor='#D6EAF8', zorder=2))
-    
-    bolt_x = plate_x + plate_w/2
-    bolt_y_top = plate_y_start + L_plate_mm - (res['Le']*10)
-    bolt_ys = []
-    curr_y = bolt_y_top
-    for i in range(res['Bolt Qty']):
-        bolt_ys.append(curr_y)
-        ax1.add_patch(patches.Circle((bolt_x, curr_y), (res['DB']+2)/2, edgecolor=COLOR_OBJ, facecolor='white', linewidth=1.2, zorder=3))
-        ax1.hlines(curr_y, bolt_x-10, bolt_x+10, colors=COLOR_CENTER, linestyles='-.', linewidth=0.5)
-        curr_y -= (res['S']*10)
-    ax1.vlines(bolt_x, plate_y_start-20, plate_y_start+L_plate_mm+20, colors=COLOR_CENTER, linestyles='-.', linewidth=0.5)
-
-    def draw_dim_arrow(ax, y_start, y_end, x_pos, text_val, label_prefix="", orient='v'):
-        if orient == 'v':
-            ax.annotate(text='', xy=(x_pos, y_start), xytext=(x_pos, y_end), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM))
-            mid_y = (y_start + y_end) / 2
-            txt = f"{label_prefix} {int(text_val)}" if label_prefix else f"{int(text_val)}"
-            ax.text(x_pos + 5, mid_y, txt, color=COLOR_DIM, fontsize=8, va='center')
-            ax.plot([plate_x+plate_w, x_pos], [y_start, y_start], color=COLOR_DIM, lw=0.5, ls=':')
-            ax.plot([plate_x+plate_w, x_pos], [y_end, y_end], color=COLOR_DIM, lw=0.5, ls=':')
-        else:
-            ax.annotate(text='', xy=(y_start, x_pos), xytext=(y_end, x_pos), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM))
-            mid_x = (y_start + y_end) / 2
-            txt = f"{int(text_val)}"
-            ax.text(mid_x, x_pos - 8, txt, color=COLOR_DIM, fontsize=8, ha='center', va='top')
-            ax.plot([y_start, y_start], [plate_y_start, x_pos], color=COLOR_DIM, lw=0.5, ls=':')
-            ax.plot([y_end, y_end], [plate_y_start, x_pos], color=COLOR_DIM, lw=0.5, ls=':')
-
-    dim_x_offset = plate_x + plate_w + 15
-    draw_dim_arrow(ax1, plate_y_start + L_plate_mm, bolt_ys[0], dim_x_offset, res['Le']*10, "Le", 'v')
-    for i in range(len(bolt_ys)-1):
-        draw_dim_arrow(ax1, bolt_ys[i], bolt_ys[i+1], dim_x_offset, res['S']*10, "S", 'v')
-    draw_dim_arrow(ax1, bolt_ys[-1], plate_y_start, dim_x_offset, res['Le']*10, "Le", 'v')
-    
-    dim_y_horz = plate_y_start - 30
-    draw_dim_arrow(ax1, plate_x, bolt_x, dim_y_horz, plate_w/2, "", 'h')
-    draw_dim_arrow(ax1, bolt_x, plate_x+plate_w, dim_y_horz, plate_w/2, "", 'h')
-
-    ax1.set_xlim(0, web_w_draw + 60); ax1.set_ylim(0, h_draw_area); ax1.axis('off')
-    ax1.set_title("ELEVATION", fontweight='bold', color=COLOR_OBJ)
-
-    # --- VIEW 2: SECTION ---
-    b, tf = res['b'], res['tf']; cx = 100 
-    ax2.add_patch(patches.Rectangle((cx - b/2, h_draw_area/2 + h/2 - tf), b, tf, facecolor='#7F8C8D', edgecolor='black')) 
-    ax2.add_patch(patches.Rectangle((cx - b/2, h_draw_area/2 - h/2), b, tf, facecolor='#7F8C8D', edgecolor='black')) 
-    ax2.add_patch(patches.Rectangle((cx - tw/2, h_draw_area/2 - h/2 + tf), tw, h - 2*tf, facecolor='#95A5A6', edgecolor='black'))
-    pl_thk = 10
-    ax2.add_patch(patches.Rectangle((cx + tw/2, h_draw_area/2 - L_plate_mm/2), pl_thk, L_plate_mm, facecolor='#3498DB', edgecolor='black'))
-    ax2.plot([cx-20, cx+50], [h_draw_area/2, h_draw_area/2], 'k-.', linewidth=0.5)
-    ax2.set_xlim(0, 200); ax2.set_ylim(0, h_draw_area); ax2.axis('off')
-    ax2.set_title("SECTION", fontweight='bold', color=COLOR_OBJ)
-
-    plt.suptitle(f"SHOP DRAWING: {res['Section']} (PL-100x{int(L_plate_mm)}x10mm)", fontsize=12, fontweight='bold', color=COLOR_OBJ)
-    return fig
-
-# =========================================================
-# 🖥️ 4. APP RENDERER
-# =========================================================
-def render_report_tab(beam_data=None, conn_data=None):
+def render_detailed_report(section, load_pct, bolt_dia, factor, load_case):
     """
-    ฟังก์ชันหลักที่ App.py เรียกใช้
-    รับ args: beam_data, conn_data (เพื่อ Compatibility ไม่ให้ Error แต่ไม่ได้ใช้ค่าข้างใน)
+    ฟังก์ชันสร้างรายการคำนวณโดยละเอียด (Step-by-Step Calculation)
+    แสดงผลเป็น Markdown/LaTeX
     """
-    st.markdown("### 🏗️ Structural Calculation Workbench (Split Modules)")
+    # 1. Recalculate to get all variables
+    res = calculate_connection(section, load_pct, bolt_dia, factor, load_case)
     
-    with st.expander("📂 ดูตารางเหล็กทั้งหมด", expanded=False):
-        st.dataframe(get_full_database_df(), use_container_width=True, hide_index=True)
+    # Constants
+    Fy = 2500
+    Fu = 4100
+    E = 2.04e6
+    Fub = 8250 # Bolt Ultimate
+    
+    st.markdown(f"## 📝 รายการคำนวณ: จุดต่อคานเหล็ก {section['name']}")
+    st.markdown("---")
 
-    with st.container(border=True):
-        c1, c2, c3, c4 = st.columns([2, 1, 1, 1.5])
-        all_sections = get_standard_sections()
-        with c1: selected_sec_name = st.selectbox("เลือกหน้าตัด", [s['name'] for s in all_sections], index=10)
-        with c2: load_pct = st.number_input("Load %", 10, 100, 75)
-        with c3: bolt_dia = st.selectbox("Bolt Size", [12, 16, 20, 24], index=2)
-        with c4: load_case = st.selectbox("Case", ["Simple Beam (Uniform Load)", "Simple Beam (Point Load @Center)", "Cantilever (Uniform Load)", "Cantilever (Point Load @Tip)"])
-            
-    selected_props = next(s for s in all_sections if s['name'] == selected_sec_name)
-    factor = get_load_case_factor(load_case)
-    res = calculate_connection(selected_props, load_pct, bolt_dia, factor, load_case)
+    # --- PART 1: Design Parameters ---
+    st.subheader("1. ข้อกำหนดการออกแบบ (Design Parameters)")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**Properties of Beam:**")
+        st.latex(f"Section: \\text{{{section['name']}}}")
+        st.latex(f"d = {section['d']} \\, cm, \\; t_w = {section['tw']} \\, cm")
+        st.latex(f"Z_x = {section['Zx']} \\, cm^3, \\; I_x = {section['Ix']} \\, cm^4")
+        st.latex(f"F_y = {Fy} \\, ksc, \\; E = 2.04 \\times 10^6 \\, ksc")
+    with c2:
+        st.markdown("**Bolt Properties:**")
+        st.latex(f"Dia (\\O) = {bolt_dia} \\, mm")
+        st.latex(f"Grade: \\text{{A325 / 8.8}}")
+        st.latex(f"F_{{ub}} = {Fub} \\, ksc")
+        st.latex(f"Load \\, Condition: {load_case} \\, ({load_pct}\\% \\, of \\, V_n)")
+
+    st.markdown("---")
+
+    # --- PART 2: Design Loads ---
+    st.subheader("2. แรงเฉือนออกแบบ (Design Shear Force)")
+    st.markdown(f"คำนวณกำลังรับแรงเฉือนของคาน ({section['name']}) และปรับลดตาม Load Factor ที่ต้องการ")
     
-    st.divider()
-    c_left, c_right = st.columns([1, 1.5])
-    with c_left:
-        st.subheader("📝 Summary Result")
-        st.success(f"✅ **Safe Span Limit: {res['L_safe']:.2f} m**")
-        st.caption(f"Controlled by: {'Moment' if res['L_crit_moment'] < res['L_crit_defl'] else 'Deflection'}")
-        st.markdown(f"- Shear Load: `{res['V_target']:,.0f} kg`")
-        st.markdown(f"- Bolts Req: `{res['Bolt Qty']} pcs` (M{int(res['DB'])})")
-    with c_right:
-        st.pyplot(draw_professional_shop_drawing(res))
+    st.latex(r"A_w = d \times t_w")
+    st.latex(f"A_w = {section['d']} \\times {section['tw']} = {section['d']*section['tw']:.2f} \\, cm^2")
     
-    # 🔗 AUTO LINK: เรียก Analytics ให้ทำงานต่อเลย
-    st.divider()
-    try:
-        import report_analytics
-        report_analytics.render_analytics_section(load_pct, bolt_dia, load_case, factor)
-    except ImportError:
-        st.warning("⚠️ ไม่พบไฟล์ report_analytics.py กรุณาสร้างไฟล์เพื่อดู Analytics")
+    st.latex(r"V_{n(beam)} = 0.60 \times F_y \times A_w")
+    st.latex(f"V_{{n(beam)}} = 0.60 \\times {Fy} \\times {section['d']*section['tw']:.2f} = {res['Vn_beam']:,.2f} \\, kg")
+    
+    st.latex(f"V_{{u(design)}} = V_{{n(beam)}} \\times {load_pct}\\%")
+    st.markdown(f"👉 **Design Shear ($V_u$):** `{res['V_target']:,.2f} kg`")
+    
+    st.markdown("---")
+
+    # --- PART 3: Bolt Design ---
+    st.subheader("3. การออกแบบจุดต่อสลักเกลียว (Bolt Design)")
+    
+    # 3.1 Bolt Area
+    Ab = 3.1416 * (bolt_dia/10/2)**2
+    st.markdown("**3.1 พื้นที่หน้าตัดสลักเกลียว ($A_b$):**")
+    st.latex(r"A_b = \frac{\pi \times d^2}{4}")
+    st.latex(f"A_b = \\frac{{3.1416 \\times ({bolt_dia/10})^2}}{{4}} = {Ab:.3f} \\, cm^2")
+    
+    # 3.2 Shear Capacity
+    st.markdown("**3.2 กำลังรับแรงเฉือนของสลักเกลียว ($\phi R_n$):**")
+    st.caption("อ้างอิงมาตรฐาน AISC LRFD/EIT สำหรับ Bolt Grade A325 (Threads included in shear plane)")
+    st.latex(r"\phi R_n = \phi \times 0.45 \times F_{ub} \times A_b")
+    st.latex(f"\\phi R_n = 0.75 \\times 0.45 \\times {Fub} \\times {Ab:.3f} = {res['phiRn_bolt']:,.2f} \\, kg/bolt")
+    
+    # 3.3 Quantity
+    st.markdown("**3.3 จำนวนสลักเกลียวที่ต้องการ ($N$):**")
+    st.latex(r"N = \frac{V_{u(design)}}{\phi R_n}")
+    st.latex(f"N = \\frac{{{res['V_target']:,.2f}}}{{{res['phiRn_bolt']:,.2f}}} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\text{{Use }} {res['Bolt Qty']} \\text{{ pcs.}}")
+    
+    # 3.4 Plate Dimension
+    st.markdown("**3.4 ขนาดแผ่นเหล็กเดือย (End Plate):**")
+    st.write(f"- Spacing (3d): {3*bolt_dia} mm")
+    st.write(f"- Edge Distance (1.5d): {1.5*bolt_dia} mm")
+    st.write(f"- **Total Plate Height:** `{res['Plate Len']:.2f} cm`")
+
+    st.markdown("---")
+
+    # --- PART 4: Safe Span Analysis ---
+    st.subheader("4. การวิเคราะห์ระยะปลอดภัย (Safe Span Analysis)")
+    st.markdown("สมมติให้แรงเฉือน $V_u$ เกิดจากแรงกระทำแผ่กระจายสม่ำเสมอ ($w$) บนคานช่วงเดียว")
+    st.info("Assumption: $V_u = wL/2$ (Reaction Force)")
+
+    # 4.1 Moment Limit
+    st.markdown("#### 4.1 ตรวจสอบโมเมนต์ดัด ($L_{moment}$)")
+    st.latex(r"M_n = Z_x \times F_y")
+    st.latex(f"M_n = {section['Zx']} \\times {Fy} = {section['Zx']*Fy:,.0f} \\, kg\\cdot cm")
+    
+    st.markdown("จากความสัมพันธ์ $M = V_u \cdot L / 4$ (ที่กลางคาน):")
+    st.latex(r"L_{max} = \frac{4 \times M_n}{V_u}")
+    st.latex(f"L_{{moment}} = \\frac{{4 \\times {section['Zx']*Fy:,.0f}}}{{{res['V_target']:,.2f}}} = {res['L_crit_moment']*100:,.2f} \\, cm")
+    st.success(f"📌 Limit by Moment: **{res['L_crit_moment']:.2f} m**")
+
+    # 4.2 Deflection Limit
+    st.markdown("#### 4.2 ตรวจสอบการแอ่นตัว ($L_{defl}$)")
+    st.markdown("กำหนดให้การแอ่นตัวสูงสุดไม่เกิน $L/360$")
+    st.latex(r"L^2 = \frac{384 \times E \times I_x}{3600 \times V_u}")
+    
+    numerator = 384 * E * section['Ix']
+    denominator = 3600 * res['V_target']
+    l_sq = numerator/denominator if denominator > 0 else 0
+    
+    st.latex(f"L^2 = \\frac{{384 \\times {E:.2e} \\times {section['Ix']}}}{{3600 \\times {res['V_target']:,.2f}}} = {l_sq:,.2f}")
+    st.success(f"📌 Limit by Deflection: **{res['L_crit_defl']:.2f} m**")
+
+    st.markdown("---")
+    
+    # --- PART 5: Conclusion ---
+    st.subheader("✅ สรุปผลการคำนวณ (Conclusion)")
+    
+    res_col1, res_col2 = st.columns(2)
+    with res_col1:
+        st.metric("Bolt Quantity", f"{res['Bolt Qty']} pcs", f"Dia M{bolt_dia}")
+        st.metric("Shear Capacity (Beam)", f"{res['Vn_beam']:,.0f} kg")
+    with res_col2:
+        st.metric("Safe Max Span", f"{res['L_safe']:.2f} m", "Controls Design")
+        st.metric("Governing Limit", "Moment" if res['L_crit_moment'] < res['L_crit_defl'] else "Deflection")
+
+    st.warning("**หมายเหตุ:** การคำนวณนี้เป็นรายการคำนวณเบื้องต้นสำหรับจุดต่อรับแรงเฉือน (Shear Connection) เท่านั้น วิศวกรควรตรวจสอบรายละเอียดรอยเชื่อม (Weld) และการวิบัติแบบ Block Shear เพิ่มเติมตามมาตรฐาน")
