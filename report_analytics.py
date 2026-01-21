@@ -21,10 +21,9 @@ FV_WELD = 1470
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
     Renders the Structural Analytics Dashboard.
-    - Version 34.0: 
-        1. Fixed 'Zoom' functionality (enabled scrollZoom).
-        2. Fixed 'Distorted Graph' by capping the Y-axis view to reasonable limits
-           (preventing infinity values at span=0 from flattening the curve).
+    - Version 35.0: 
+        1. Authentic Shading: Moment zone is shaded UNDER the curve (fill_tozeroy), mimicking Matplotlib style.
+        2. Constraints: Axes are locked to non-negative values (rangemode='nonnegative').
     """
     
     st.markdown("## 🏗️ Structural Optimization Dashboard")
@@ -74,7 +73,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         while not is_safe and req_bolts <= 24:
             plate_h_cm = math.ceil(((req_bolts - 1) * pitch_cm) + (2 * edge_cm))
             
-            # Simplified Checks
+            # Checks
             Rn_bolt = req_bolts * FV_BOLT * (3.14159 * bolt_d_cm**2 / 4)
             Lc_edge = edge_cm - hole_d_cm/2; Lc_inner = pitch_cm - hole_d_cm
             Rn_bear = (min(1.2*Lc_edge*t_plate_cm*FU_PLATE, 2.4*bolt_d_cm*t_plate_cm*FU_PLATE) + 
@@ -139,7 +138,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         hide_index=True
     )
 
-    # --- 3. INTERACTIVE GRAPH (FIXED) ---
+    # --- 3. INTERACTIVE GRAPH (REFINED SHADING) ---
     st.divider()
     st.subheader("🔬 Interactive Analysis Graph")
     
@@ -157,8 +156,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     K_derived = L_end * 8 * M_derived if M_derived > 0 else 0
 
     max_span = max(10, L_end * 1.5)
-    # Start form 0.2m to avoid infinity spike at 0
-    spans = np.linspace(0.2, max_span, 500) 
+    spans = np.linspace(0.1, max_span, 500)
     
     ws = (2 * V_graph) / spans 
     wm = (8 * M_derived) / (spans**2) 
@@ -168,44 +166,63 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     # === PLOTLY SETUP ===
     fig = go.Figure()
 
-    # Limit Lines
+    # 1. Limit Lines
     fig.add_trace(go.Scatter(x=spans, y=ws, mode='lines', name='Shear Limit (Web)', line=dict(color='#9B59B6', dash='dot')))
     fig.add_trace(go.Scatter(x=spans, y=wm, mode='lines', name='Moment Limit', line=dict(color='#E74C3C', dash='dash')))
     fig.add_trace(go.Scatter(x=spans, y=wd, mode='lines', name='Deflection Limit', line=dict(color='#2ECC71', dash='dashdot')))
     
-    # Safe Envelope
+    # 2. Safe Envelope
     fig.add_trace(go.Scatter(x=spans, y=w_safe, mode='lines', name='Safe Load Envelope', line=dict(color='#2C3E50', width=4)))
 
-    # Zones
-    if L_start > 0:
-        fig.add_vrect(x0=0, x1=L_start, fillcolor="#9B59B6", opacity=0.1, 
-                      layer="below", line_width=0, annotation_text="Shear", annotation_position="top left")
-    
+    # 3. Authentic Shading (Area Under Curve)
+    # 3A. Moment Zone Shading
     if L_end > L_start:
-        # Fixed 'inside top right'
-        fig.add_vrect(x0=L_start, x1=L_end, fillcolor="#E74C3C", opacity=0.15, 
-                      layer="below", line_width=0, annotation_text="Moment", annotation_position="inside top right")
+        # Create a mask for the Moment Zone range
+        mask_moment = (spans >= L_start) & (spans <= L_end)
+        spans_moment = spans[mask_moment]
+        w_safe_moment = w_safe[mask_moment]
+        
+        # Add a filled area ONLY under the curve in this zone
+        fig.add_trace(go.Scatter(
+            x=spans_moment, 
+            y=w_safe_moment, 
+            mode='none', # No line border
+            fill='tozeroy', # Fill down to X-axis
+            fillcolor='rgba(231, 76, 60, 0.2)', # Transparent Red
+            name='Moment Zone',
+            hoverinfo='skip'
+        ))
+        
+        # Add Vertical Lines for boundaries
+        fig.add_vline(x=L_start, line_width=1, line_dash="dash", line_color="#E74C3C")
+        fig.add_vline(x=L_end, line_width=1, line_dash="dash", line_color="#2ECC71")
+        
+        # Annotation (Inside Top Right)
+        y_anno = np.interp((L_start+L_end)/2, spans, w_safe) * 0.6
+        fig.add_annotation(x=(L_start+L_end)/2, y=y_anno, text="Moment Zone", showarrow=False, font=dict(color="#C0392B"))
 
-    # === INTELLIGENT Y-AXIS SCALING ===
-    # Calculate a reasonable Y-Max so the graph doesn't look flat
-    # We take the safe load at Span = 1.0m as a reference benchmark
-    y_benchmark = np.interp(1.0, spans, w_safe)
-    y_max_view = y_benchmark * 1.5 if y_benchmark > 0 else V_graph
+    # 3B. Shear Zone Shading (Full height is standard for Shear, but we can make it subtle)
+    if L_start > 0:
+        fig.add_vrect(x0=0, x1=L_start, fillcolor="#9B59B6", opacity=0.1, layer="below", line_width=0)
+        fig.add_annotation(x=L_start/2, y=V_graph*0.1, text="Shear", showarrow=False, font=dict(color="#8E44AD"))
+
+    # 4. Axes & Layout (Prevent Negative)
+    y_max_view = np.interp(1.0, spans, w_safe) * 1.5 if np.interp(1.0, spans, w_safe) > 0 else V_graph
     
     fig.update_layout(
         title=f"Critical Limit State Diagram: {selected_name}",
         xaxis_title="<b>Span Length (m)</b>",
         yaxis_title="<b>Safe Uniform Load (kg/m)</b>",
-        yaxis_range=[0, y_max_view],  # <-- CLIP Y-AXIS HERE
-        xaxis_range=[0, max_span],
         template="plotly_white",
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         height=550
     )
+    
+    # --- KEY FIX: Prevent Negative Scrolling ---
+    fig.update_xaxes(range=[0, max_span], rangemode="nonnegative", constrain="domain")
+    fig.update_yaxes(range=[0, y_max_view], rangemode="nonnegative", constrain="domain")
 
-    # === ENABLE ZOOM & TOOLS ===
-    # 'scrollZoom': True makes the mouse wheel zoom in/out
     st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
     
     c1, c2, c3 = st.columns(3)
