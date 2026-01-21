@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 52.0 (Core Engine + Shop Drawing Only)
+# Version: 52.1 (Fix Argument Error + Auto-Link Analytics)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -7,7 +7,7 @@ import matplotlib.patches as patches
 import math
 
 # =========================================================
-# 🏗️ 1. DATABASE & PROPERTIES (Shareable)
+# 🏗️ 1. DATABASE & PROPERTIES
 # =========================================================
 def get_standard_sections():
     return [
@@ -190,10 +190,14 @@ def draw_professional_shop_drawing(res):
     return fig
 
 # =========================================================
-# 🖥️ 4. SINGLE REPORT RENDERER
+# 🖥️ 4. APP RENDERER
 # =========================================================
-def render_report_tab():
-    st.markdown("### 🏗️ Structural Calculation Workbench (Single Beam)")
+def render_report_tab(beam_data=None, conn_data=None):
+    """
+    ฟังก์ชันหลักที่ App.py เรียกใช้
+    รับ args: beam_data, conn_data (เพื่อ Compatibility ไม่ให้ Error แต่ไม่ได้ใช้ค่าข้างใน)
+    """
+    st.markdown("### 🏗️ Structural Calculation Workbench (Split Modules)")
     
     with st.expander("📂 ดูตารางเหล็กทั้งหมด", expanded=False):
         st.dataframe(get_full_database_df(), use_container_width=True, hide_index=True)
@@ -220,18 +224,11 @@ def render_report_tab():
         st.markdown(f"- Bolts Req: `{res['Bolt Qty']} pcs` (M{int(res['DB'])})")
     with c_right:
         st.pyplot(draw_professional_shop_drawing(res))
-        
-    return load_pct, bolt_dia, load_case, factor # Export params for analytics
-
-if __name__ == "__main__":
-    st.set_page_config(page_title="Structural Workbench", layout="wide")
-    # Run the single report
-    params = render_report_tab()
     
-    # Import and run analytics below (Optional - if running as one app)
+    # 🔗 AUTO LINK: เรียก Analytics ให้ทำงานต่อเลย
     st.divider()
     try:
         import report_analytics
-        report_analytics.render_analytics_section(*params)
+        report_analytics.render_analytics_section(load_pct, bolt_dia, load_case, factor)
     except ImportError:
-        st.info("💡 สร้างไฟล์ report_analytics.py เพื่อดู Diagram และ Comparative Table")
+        st.warning("⚠️ ไม่พบไฟล์ report_analytics.py กรุณาสร้างไฟล์เพื่อดู Analytics")
