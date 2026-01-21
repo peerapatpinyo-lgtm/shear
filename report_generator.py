@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 36.0 (Professional Shop Drawing + X & Y Dimensions)
+# Version: 37.0 (Professional Shop Drawing + Deflection Limit Check)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -76,29 +76,87 @@ def get_load_case_factor(case_name):
 
 def get_derivation_text(case_name):
     if case_name == "Simple Beam (Uniform Load)":
-        return ("* **Support:** Simple Support\n* **Load:** Uniform Distributed Load\n* **Proof:** $V = wL/2 \\rightarrow M = wL^2/8 \\rightarrow \\mathbf{M = VL/4}$\n* **Factor:** $\\mathbf{4.0}$")
+        return ("* **Support:** Simple Support\n* **Load:** Uniform Distributed Load\n* **Proof:** $V = wL/2 \\rightarrow M = wL^2/8 \\rightarrow \\mathbf{M = VL/4}$")
     elif case_name == "Simple Beam (Point Load @Center)":
-        return ("* **Support:** Simple Support\n* **Load:** Point Load at Center\n* **Proof:** $V = P/2 \\rightarrow M = PL/4 \\rightarrow \\mathbf{M = VL/2}$\n* **Factor:** $\\mathbf{2.0}$")
+        return ("* **Support:** Simple Support\n* **Load:** Point Load at Center\n* **Proof:** $V = P/2 \\rightarrow M = PL/4 \\rightarrow \\mathbf{M = VL/2}$")
     elif case_name == "Cantilever (Uniform Load)":
-        return ("* **Support:** Cantilever (Fixed)\n* **Load:** Uniform Distributed Load\n* **Proof:** $V = wL \\rightarrow M = wL^2/2 \\rightarrow \\mathbf{M = VL/2}$\n* **Factor:** $\\mathbf{2.0}$")
+        return ("* **Support:** Cantilever (Fixed)\n* **Load:** Uniform Distributed Load\n* **Proof:** $V = wL \\rightarrow M = wL^2/2 \\rightarrow \\mathbf{M = VL/2}$")
     elif case_name == "Cantilever (Point Load @Tip)":
-        return ("* **Support:** Cantilever (Fixed)\n* **Load:** Point Load at Tip\n* **Proof:** $V = P \\rightarrow M = PL \\rightarrow \\mathbf{M = VL}$\n* **Factor:** $\\mathbf{1.0}$")
+        return ("* **Support:** Cantilever (Fixed)\n* **Load:** Point Load at Tip\n* **Proof:** $V = P \\rightarrow M = PL \\rightarrow \\mathbf{M = VL}$")
     return ""
 
 def calculate_zx(h, b, tw, tf):
     h, b, tw, tf = h/10, b/10, tw/10, tf/10 
     return (b*tf*(h-tf)) + (tw*(h-2*tf)**2/4)
 
-def calculate_connection(props, load_percent, bolt_dia, span_factor):
+def calculate_ix(h, b, tw, tf):
+    # Calculate Moment of Inertia (Ix) in cm4 from mm dimensions
+    h, b, tw, tf = h/10, b/10, tw/10, tf/10
+    # I = (BH^3 - bh^3)/12
+    outer_I = (b * h**3) / 12
+    inner_w = b - tw
+    inner_h = h - (2*tf)
+    inner_I = (inner_w * inner_h**3) / 12
+    return outer_I - inner_I
+
+def calculate_deflection_limit(Ix, V_target, case_name):
+    # Calculate max span (L) based on deflection limit L/360
+    # E for Steel = 2,040,000 ksc
+    E = 2040000 
+    Reaction = V_target # kg (This is the design reaction)
+    Limit_Factor = 360 # L/360
+    
+    # Derivation from Delta = L/360
+    # 1. Simple Uniform: Delta = 5wL^4/384EI. Reaction R = wL/2 -> w = 2R/L
+    #    Delta = 5(2R/L)L^4/384EI = 10RL^3/384EI = 5RL^3/192EI
+    #    Set 5RL^3/192EI = L/360 -> L^2 = (192*E*I) / (5*R*360)
+    
+    coeff = 0
+    if case_name == "Simple Beam (Uniform Load)":
+        coeff = 192 / (5 * Limit_Factor)
+    elif case_name == "Simple Beam (Point Load @Center)":
+        # Delta = PL^3/48EI. R = P/2 -> P = 2R
+        # Delta = 2RL^3/48EI = RL^3/24EI
+        # RL^3/24EI = L/360 -> L^2 = (24*E*I) / (R*360)
+        coeff = 24 / Limit_Factor
+    elif case_name == "Cantilever (Uniform Load)":
+        # Delta = wL^4/8EI. R = wL -> w = R/L
+        # Delta = RL^3/8EI
+        # RL^3/8EI = L/360 -> L^2 = (8*E*I) / (R*360)
+        coeff = 8 / Limit_Factor
+    elif case_name == "Cantilever (Point Load @Tip)":
+        # Delta = PL^3/3EI. R = P
+        # Delta = RL^3/3EI
+        # RL^3/3EI = L/360 -> L^2 = (3*E*I) / (R*360)
+        coeff = 3 / Limit_Factor
+        
+    if Reaction > 0 and coeff > 0:
+        L_sq = (coeff * E * Ix) / Reaction
+        return math.sqrt(L_sq) / 100.0 # Convert cm to m
+    return 0
+
+def calculate_connection(props, load_percent, bolt_dia, span_factor, case_name):
     h, tw, fy, fu = props['h'], props['tw'], props['Fy'], props['Fu']
     b, tf = props.get('b', h/2), props.get('tf', tw*1.5)
+    
     Aw_cm2 = (h/10)*(tw/10) 
     Vn_beam = 0.60 * fy * Aw_cm2
     V_target = (load_percent/100) * Vn_beam
+    
+    # Moment Capacity Check (Strength)
     Zx = calculate_zx(h, b, tw, tf)
     Mn_beam = fy * Zx
     phiMn = 0.90 * Mn_beam
-    L_crit = (span_factor * (phiMn / V_target)) / 100.0 if V_target > 0 else 0
+    L_crit_moment = (span_factor * (phiMn / V_target)) / 100.0 if V_target > 0 else 0
+    
+    # Deflection Check (Serviceability)
+    Ix = calculate_ix(h, b, tw, tf)
+    L_crit_defl = calculate_deflection_limit(Ix, V_target, case_name)
+    
+    # Safe Span (Min of both)
+    L_safe = min(L_crit_moment, L_crit_defl) if L_crit_defl > 0 else L_crit_moment
+    
+    # Bolt Calc
     DB_mm = float(bolt_dia)
     Ab_cm2 = 3.1416 * (DB_mm/10)**2 / 4
     Fnv = 3300
@@ -114,61 +172,57 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor):
     Rn_web_2 = 2.4 * (DB_mm/10) * (tw/10) * fu
     Rn_web = 0.75 * min(Rn_web_1, Rn_web_2)
     phiRn_bolt = min(Rn_shear, Rn_pl, Rn_web)
+    
     if phiRn_bolt > 0:
         n_req = V_target / phiRn_bolt
         n_bolts = max(2, math.ceil(n_req))
     else:
         n_bolts = 99
+        
     control_mode = "Shear"
     if Rn_pl < Rn_shear and Rn_pl < Rn_web: control_mode = "Plate Bear"
     if Rn_web < Rn_shear and Rn_web < Rn_pl: control_mode = "Web Bear"
     spacing = 7.0
     L_plate = (2*Le_cm) + ((n_bolts-1)*spacing)
+    
     return {
-        "Section": props['name'], "h": h, "tw": tw, "Fy": fy, "Fu": fu, "Aw": Aw_cm2, "Zx": Zx,
-        "Vn_beam": Vn_beam, "V_target": V_target, "L_crit": L_crit, "Mn_beam": Mn_beam,
+        "Section": props['name'], "h": h, "tw": tw, "Fy": fy, "Fu": fu, "Aw": Aw_cm2, 
+        "Zx": Zx, "Ix": Ix,
+        "Vn_beam": Vn_beam, "V_target": V_target, 
+        "L_crit_moment": L_crit_moment, "L_crit_defl": L_crit_defl, "L_safe": L_safe,
+        "Mn_beam": Mn_beam,
         "DB": DB_mm, "Ab": Ab_cm2, "Rn_shear": Rn_shear, "Lc": Lc_cm, "Rn_pl": Rn_pl, "Rn_web": Rn_web,
-        "Rn_pl_1": Rn_pl_1, "Rn_pl_2": Rn_pl_2, "Rn_web_1": Rn_web_1, "Rn_web_2": Rn_web_2,
         "phiRn_bolt": phiRn_bolt, "Bolt Qty": n_bolts, "Control By": control_mode,
         "Plate Len": L_plate, "Le": Le_cm, "S": spacing
     }
 
 # =========================================================
-# 🎨 3. PROFESSIONAL SHOP DRAWING (X & Y Axis)
+# 🎨 3. DRAWING (Updated with X & Y Dimensions)
 # =========================================================
 def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spacing_cm):
-    # 1. Setup Canvas (Standard Blueprint Ratio)
     fig, ax = plt.subplots(figsize=(5, 7.5))
-    
-    # Styling Constants
     COLOR_OBJ = '#2C3E50' 
     COLOR_DIM = '#E74C3C' 
     COLOR_CENTER = '#95A5A6'
     LW_OBJ = 2.0
     LW_DIM = 1.0
     
-    # Geometry Calculation
     web_w_draw = 200 
     h_draw_area = h_beam + 120
     plate_w = 100
     plate_x = (web_w_draw - plate_w) / 2
     plate_y_start = (h_beam - plate_len_mm) / 2 + 60
     
-    # --- DRAWING OBJECTS ---
-    # 2. Beam Web
     web_rect = patches.Rectangle((0, 0), web_w_draw, h_draw_area, linewidth=0, facecolor='#ECF0F1', zorder=1)
     ax.add_patch(web_rect)
     ax.text(10, h_draw_area - 20, "BEAM WEB (ELEVATION)", fontsize=9, color=COLOR_OBJ, fontweight='bold')
     
-    # 3. Shear Plate
     plate_rect = patches.Rectangle((plate_x, plate_y_start), plate_w, plate_len_mm, linewidth=LW_OBJ, edgecolor=COLOR_OBJ, facecolor='#D6EAF8', zorder=2)
     ax.add_patch(plate_rect)
     
-    # 4. Bolts & Centerlines
     bolt_x_center = plate_x + (plate_w / 2)
     bolt_y_top = plate_y_start + plate_len_mm - (le_cm*10)
     
-    # Vertical Centerlines
     ax.vlines(web_w_draw/2, 0, h_draw_area, colors=COLOR_CENTER, linestyles='-.', linewidth=0.8, zorder=1.5) 
     ax.vlines(bolt_x_center, plate_y_start-30, plate_y_start+plate_len_mm+10, colors=COLOR_CENTER, linestyles='-.', linewidth=0.8, zorder=1.5) 
 
@@ -181,7 +235,6 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
         ax.hlines(curr_y, bolt_x_center-15, bolt_x_center+15, colors=COLOR_CENTER, linestyles='-.', linewidth=0.5, zorder=3)
         curr_y -= (spacing_cm*10)
 
-    # --- DIMENSIONING ---
     def draw_dim_arrow(y_start, y_end, x_pos, text_val, label_prefix="", orient='v'):
         if orient == 'v':
             ax.annotate(text='', xy=(x_pos, y_start), xytext=(x_pos, y_end), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM))
@@ -191,41 +244,32 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
             ax.plot([plate_x+plate_w, x_pos+2], [y_start, y_start], color=COLOR_DIM, lw=0.5, ls=':')
             ax.plot([plate_x+plate_w, x_pos+2], [y_end, y_end], color=COLOR_DIM, lw=0.5, ls=':')
         else:
-            # Horizontal Arrow (for X-Axis)
             ax.annotate(text='', xy=(y_start, x_pos), xytext=(y_end, x_pos), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM))
             mid_x = (y_start + y_end) / 2
             txt = f"{int(text_val)}"
             ax.text(mid_x, x_pos - 8, txt, color=COLOR_DIM, fontsize=9, ha='center', va='top')
             
-    # 5.1 Y-Axis Dimensions (Right Side)
     dim_x_offset = plate_x + plate_w + 25
     draw_dim_arrow(plate_y_start + plate_len_mm, bolt_ys[0], dim_x_offset, le_cm*10, "Le", 'v')
     for i in range(len(bolt_ys)-1):
         draw_dim_arrow(bolt_ys[i], bolt_ys[i+1], dim_x_offset, spacing_cm*10, "S", 'v')
     draw_dim_arrow(bolt_ys[-1], plate_y_start, dim_x_offset, le_cm*10, "Le", 'v')
     
-    # 5.2 X-Axis Dimensions (Bottom Side) - NEW! 🆕
     dim_y_horz = plate_y_start - 20
-    # Left Edge to Center
     draw_dim_arrow(plate_x, bolt_x_center, dim_y_horz, plate_w/2, "", 'h')
-    # Center to Right Edge
     draw_dim_arrow(bolt_x_center, plate_x+plate_w, dim_y_horz, plate_w/2, "", 'h')
     
-    # Extension lines for X-axis
     ax.plot([plate_x, plate_x], [plate_y_start, dim_y_horz-2], color=COLOR_DIM, lw=0.5, ls=':')
     ax.plot([bolt_x_center, bolt_x_center], [plate_y_start, dim_y_horz-2], color=COLOR_DIM, lw=0.5, ls=':')
     ax.plot([plate_x + plate_w, plate_x + plate_w], [plate_y_start, dim_y_horz-2], color=COLOR_DIM, lw=0.5, ls=':')
 
-    # 5.3 Total Height Dimension (Outer)
     outer_dim_x = dim_x_offset + 40
     ax.annotate(text='', xy=(outer_dim_x, plate_y_start), xytext=(outer_dim_x, plate_y_start + plate_len_mm), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_OBJ, lw=LW_DIM))
     ax.text(outer_dim_x + 10, plate_y_start + plate_len_mm/2, f"TOTAL PL = {int(plate_len_mm)}", color=COLOR_OBJ, fontsize=10, fontweight='bold', rotation=90, va='center')
 
-    # 6. Labels & Title
     ax.text(plate_x + plate_w/2, plate_y_start - 50, f"PL-100x{int(plate_len_mm)}x10mm", fontsize=10, color=COLOR_OBJ, ha='center', fontweight='bold')
     ax.text(plate_x + plate_w/2, plate_y_start - 65, f"({n_bolts}-M{int(bolt_dia)} A325 Bolts)", fontsize=9, color=COLOR_OBJ, ha='center')
 
-    # Final Cleanup
     ax.set_xlim(0, web_w_draw + 100)
     ax.set_ylim(0, h_draw_area)
     ax.set_aspect('equal')
@@ -255,7 +299,7 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
     # Calculate
     selected_props = next(s for s in all_sections if s['name'] == selected_sec_name)
     factor = get_load_case_factor(load_case)
-    res = calculate_connection(selected_props, load_pct, bolt_dia, factor)
+    res = calculate_connection(selected_props, load_pct, bolt_dia, factor, load_case)
     proof_text = get_derivation_text(load_case)
 
     st.divider()
@@ -269,8 +313,8 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
             st.markdown(f"""
 #### 1. Design Parameters
 * **Section:** {res['Section']}
-* **Method:** ASD (Allowable Stress Design)
-* **Bolt:** M{int(res['DB'])} (A325), Hole $\\phi = {int(res['DB']+2)}$ mm
+* **Check Limit:** Deflection < L/360
+* **Inertia ($I_x$):** {res['Ix']:,.1f} cm$^4$
 
 ---
 #### 2. Load Calculation
@@ -279,37 +323,26 @@ $$ V_u = {load_pct/100:.2f} \\times V_n = \\mathbf{{{res['V_target']:,.2f} \\; k
 
 ---
 #### 3. Bolt Capacity Check
-**3.1 Shear Capacity:**
-$$ \\phi R_n = 0.75(3300)({res['Ab']:.2f}) = \\mathbf{{{res['Rn_shear']:,.0f} \\; kg/bolt}} $$
-
-**3.2 Bearing (Plate t=10mm):**
-$$ R_{{pl}} = 0.75 \\times \\min({res['Rn_pl_1']:,.0f}, {res['Rn_pl_2']:,.0f}) = {res['Rn_pl']:,.0f} \\; kg $$
-
-**3.3 Bearing (Web t={res['tw']}mm):**
-$$ R_{{web}} = 0.75 \\times \\min({res['Rn_web_1']:,.0f}, {res['Rn_web_2']:,.0f}) = {res['Rn_web']:,.0f} \\; kg $$
-
-**Controlling Capacity:**
 $$ \\phi R_{{bolt}} = \\min({res['Rn_shear']:,.0f}, {res['Rn_pl']:,.0f}, {res['Rn_web']:,.0f}) = \\mathbf{{{res['phiRn_bolt']:,.0f} \\; kg}} $$
-*(Control by: {res['Control By']})*
-
 $$ n = {res['V_target']:,.0f} / {res['phiRn_bolt']:,.0f} = {res['V_target']/res['phiRn_bolt']:.2f} \\rightarrow \\mathbf{{{res['Bolt Qty']} \\; pcs}} $$
 
 ---
-#### 4. Critical Span Check ($L_{{crit}}$)
-**4.1 Theory & Factor**
-{proof_text}
+#### 4. Critical Span Check ($L_{{max}}$)
+**4.1 Moment Limit (Strength)**
+$$ \\phi M_n = 0.90 F_y Z_x = {res['Mn_beam']*0.9/100:,.0f} \\; kg.m $$
+$$ L_{{moment}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit_moment']:.2f} \\; m}} $$
 
-**4.2 Section Properties**
-$$ Z_x = {res['Zx']:.2f} \\; cm^3 $$
-$$ \\phi M_n = 0.90 F_y Z_x = 0.90({res['Fy']})({res['Zx']:.2f}) = {res['Mn_beam']*0.9/100:,.0f} \\; kg.m $$
+**4.2 Deflection Limit (L/360)**
+$$ I_x = {res['Ix']:,.0f} \\; cm^4, \\; E = 2.04 \\times 10^6 \\; ksc $$
+$$ L_{{deflect}} \\; (Allow \\; L/360) = \\mathbf{{{res['L_crit_defl']:.2f} \\; m}} $$
 
-**4.3 Limit Calculation**
-$$ L_{{crit}} = {factor} \\times \\frac{{\\phi M_n}}{{V_u}} = {factor} \\times \\frac{{{res['Mn_beam']*0.9:,.0f}}}{{{res['V_target']:,.0f}}} = \\mathbf{{{res['L_crit']:.2f} \\; m}} $$
+**4.3 Conclusion**
+$$ L_{{safe}} = \\min({res['L_crit_moment']:.2f}, {res['L_crit_defl']:.2f}) = \\mathbf{{{res['L_safe']:.2f} \\; m}} $$
+*(Control by: {'Moment Capacity' if res['L_crit_moment'] < res['L_crit_defl'] else 'Deflection Limit'})*
 """)
 
     with col_draw:
         st.subheader("📐 Shop Drawing")
-        # Call the new professional drawing function with X-axis dimensions
         fig = draw_connection_sketch(res['h'], res['Bolt Qty'], float(bolt_dia), res['Plate Len']*10, res['Le'], res['S'])
         st.pyplot(fig)
 
@@ -320,18 +353,20 @@ $$ L_{{crit}} = {factor} \\times \\frac{{\\phi M_n}}{{V_u}} = {factor} \\times \
     if st.checkbox("Show Table", value=True):
         batch_results = []
         for sec in all_sections:
-            r = calculate_connection(sec, load_pct, bolt_dia, factor)
-            actual_cap = r['Bolt Qty'] * r['phiRn_bolt']
-            util = (r['V_target'] / actual_cap) * 100 if actual_cap > 0 else 0
+            r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
+            
+            # Format logic for control
+            ctrl = "Moment" if r['L_crit_moment'] < r['L_crit_defl'] else "Deflect"
             
             batch_results.append({
                 "Steel Section": r['Section'],
-                "Design Vu (Ton)": r['V_target']/1000,
-                "L_crit (m)": r['L_crit'],
-                "Bolt Qty": r['Bolt Qty'],
-                "Plate Size": f"100x{int(r['Plate Len']*10)}x10",
-                "Utilization": util,
-                "Control By": r['Control By']
+                "Vu (Ton)": r['V_target']/1000,
+                "L(Moment)": r['L_crit_moment'],
+                "L(Deflect)": r['L_crit_defl'],
+                "Safe Span": r['L_safe'],
+                "Control": ctrl,
+                "Bolts": r['Bolt Qty'],
+                "Plate": f"100x{int(r['Plate Len']*10)}x10"
             })
             
         df = pd.DataFrame(batch_results)
@@ -339,11 +374,11 @@ $$ L_{{crit}} = {factor} \\times \\frac{{\\phi M_n}}{{V_u}} = {factor} \\times \
             df,
             use_container_width=True,
             column_config={
-                "Design Vu (Ton)": st.column_config.NumberColumn("Vu (Ton)", format="%.2f"),
-                "L_crit (m)": st.column_config.NumberColumn("Max Span (m)", format="%.2f"),
-                "Bolt Qty": st.column_config.NumberColumn("Bolt Qty", format="%d"),
-                "Utilization": st.column_config.ProgressColumn("Eff.", format="%.0f%%", min_value=0, max_value=100),
-                "Plate Size": st.column_config.TextColumn("Plate Size (mm)"),
+                "Vu (Ton)": st.column_config.NumberColumn("Load (T)", format="%.2f"),
+                "L(Moment)": st.column_config.NumberColumn("L-Str (m)", format="%.2f", help="Max Length by Strength"),
+                "L(Deflect)": st.column_config.NumberColumn("L-Def (m)", format="%.2f", help="Max Length by L/360"),
+                "Safe Span": st.column_config.NumberColumn("Safe (m)", format="%.2f", help="Min of Strength & Deflection"),
+                "Bolts": st.column_config.NumberColumn("Bolts", format="%d"),
             },
             hide_index=True, height=500
         )
