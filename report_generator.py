@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 42.0 (Added 75% Shear Line)
+# Version: 43.0 (Senior Engineer Edition - Visualization Refined)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -252,7 +252,7 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
 # 🖥️ 4. RENDER UI & APP LOGIC
 # =========================================================
 def render_report_tab(beam_data=None, conn_data=None):
-    st.markdown("### 🖨️ Structural Calculation Workbench (v42.0)")
+    st.markdown("### 🖨️ Structural Calculation Workbench (v43.0)")
     
     # 1. Controls
     with st.container(border=True):
@@ -304,7 +304,7 @@ def render_report_tab(beam_data=None, conn_data=None):
     st.divider()
 
     # =====================================================
-    # 📊 NEW! DUAL AXIS CHART (Includes 75% Shear)
+    # 📊 NEW! DUAL AXIS CHART (Senior Engineer Edition)
     # =====================================================
     st.subheader("📊 แนวโน้มพฤติกรรมหน้าตัด (Strength vs Stiffness vs Shear)")
     
@@ -313,7 +313,7 @@ def render_report_tab(beam_data=None, conn_data=None):
     moments = []
     defls = []
     shears = [] 
-    shears_75 = [] # 🔥 New 75% List
+    shears_75 = [] 
     
     batch_results = [] # For Table
 
@@ -324,7 +324,7 @@ def render_report_tab(beam_data=None, conn_data=None):
         defls.append(r['L_crit_defl'])
         
         shears.append(r['Vn_beam']) 
-        shears_75.append(r['Vn_beam'] * 0.75) # 🔥 Calculate 75%
+        shears_75.append(r['Vn_beam'] * 0.75)
         
         # Data for Table
         ctrl = "Moment" if r['L_crit_moment'] < r['L_crit_defl'] else "Deflection"
@@ -345,12 +345,12 @@ def render_report_tab(beam_data=None, conn_data=None):
     ax1.set_xlabel('Section Size')
     ax1.set_ylabel('Safe Span Length (m)', color='#2C3E50', fontweight='bold')
     
-    l1 = ax1.plot(x_indices, moments, color='#E74C3C', linestyle='--', marker='o', markersize=4, label='Moment Limit (m)', alpha=0.8)
-    l2 = ax1.plot(x_indices, defls, color='#3498DB', linestyle='-', marker='s', markersize=4, label='Deflection Limit (m)', alpha=0.8)
+    l1 = ax1.plot(x_indices, moments, color='#E74C3C', linestyle='--', marker='o', markersize=4, label='Moment Limit (Strength)', alpha=0.8)
+    l2 = ax1.plot(x_indices, defls, color='#3498DB', linestyle='-', marker='s', markersize=4, label='Deflection Limit (Stiffness)', alpha=0.8)
     
-    # Fill Safe Area
+    # Fill Safe Area (Design Envelope)
     min_vals = np.minimum(moments, defls)
-    ax1.fill_between(x_indices, 0, min_vals, color='#2ECC71', alpha=0.2, label='Safe Span Zone')
+    ax1.fill_between(x_indices, 0, min_vals, color='#2ECC71', alpha=0.2, label='Design Envelope (Safe Zone)')
 
     # --- Right Axis (Shear - kg) ---
     ax2 = ax1.twinx()
@@ -359,33 +359,39 @@ def render_report_tab(beam_data=None, conn_data=None):
     # 100% Shear Line
     l3 = ax2.plot(x_indices, shears, color='#8E44AD', linestyle=':', linewidth=2, label='Shear Cap. (100%)', alpha=0.6)
     
-    # 🔥 75% Shear Line
+    # 75% Shear Line
     l4 = ax2.plot(x_indices, shears_75, color='#D2B4DE', linestyle='-.', linewidth=1.5, label='Shear Cap. (75%)', alpha=0.8)
 
     # Highlight Selected
     try:
         current_idx = [s['name'] for s in all_sections].index(selected_sec_name)
         ax1.axvline(x=current_idx, color='#F1C40F', linestyle='-', linewidth=2, alpha=0.5)
+        
+        # Add annotation for the user's specific point
+        safe_span = res['L_safe']
+        ax1.plot(current_idx, safe_span, 'r*', markersize=15, zorder=10)
+        ax1.text(current_idx, safe_span + 0.5, f" Max Span: {safe_span:.2f}m", color='#C0392B', fontweight='bold')
     except:
         pass
 
     # Combine Legends
     lns = l1 + l2 + l3 + l4
     labs = [l.get_label() for l in lns]
-    ax1.legend(lns, labs, loc='upper left')
+    ax1.legend(lns, labs, loc='upper left', frameon=True, fancybox=True, framealpha=0.9)
 
     # Styling
     ax1.set_xticks(x_indices)
     ax1.set_xticklabels(names, rotation=90, fontsize=8)
     ax1.grid(True, linestyle=':', alpha=0.5)
+    ax1.set_title(f"Structural Limit States Diagram: {load_case}", fontweight='bold', fontsize=12)
     
     st.pyplot(fig2)
     
     st.info("""
-    **คำอธิบายกราฟ (2 แกน):**
-    * 🔴🔵 **เส้นแดง/ฟ้า (แกนซ้าย - เมตร):** ดูความยาวที่รับได้
-    * 🟣 **เส้นม่วงเข้ม (แกนขวา - kg):** ความสามารถรับแรงเฉือนสูงสุด ($V_n$)
-    * 🟣 **เส้นม่วงอ่อน (แกนขวา - kg):** เส้น 75% ของแรงเฉือนสูงสุด (เอาไว้ดูระยะปลอดภัยหรือจุดใช้งานจริง)
+    **💡 มุมมองวิศวกรโครงสร้าง (Structural Insight):**
+    * **พื้นที่สีเขียว (Design Envelope):** คือพื้นที่ปลอดภัยที่ต้องอยู่ **"ใต้เส้นกราฟที่ต่ำที่สุด"** เสมอ เพราะโครงสร้างจะพังที่จุดที่อ่อนแอที่สุด (Weakest Link)
+    * **คานช่วงสั้น:** มักถูกควบคุมด้วยแรงเฉือน (Shear) หรือ โมเมนต์ (Strength)
+    * **คานช่วงยาว:** มักถูกควบคุมด้วยการแอ่นตัว (Deflection) สังเกตเส้นสีฟ้าจะต่ำกว่าเส้นสีแดงในช่วงท้ายๆ
     """)
 
     # =====================================================
