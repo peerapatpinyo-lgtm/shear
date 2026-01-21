@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 41.0 (With Shear Line & Data Table)
+# Version: 42.0 (Added 75% Shear Line)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -252,7 +252,7 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
 # 🖥️ 4. RENDER UI & APP LOGIC
 # =========================================================
 def render_report_tab(beam_data=None, conn_data=None):
-    st.markdown("### 🖨️ Structural Calculation Workbench (v41.0)")
+    st.markdown("### 🖨️ Structural Calculation Workbench (v42.0)")
     
     # 1. Controls
     with st.container(border=True):
@@ -304,7 +304,7 @@ def render_report_tab(beam_data=None, conn_data=None):
     st.divider()
 
     # =====================================================
-    # 📊 NEW! DUAL AXIS CHART (Includes Shear)
+    # 📊 NEW! DUAL AXIS CHART (Includes 75% Shear)
     # =====================================================
     st.subheader("📊 แนวโน้มพฤติกรรมหน้าตัด (Strength vs Stiffness vs Shear)")
     
@@ -312,7 +312,8 @@ def render_report_tab(beam_data=None, conn_data=None):
     names = []
     moments = []
     defls = []
-    shears = [] # New Shear Data
+    shears = [] 
+    shears_75 = [] # 🔥 New 75% List
     
     batch_results = [] # For Table
 
@@ -321,7 +322,9 @@ def render_report_tab(beam_data=None, conn_data=None):
         names.append(sec['name'].replace("H-", "")) 
         moments.append(r['L_crit_moment'])
         defls.append(r['L_crit_defl'])
-        shears.append(r['Vn_beam']) # Collect Shear Capacity
+        
+        shears.append(r['Vn_beam']) 
+        shears_75.append(r['Vn_beam'] * 0.75) # 🔥 Calculate 75%
         
         # Data for Table
         ctrl = "Moment" if r['L_crit_moment'] < r['L_crit_defl'] else "Deflection"
@@ -352,7 +355,12 @@ def render_report_tab(beam_data=None, conn_data=None):
     # --- Right Axis (Shear - kg) ---
     ax2 = ax1.twinx()
     ax2.set_ylabel('Shear Capacity (kg)', color='#8E44AD', fontweight='bold')
-    l3 = ax2.plot(x_indices, shears, color='#8E44AD', linestyle=':', linewidth=2, label='Shear Capacity (kg)', alpha=0.6)
+    
+    # 100% Shear Line
+    l3 = ax2.plot(x_indices, shears, color='#8E44AD', linestyle=':', linewidth=2, label='Shear Cap. (100%)', alpha=0.6)
+    
+    # 🔥 75% Shear Line
+    l4 = ax2.plot(x_indices, shears_75, color='#D2B4DE', linestyle='-.', linewidth=1.5, label='Shear Cap. (75%)', alpha=0.8)
 
     # Highlight Selected
     try:
@@ -362,7 +370,7 @@ def render_report_tab(beam_data=None, conn_data=None):
         pass
 
     # Combine Legends
-    lns = l1 + l2 + l3
+    lns = l1 + l2 + l3 + l4
     labs = [l.get_label() for l in lns]
     ax1.legend(lns, labs, loc='upper left')
 
@@ -375,12 +383,13 @@ def render_report_tab(beam_data=None, conn_data=None):
     
     st.info("""
     **คำอธิบายกราฟ (2 แกน):**
-    * 🔴🔵 **เส้นแดง/ฟ้า (แกนซ้าย - เมตร):** ดูความยาวที่รับได้ (Moment/Deflection)
-    * 🟣 **เส้นม่วง (แกนขวา - kg):** ดูความสามารถในการรับแรงเฉือน ($V_n$) ยิ่งหน้าตัดใหญ่ เส้นนี้ยิ่งพุ่งสูง
+    * 🔴🔵 **เส้นแดง/ฟ้า (แกนซ้าย - เมตร):** ดูความยาวที่รับได้
+    * 🟣 **เส้นม่วงเข้ม (แกนขวา - kg):** ความสามารถรับแรงเฉือนสูงสุด ($V_n$)
+    * 🟣 **เส้นม่วงอ่อน (แกนขวา - kg):** เส้น 75% ของแรงเฉือนสูงสุด (เอาไว้ดูระยะปลอดภัยหรือจุดใช้งานจริง)
     """)
 
     # =====================================================
-    # 📋 DATA TABLE (Returned!)
+    # 📋 DATA TABLE
     # =====================================================
     st.markdown("##### 📋 ตารางสรุปผล (Summary Table)")
     
