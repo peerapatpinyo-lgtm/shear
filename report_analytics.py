@@ -21,9 +21,9 @@ FV_WELD = 1470
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
     Renders the Structural Analytics Dashboard.
-    - Version 36.0: 
-        1. Added 'Deflection Zone' (Green shading under curve).
-        2. Implemented Strict Axis Locking (rangemode='tozero') to prevent negative panning.
+    - Version 37.0: 
+        1. Fixed MISSING DATA: Brought back 'Moment Zone' span range into the table.
+        2. Retained all Graph features (Authentic shading, Zero-lock axes).
     """
     
     st.markdown("## 🏗️ Structural Optimization Dashboard")
@@ -115,11 +115,15 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     if not data_list: return
     df = pd.DataFrame(data_list)
 
-    # --- 2. TABLE ---
+    # --- 2. TABLE (FIXED: Added Moment Zone Column) ---
     st.subheader("📋 Specification Table")
+    
+    # Create formatted string column for display
+    df["Moment Zone (m)"] = df.apply(lambda x: f"{x['L_Start']:.2f} - {x['L_End']:.2f}", axis=1)
+
     st.dataframe(
         df[[
-            "Section", "V_Nominal", "V_Target", 
+            "Section", "V_Nominal", "Moment Zone (m)", # <-- Added Back
             "Bolt Spec", "Plate Size", "Weld Spec", 
             "Governing", "D/C Ratio"
         ]],
@@ -127,7 +131,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         column_config={
             "Section": st.column_config.TextColumn("Section", width="small"),
             "V_Nominal": st.column_config.NumberColumn("Shear Cap (Vn)", format="%.0f kg"),
-            "V_Target": st.column_config.NumberColumn(f"Load ({load_pct}%)", format="%.0f kg"),
+            "Moment Zone (m)": st.column_config.TextColumn("Moment Zone", width="medium"), # <-- Config
             "Bolt Spec": st.column_config.TextColumn("Bolts", width="small"),
             "Plate Size": st.column_config.TextColumn("Plate", width="medium"),
             "Weld Spec": st.column_config.TextColumn("Weld", width="small"),
@@ -138,7 +142,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         hide_index=True
     )
 
-    # --- 3. INTERACTIVE GRAPH (3 ZONES) ---
+    # --- 3. INTERACTIVE GRAPH ---
     st.divider()
     st.subheader("🔬 Interactive Analysis Graph")
     
@@ -171,18 +175,14 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     fig.add_trace(go.Scatter(x=spans, y=wm, mode='lines', name='Moment Limit', line=dict(color='#E74C3C', dash='dash')))
     fig.add_trace(go.Scatter(x=spans, y=wd, mode='lines', name='Deflection Limit', line=dict(color='#2ECC71', dash='dashdot')))
     
-    # 2. Safe Envelope (Main Curve)
+    # 2. Safe Envelope
     fig.add_trace(go.Scatter(x=spans, y=w_safe, mode='lines', name='Safe Load Envelope', line=dict(color='#2C3E50', width=4)))
 
-    # 3. ZONES SHADING (Area Under Curve)
-    
-    # A. Shear Zone (Purple Rectangle - Since it's flat)
+    # 3. ZONES SHADING
     if L_start > 0:
         fig.add_vrect(x0=0, x1=L_start, fillcolor="#9B59B6", opacity=0.1, layer="below", line_width=0)
-        # Annotation for Shear
         fig.add_annotation(x=L_start/2, y=V_graph*0.9, text="SHEAR", showarrow=False, font=dict(color="#8E44AD", size=10, weight="bold"))
 
-    # B. Moment Zone (Red Fill Under Curve)
     if L_end > L_start:
         mask_moment = (spans >= L_start) & (spans <= L_end)
         fig.add_trace(go.Scatter(
@@ -190,11 +190,9 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
             mode='none', fill='tozeroy', fillcolor='rgba(231, 76, 60, 0.2)', 
             name='Moment Zone', hoverinfo='skip'
         ))
-        # Annotation for Moment
         y_anno_m = np.interp((L_start+L_end)/2, spans, w_safe) * 0.5
         fig.add_annotation(x=(L_start+L_end)/2, y=y_anno_m, text="MOMENT", showarrow=False, font=dict(color="#C0392B", size=10, weight="bold"))
 
-    # C. Deflection Zone (Green Fill Under Curve) - NEW!
     if max_span > L_end:
         mask_defl = (spans >= L_end)
         fig.add_trace(go.Scatter(
@@ -202,12 +200,11 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
             mode='none', fill='tozeroy', fillcolor='rgba(46, 204, 113, 0.2)', 
             name='Deflection Zone', hoverinfo='skip'
         ))
-        # Annotation for Deflection
         x_anno_d = (L_end + max_span)/2
         y_anno_d = np.interp(x_anno_d, spans, w_safe) * 0.5
         fig.add_annotation(x=x_anno_d, y=y_anno_d, text="DEFLECTION", showarrow=False, font=dict(color="#27AE60", size=10, weight="bold"))
 
-    # Vertical Separators
+    # Separators
     if L_end > L_start:
         fig.add_vline(x=L_start, line_width=1, line_dash="dash", line_color="#E74C3C")
         fig.add_vline(x=L_end, line_width=1, line_dash="dash", line_color="#2ECC71")
@@ -226,8 +223,6 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         margin=dict(l=20, r=20, t=60, b=40)
     )
     
-    # --- HARD LOCK: rangemode="tozero" ---
-    # This forces the axis to ALWAYS start at 0, preventing negative panning.
     fig.update_xaxes(range=[0, max_span], rangemode="tozero", constrain="domain")
     fig.update_yaxes(range=[0, y_max_view], rangemode="tozero", constrain="domain")
 
