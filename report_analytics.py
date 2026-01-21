@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import math
-import plotly.graph_objects as go # <--- พระเอกของเราสำหรับการทำ Interactive Graph
+import plotly.graph_objects as go 
 
 # --- Module Integrity Check ---
 try:
@@ -21,9 +21,9 @@ FV_WELD = 1470
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
     Renders the Structural Analytics Dashboard.
-    - Version 33.0: 
-        1. Keeps Nominal Capacity (Vn) in table.
-        2. Upgrades Graph to PLOTLY for Zooming, Panning, and Hovering.
+    - Version 33.1: 
+        1. Fixed 'ValueError: Invalid annotation position' in Plotly.
+        2. Changed 'top center' to 'inside top right' for Moment Zone label.
     """
     
     st.markdown("## 🏗️ Structural Optimization Dashboard")
@@ -74,7 +74,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         while not is_safe and req_bolts <= 24:
             plate_h_cm = math.ceil(((req_bolts - 1) * pitch_cm) + (2 * edge_cm))
             
-            # 6 Checks (Simplified loop for brevity, same logic as before)
+            # 6 Checks
             Rn_bolt = req_bolts * FV_BOLT * (3.14159 * bolt_d_cm**2 / 4)
             Lc_edge = edge_cm - hole_d_cm/2; Lc_inner = pitch_cm - hole_d_cm
             Rn_bear = (min(1.2*Lc_edge*t_plate_cm*FU_PLATE, 2.4*bolt_d_cm*t_plate_cm*FU_PLATE) + 
@@ -157,7 +157,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     K_derived = L_end * 8 * M_derived if M_derived > 0 else 0
 
     max_span = max(10, L_end * 1.5)
-    spans = np.linspace(0.1, max_span, 500) # Increased resolution
+    spans = np.linspace(0.1, max_span, 500)
     
     ws = (2 * V_graph) / spans 
     wm = (8 * M_derived) / (spans**2) 
@@ -175,26 +175,30 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     fig.add_trace(go.Scatter(x=spans, y=wd, mode='lines', name='Deflection Limit', 
                              line=dict(color='#2ECC71', dash='dashdot')))
     
-    # 2. Safe Envelope (Thick Line)
+    # 2. Safe Envelope
     fig.add_trace(go.Scatter(x=spans, y=w_safe, mode='lines', name='Safe Load Envelope', 
                              line=dict(color='#2C3E50', width=4)))
 
-    # 3. Highlight Zones (Vertical Rectangles)
+    # 3. Highlight Zones (FIXED ERROR HERE)
     # Shear Zone (0 to L_start)
     if L_start > 0:
         fig.add_vrect(x0=0, x1=L_start, fillcolor="#9B59B6", opacity=0.1, 
-                      layer="below", line_width=0, annotation_text="Shear Zone", annotation_position="top left")
+                      layer="below", line_width=0, 
+                      annotation_text="Shear Zone", 
+                      annotation_position="top left") # "top left" is valid
     
     # Moment Zone (L_start to L_end)
     if L_end > L_start:
         fig.add_vrect(x0=L_start, x1=L_end, fillcolor="#E74C3C", opacity=0.15, 
-                      layer="below", line_width=0, annotation_text="Moment Zone", annotation_position="top center")
+                      layer="below", line_width=0, 
+                      annotation_text="Moment Zone", 
+                      annotation_position="inside top right") # CHANGED from "top center" (invalid) to "inside top right" (valid)
         
         # Add Vertical Line Markers
         fig.add_vline(x=L_start, line_width=1, line_dash="dash", line_color="#E74C3C")
         fig.add_vline(x=L_end, line_width=1, line_dash="dash", line_color="#2ECC71")
 
-    # 4. Layout Customization
+    # 4. Layout
     fig.update_layout(
         title=f"Critical Limit State Diagram: {selected_name}",
         xaxis_title="<b>Span Length (m)</b>",
@@ -202,7 +206,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         yaxis_range=[0, max(w_safe)*1.2],
         xaxis_range=[0, max_span],
         template="plotly_white",
-        hovermode="x unified", # Show all values when hovering
+        hovermode="x unified", 
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -216,7 +220,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     st.plotly_chart(fig, use_container_width=True)
     st.caption("💡 **Tip:** Click and drag on the graph to **Zoom**. Double-click to **Reset**. Hover to see values.")
     
-    # Summary Metrics below graph
+    # Summary
     c1, c2, c3 = st.columns(3)
     c1.info(f"**Max Capacity (Vn):** {row['V_Nominal']:,.0f} kg")
     c2.info(f"**Moment Zone:** {L_start:.2f} - {L_end:.2f} m")
