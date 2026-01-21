@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 48.0 (Fixed Error + Added Section Properties Table)
+# Version: 49.0 (Full Database Table + Section View Drawing)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,10 +8,10 @@ import numpy as np
 import math
 
 # =========================================================
-# 🏗️ 1. DATABASE
+# 🏗️ 1. DATABASE & PROPERTIES
 # =========================================================
 def get_standard_sections():
-    # ข้อมูลหน้าตัดมาตรฐาน
+    # ข้อมูลดิบ (Raw Data)
     return [
         {"name": "H-100x50x5x7",    "h": 100, "b": 50,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
         {"name": "H-100x100x6x8",   "h": 100, "b": 100, "tw": 6,  "tf": 8,  "Fy": 2500, "Fu": 4100},
@@ -20,6 +20,7 @@ def get_standard_sections():
         {"name": "H-150x75x5x7",    "h": 150, "b": 75,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
         {"name": "H-150x150x7x10",  "h": 150, "b": 150, "tw": 7,  "tf": 10, "Fy": 2500, "Fu": 4100},
         {"name": "H-175x90x5x8",    "h": 175, "b": 90,  "tw": 5,  "tf": 8,  "Fy": 2500, "Fu": 4100},
+        {"name": "H-175x175x7.5x11","h": 175, "b": 175, "tw": 7.5,"tf": 11, "Fy": 2500, "Fu": 4100},
         {"name": "H-200x100x5.5x8", "h": 200, "b": 100, "tw": 5.5,"tf": 8,  "Fy": 2500, "Fu": 4100},
         {"name": "H-200x200x8x12",  "h": 200, "b": 200, "tw": 8,  "tf": 12, "Fy": 2500, "Fu": 4100},
         {"name": "H-250x125x6x9",   "h": 250, "b": 125, "tw": 6,  "tf": 9,  "Fy": 2500, "Fu": 4100},
@@ -33,169 +34,183 @@ def get_standard_sections():
         {"name": "H-450x200x9x14",  "h": 450, "b": 200, "tw": 9,  "tf": 14, "Fy": 2500, "Fu": 4100},
         {"name": "H-500x200x10x16", "h": 500, "b": 200, "tw": 10, "tf": 16, "Fy": 2500, "Fu": 4100},
         {"name": "H-600x200x11x17", "h": 600, "b": 200, "tw": 11, "tf": 17, "Fy": 2500, "Fu": 4100},
+        {"name": "H-700x300x13x24", "h": 700, "b": 300, "tw": 13, "tf": 24, "Fy": 2500, "Fu": 4100},
         {"name": "H-800x300x14x26", "h": 800, "b": 300, "tw": 14, "tf": 26, "Fy": 2500, "Fu": 4100},
+        {"name": "H-900x300x16x28", "h": 900, "b": 300, "tw": 16, "tf": 28, "Fy": 2500, "Fu": 4100},
     ]
 
-# =========================================================
-# ⚙️ 2. CORE LOGIC
-# =========================================================
-def get_load_case_factor(case_name):
-    cases = {
-        "Simple Beam (Uniform Load)": 4.0,
-        "Simple Beam (Point Load @Center)": 2.0,
-        "Cantilever (Uniform Load)": 2.0,
-        "Cantilever (Point Load @Tip)": 1.0
-    }
-    return cases.get(case_name, 4.0)
-
-def calculate_properties(props):
-    # คำนวณ Properties พื้นฐานเพื่อแสดงในตาราง
+def calculate_full_properties(props):
+    # ฟังก์ชันคำนวณ Properties (ใช้สำหรับสร้างตารางรวม)
     h, b, tw, tf = props['h']/10, props['b']/10, props['tw']/10, props['tf']/10 # cm
     
-    # Area (cm2)
+    # Area
     A = (2 * b * tf) + ((h - 2*tf) * tw)
     
-    # Inertia Ix (cm4)
+    # Inertia Ix
     outer_I = (b * h**3) / 12
     inner_w = b - tw
     inner_h = h - (2*tf)
     inner_I = (inner_w * inner_h**3) / 12
     Ix = outer_I - inner_I
     
-    # Modulus Zx (cm3)
-    Zx = Ix / (h/2) # Elastic Modulus (Sx) actually, but often used loosely
+    # Modulus
+    Sx = Ix / (h/2) # Elastic
+    Zx = (b*tf*(h-tf)) + (tw*(h-2*tf)**2/4) # Plastic
     
-    # Plastic Modulus (approx) for strength calc
-    Zx_plastic = (b*tf*(h-tf)) + (tw*(h-2*tf)**2/4)
-
     return {
-        "h (mm)": props['h'],
-        "b (mm)": props['b'],
-        "tw (mm)": props['tw'],
-        "tf (mm)": props['tf'],
+        "Name": props['name'],
+        "h": props['h'], "b": props['b'], "tw": props['tw'], "tf": props['tf'],
         "Area (cm2)": round(A, 2),
         "Ix (cm4)": round(Ix, 0),
-        "Zx (cm3)": round(Zx_plastic, 0), # Use Plastic Zx for Capacity
-        "Sx (cm3)": round(Zx, 0) # Elastic Sx
+        "Zx (cm3)": round(Zx, 0),
+        "Sx (cm3)": round(Sx, 0)
     }
 
+def get_full_database_df():
+    # สร้าง DataFrame รวมเหล็กทุกตัว
+    sections = get_standard_sections()
+    data = [calculate_full_properties(s) for s in sections]
+    return pd.DataFrame(data)
+
+# =========================================================
+# ⚙️ 2. CALCULATION ENGINE
+# =========================================================
+def get_load_case_factor(case_name):
+    cases = {"Simple Beam (Uniform Load)": 4.0, "Simple Beam (Point Load @Center)": 2.0, "Cantilever (Uniform Load)": 2.0, "Cantilever (Point Load @Tip)": 1.0}
+    return cases.get(case_name, 4.0)
+
 def calculate_connection(props, load_percent, bolt_dia, span_factor, case_name):
-    # ดึงค่า Properties มาใช้คำนวณ
-    calc_props = calculate_properties(props)
+    # Logic เดิมที่ถูกต้อง (Green Zone = Moment/Deflection)
+    full_props = calculate_full_properties(props) # Reuse calculation
     h, tw, fy, fu = props['h'], props['tw'], props['Fy'], props['Fu']
     
-    Aw_cm2 = (h/10)*(tw/10) 
-    Vn_beam = 0.60 * fy * Aw_cm2
+    Vn_beam = 0.60 * fy * (h/10)*(tw/10)
     V_target = (load_percent/100) * Vn_beam
     
     # Moment
-    Zx = calc_props['Zx (cm3)']
-    Mn_beam = fy * Zx
+    Mn_beam = fy * full_props['Zx (cm3)']
     phiMn = 0.90 * Mn_beam
     L_crit_moment = (span_factor * (phiMn / V_target)) / 100.0 if V_target > 0 else 0
     
     # Deflection
-    Ix = calc_props['Ix (cm4)']
     E = 2040000 
     Reaction = V_target 
     Limit_Factor = 360 
-    
     coeff = 0
     if case_name == "Simple Beam (Uniform Load)": coeff = 192 / (5 * Limit_Factor)
     elif case_name == "Simple Beam (Point Load @Center)": coeff = 24 / Limit_Factor
     elif case_name == "Cantilever (Uniform Load)": coeff = 8 / Limit_Factor
     elif case_name == "Cantilever (Point Load @Tip)": coeff = 3 / Limit_Factor
-        
+    
     L_crit_defl = 0
     if Reaction > 0 and coeff > 0:
-        L_sq = (coeff * E * Ix) / Reaction
+        L_sq = (coeff * E * full_props['Ix (cm4)']) / Reaction
         L_crit_defl = math.sqrt(L_sq) / 100.0 
     
     L_safe = min(L_crit_moment, L_crit_defl) if L_crit_defl > 0 else L_crit_moment
     
-    # Bolt Calc
+    # Bolt
     DB_mm = float(bolt_dia)
     Ab_cm2 = 3.1416 * (DB_mm/10)**2 / 4
-    Fnv = 3300
-    Rn_shear = 0.75 * Fnv * Ab_cm2 
+    Rn_shear = 0.75 * 3300 * Ab_cm2 
     
-    plate_t_mm = 10.0
-    Le_cm = 3.5
-    hole_dia_mm = DB_mm + 2
-    Lc_cm = Le_cm - (hole_dia_mm/10)/2
+    plate_t_mm = 10.0; Le_cm = 3.5; Lc_cm = Le_cm - ((DB_mm+2)/10)/2
     Rn_pl = 0.75 * min(1.2 * Lc_cm * (plate_t_mm/10) * 4050, 2.4 * (DB_mm/10) * (plate_t_mm/10) * 4050)
     Rn_web = 0.75 * min(1.2 * Lc_cm * (tw/10) * fu, 2.4 * (DB_mm/10) * (tw/10) * fu)
-    
     phiRn_bolt = min(Rn_shear, Rn_pl, Rn_web)
     
     control_mode = "Bolt Shear"
-    if Rn_pl < Rn_shear and Rn_pl < Rn_web: control_mode = "Plate Bearing"
-    if Rn_web < Rn_shear and Rn_web < Rn_pl: control_mode = "Web Bearing"
+    if Rn_pl < Rn_shear and Rn_pl < Rn_web: control_mode = "Plate Bear"
+    if Rn_web < Rn_shear and Rn_web < Rn_pl: control_mode = "Web Bear"
     
-    if phiRn_bolt > 0:
-        n_req = V_target / phiRn_bolt
-        n_bolts = max(2, math.ceil(n_req))
-    else:
-        n_bolts = 99
-        
+    n_bolts = max(2, math.ceil(V_target / phiRn_bolt)) if phiRn_bolt > 0 else 99
     spacing = 7.0
     L_plate = (2*Le_cm) + ((n_bolts-1)*spacing)
     
     return {
-        "Section": props['name'], "h": h, "Vn_beam": Vn_beam, "V_target": V_target, 
+        "Section": props['name'], "h": h, "b": props['b'], "tw": tw, "tf": props['tf'], 
+        "Vn_beam": Vn_beam, "V_target": V_target, 
         "L_crit_moment": L_crit_moment, "L_crit_defl": L_crit_defl, "L_safe": L_safe,
-        "DB": DB_mm, "Rn_shear": Rn_shear, "Rn_pl": Rn_pl, "Rn_web": Rn_web,
-        "phiRn_bolt": phiRn_bolt, "Bolt Qty": n_bolts, "Control By": control_mode,
-        "Plate Len": L_plate, "Le": Le_cm, "S": spacing,
-        "Props": calc_props # ส่ง Properties กลับไปด้วย
+        "DB": DB_mm, "phiRn_bolt": phiRn_bolt, "Bolt Qty": n_bolts, "Control By": control_mode,
+        "Plate Len": L_plate, "Le": Le_cm, "S": spacing
     }
 
 # =========================================================
-# 🎨 3. DRAWING LOGIC
+# 🎨 3. DRAWING LOGIC (FULL SHOP DRAWING)
 # =========================================================
-def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spacing_cm):
-    fig, ax = plt.subplots(figsize=(4, 6)) # ปรับขนาดรูปให้พอดี
-    COLOR_OBJ = '#2C3E50' 
+def draw_full_shop_drawing(res):
+    # สร้างรูป 2 View: Elevation + Section
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 6), gridspec_kw={'width_ratios': [1.5, 1]})
     
-    web_w_draw = 200 
-    h_draw_area = h_beam + 120
-    plate_w = 100
-    plate_x = (web_w_draw - plate_w) / 2
-    plate_y_start = (h_beam - plate_len_mm) / 2 + 60
+    # --- View 1: Elevation (ด้านข้าง) ---
+    h, tw, L_plate = res['h'], res['tw'], res['Plate Len']*10
+    web_w = 250
+    h_draw = h + 150
     
-    ax.add_patch(patches.Rectangle((0, 0), web_w_draw, h_draw_area, facecolor='#ECF0F1', zorder=1))
-    ax.add_patch(patches.Rectangle((plate_x, plate_y_start), plate_w, plate_len_mm, linewidth=2, edgecolor=COLOR_OBJ, facecolor='#D6EAF8', zorder=2))
+    # Web
+    ax1.add_patch(patches.Rectangle((0, 0), web_w, h_draw, facecolor='#ECF0F1'))
+    # Plate
+    pl_w = 100
+    pl_x = (web_w - pl_w)/2
+    pl_y = (h - L_plate)/2 + 75
+    ax1.add_patch(patches.Rectangle((pl_x, pl_y), pl_w, L_plate, linewidth=2, edgecolor='#2C3E50', facecolor='#D6EAF8'))
     
-    bolt_x_center = plate_x + (plate_w / 2)
-    bolt_y_top = plate_y_start + plate_len_mm - (le_cm*10)
-    curr_y = bolt_y_top
-    
-    for i in range(n_bolts):
-        circle = patches.Circle((bolt_x_center, curr_y), radius=(bolt_dia+2)/2, edgecolor=COLOR_OBJ, facecolor='white', linewidth=1.5, zorder=3)
-        ax.add_patch(circle)
-        curr_y -= (spacing_cm*10)
+    # Bolts
+    bx = pl_x + pl_w/2
+    by_start = pl_y + L_plate - (res['Le']*10)
+    for i in range(res['Bolt Qty']):
+        ax1.add_patch(patches.Circle((bx, by_start), (res['DB']+2)/2, edgecolor='black', facecolor='white'))
+        ax1.text(bx+15, by_start, f"#{i+1}", fontsize=8, color='gray')
+        by_start -= (res['S']*10)
+        
+    ax1.set_xlim(0, web_w); ax1.set_ylim(0, h_draw)
+    ax1.set_title("ELEVATION", fontweight='bold')
+    ax1.axis('off')
 
-    ax.set_xlim(0, web_w_draw + 50)
-    ax.set_ylim(0, h_draw_area)
-    ax.set_aspect('equal')
-    ax.axis('off')
+    # --- View 2: Section (หน้าตัด) ---
+    b, tf = res['b'], res['tf']
+    cx = 100 # Center X of section view
+    
+    # Flanges (Top & Bottom)
+    ax2.add_patch(patches.Rectangle((cx - b/2, h_draw/2 + h/2 - tf), b, tf, facecolor='#7F8C8D', edgecolor='black')) # Top
+    ax2.add_patch(patches.Rectangle((cx - b/2, h_draw/2 - h/2), b, tf, facecolor='#7F8C8D', edgecolor='black')) # Bottom
+    
+    # Web (Center)
+    ax2.add_patch(patches.Rectangle((cx - tw/2, h_draw/2 - h/2 + tf), tw, h - 2*tf, facecolor='#95A5A6', edgecolor='black'))
+    
+    # Plate (Side of Web) - สมมติ Plate หนา 10mm
+    pl_thk = 10
+    ax2.add_patch(patches.Rectangle((cx + tw/2, h_draw/2 - L_plate/2), pl_thk, L_plate, facecolor='#3498DB', edgecolor='black'))
+    
+    # Bolt Line
+    ax2.plot([cx-20, cx+40], [h_draw/2, h_draw/2], 'k-.', linewidth=0.5)
+    
+    ax2.set_xlim(0, 200); ax2.set_ylim(0, h_draw)
+    ax2.set_title("SECTION", fontweight='bold')
+    ax2.axis('off')
+
+    plt.suptitle(f"SHOP DRAWING: {res['Section']} (N.T.S)", fontsize=14, fontweight='bold', color='#2C3E50')
     return fig
 
 # =========================================================
-# 🖥️ 4. APP UI (FIXED ERROR & ADDED TABLE)
+# 🖥️ 4. APP UI
 # =========================================================
-# แก้ไขบรรทัดนี้: รับ argument *args, **kwargs เพื่อป้องกัน Error เวลาถูกเรียกจาก app.py
 def render_report_tab(beam_data=None, conn_data=None, *args, **kwargs):
-    st.markdown("### 🖨️ Structural Calculation Workbench")
+    st.markdown("### 🖨️ Structural Calculation Workbench (Pro Version)")
     
-    # 1. Controls
+    # --- 1. Database Table (NEW!) ---
+    with st.expander("📂 ดูตารางเหล็กทั้งหมด (Standard Sections Database)", expanded=False):
+        df_full = get_full_database_df()
+        st.dataframe(df_full, use_container_width=True, hide_index=True)
+
+    # --- 2. Controls ---
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns([2, 1, 1, 1.5])
         all_sections = get_standard_sections()
-        with c1: selected_sec_name = st.selectbox("Section", [s['name'] for s in all_sections], index=10)
-        with c2: load_pct = st.number_input("Load % (of Vn)", 10, 100, 75)
-        with c3: bolt_dia = st.selectbox("Bolt M", [12, 16, 20, 24], index=2)
-        with c4: load_case = st.selectbox("Case", ["Simple Beam (Uniform Load)", "Simple Beam (Point Load @Center)", "Cantilever (Uniform Load)", "Cantilever (Point Load @Tip)"])
+        with c1: selected_sec_name = st.selectbox("เลือกหน้าตัด (Select Section)", [s['name'] for s in all_sections], index=10)
+        with c2: load_pct = st.number_input("Load %", 10, 100, 75)
+        with c3: bolt_dia = st.selectbox("Bolt Size", [12, 16, 20, 24], index=2)
+        with c4: load_case = st.selectbox("Support Case", ["Simple Beam (Uniform Load)", "Simple Beam (Point Load @Center)", "Cantilever (Uniform Load)", "Cantilever (Point Load @Tip)"])
             
     # Calculate
     selected_props = next(s for s in all_sections if s['name'] == selected_sec_name)
@@ -204,69 +219,29 @@ def render_report_tab(beam_data=None, conn_data=None, *args, **kwargs):
     
     st.divider()
 
-    # =================================================
-    # 🆕 TABLE SECTION: ตารางคุณสมบัติหน้าตัด (Requested)
-    # =================================================
-    st.markdown("#### 📐 Section Properties (คุณสมบัติหน้าตัด)")
+    # --- 3. Results & Shop Drawing ---
+    c_left, c_right = st.columns([1, 1.5])
     
-    # สร้าง DataFrame สำหรับแสดงผลตาราง
-    prop_data = res['Props']
-    df_prop = pd.DataFrame([prop_data])
-    
-    # จัดรูปแบบตารางให้สวยงาม
-    st.dataframe(
-        df_prop,
-        column_config={
-            "h (mm)": st.column_config.NumberColumn("Depth (h)", format="%d mm"),
-            "b (mm)": st.column_config.NumberColumn("Width (b)", format="%d mm"),
-            "tw (mm)": st.column_config.NumberColumn("Web (tw)", format="%.1f mm"),
-            "tf (mm)": st.column_config.NumberColumn("Flange (tf)", format="%.1f mm"),
-            "Area (cm2)": st.column_config.NumberColumn("Area", format="%.2f cm²"),
-            "Ix (cm4)": st.column_config.NumberColumn("Inertia (Ix)", format="%.0f cm⁴"),
-            "Zx (cm3)": st.column_config.NumberColumn("Plastic Modulus (Zx)", format="%.0f cm³"),
-            "Sx (cm3)": st.column_config.NumberColumn("Elastic Modulus (Sx)", format="%.0f cm³"),
-        },
-        hide_index=True,
-        use_container_width=True
-    )
-    
-    st.divider()
-
-    # --- CALCULATION RESULTS ---
-    col_cal, col_draw = st.columns([1.5, 1]) 
-    with col_cal:
-        st.subheader("📝 Engineering Report")
-        with st.container(height=400, border=True):
-            
-            # Safe Span Result
-            st.markdown(f"**1. Recommended Span (Safe Zone)**")
-            st.info(f"👉 **Max Safe Length: {res['L_safe']:.2f} m**")
-            st.caption(f"Controlled by: {'Moment' if res['L_crit_moment'] < res['L_crit_defl'] else 'Deflection'}")
-            
-            st.markdown("---")
-            
-            # Connection Check
-            st.markdown(f"**2. Connection Check (Shear Only)**")
-            
-            # Mini Table for Connection
-            conn_df = pd.DataFrame({
-                "Parameter": ["Beam Shear Capacity (Vn)", f"Load Target ({load_pct}%)", "Bolt Capacity (per bolt)", "Bolts Required"],
-                "Value": [f"{res['Vn_beam']:,.0f} kg", f"{res['V_target']:,.0f} kg", f"{res['phiRn_bolt']:,.0f} kg", f"{res['Bolt Qty']} pcs"]
-            })
-            st.table(conn_df)
-
-    with col_draw:
-        st.markdown("**Shop Drawing**")
-        fig = draw_connection_sketch(res['h'], res['Bolt Qty'], float(bolt_dia), res['Plate Len']*10, res['Le'], res['S'])
+    with c_left:
+        st.subheader("📝 Summary Result")
+        st.info(f"✅ **Safe Span Limit: {res['L_safe']:.2f} m**")
+        
+        st.markdown("**Check List:**")
+        st.markdown(f"- Moment Span: `{res['L_crit_moment']:.2f} m`")
+        st.markdown(f"- Deflection Span: `{res['L_crit_defl']:.2f} m`")
+        st.markdown(f"- Shear Load: `{res['V_target']:,.0f} kg` (Capacity: `{res['Vn_beam']:,.0f}`) fit `{res['Bolt Qty']}-M{int(res['DB'])}`")
+        
+    with c_right:
+        # Drawing Logic (New)
+        fig = draw_full_shop_drawing(res)
         st.pyplot(fig)
 
     st.divider()
 
-    # --- GRAPH ---
-    st.subheader("📊 Structural Limit States Diagram")
+    # --- 4. The Graph (Safe Zone Logic) ---
+    st.subheader("📊 Design Envelope (Safe Zone)")
     
     names, moments, defls, shears = [], [], [], []
-    
     for sec in all_sections:
         r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
         names.append(sec['name'].replace("H-", "")) 
@@ -274,33 +249,27 @@ def render_report_tab(beam_data=None, conn_data=None, *args, **kwargs):
         defls.append(r['L_crit_defl'])
         shears.append(r['Vn_beam']) 
 
-    fig2, ax1 = plt.subplots(figsize=(10, 5))
+    fig2, ax1 = plt.subplots(figsize=(12, 5))
     x = range(len(names))
     
-    # Left Axis: Span
+    # Span Axis
     ax1.set_ylabel('Span (m)', color='#27AE60', fontweight='bold')
-    l1 = ax1.plot(x, moments, 'r--o', markersize=3, label='Moment Limit')
-    l2 = ax1.plot(x, defls, 'b-', label='Deflection Limit')
+    ax1.plot(x, moments, 'r--', label='Moment Limit', alpha=0.5)
+    ax1.plot(x, defls, 'b-', label='Deflection Limit', alpha=0.5)
+    ax1.fill_between(x, 0, np.minimum(moments, defls), color='#2ECC71', alpha=0.3, label='Safe Zone')
     
-    # Green Zone (Moment & Defl Only)
-    min_vals = np.minimum(moments, defls)
-    ax1.fill_between(x, 0, min_vals, color='#2ECC71', alpha=0.3, label='Safe Zone')
-    
-    # Right Axis: Shear
+    # Shear Axis
     ax2 = ax1.twinx()
     ax2.set_ylabel('Shear Capacity (kg)', color='purple', fontweight='bold')
-    l3 = ax2.plot(x, shears, color='purple', linestyle=':', label='Shear Capacity Check')
+    ax2.plot(x, shears, color='purple', linestyle=':', label='Shear Check (Ref)')
 
     # Highlight
     idx = [s['name'] for s in all_sections].index(selected_sec_name)
-    ax1.axvline(x=idx, color='orange', linewidth=2)
     ax1.plot(idx, res['L_safe'], 'g*', markersize=15)
+    ax1.axvline(x=idx, color='orange', alpha=0.5)
 
-    lns = l1 + l2 + [patches.Patch(color='#2ECC71', alpha=0.3, label='Safe Zone')] + l3
-    ax1.legend(lns, [l.get_label() for l in lns], loc='upper left')
-
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(names, rotation=90, fontsize=8)
+    ax1.legend(loc='upper left')
+    ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=90, fontsize=8)
     ax1.grid(True, linestyle=':', alpha=0.5)
     
     st.pyplot(fig2)
