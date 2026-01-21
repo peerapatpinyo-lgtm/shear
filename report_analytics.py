@@ -1,16 +1,22 @@
 # report_analytics.py
-# Version: 1.0 (Separate Analytics Module)
+# Version: 1.1 (Custom Green Zone: Shear to Min-Limit)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-# Import Logic from main file (Make sure report_generator.py is in the same folder)
-from report_generator import get_standard_sections, calculate_connection
+
+# Import Logic from main file
+# (ตรวจสอบให้แน่ใจว่าไฟล์ report_generator.py อยู่ในโฟลเดอร์เดียวกัน)
+try:
+    from report_generator import get_standard_sections, calculate_connection
+except ImportError:
+    st.error("ไม่พบไฟล์ report_generator.py กรุณาวางไฟล์ทั้งสองไว้ในโฟลเดอร์เดียวกัน")
+    st.stop()
 
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
-    ฟังก์ชันสำหรับแสดงผลกราฟและตารางเปรียบเทียบ
-    รับค่าพารามิเตอร์จากหน้าหลักมาคำนวณ batch analysis
+    แสดงผลกราฟและตารางเปรียบเทียบ
+    Updated: ปรับการระบายสีเขียวให้อยู่ระหว่างเส้น Shear (Scaled) กับ Min(Limit)
     """
     st.markdown("## 📊 Analytics Dashboard")
     
@@ -42,26 +48,57 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
             "Util. (%)": util
         })
 
-    # --- 2. Structural Limit States Diagram ---
+    # --- 2. Structural Limit States Diagram (Updated Zone) ---
     st.subheader("📈 Structural Limit States Diagram")
     
-    fig, ax1 = plt.subplots(figsize=(12, 5))
-    x = range(len(names))
+    fig, ax1 = plt.subplots(figsize=(12, 6))
+    x = np.arange(len(names))
     
-    # Axis 1: Span Length
-    ax1.set_ylabel('Span (m)', color='#27AE60', fontweight='bold')
-    ax1.plot(x, moments, 'r--', label='Moment Limit', alpha=0.5)
-    ax1.plot(x, defls, 'b-', label='Deflection Limit', alpha=0.5)
-    ax1.fill_between(x, 0, np.minimum(moments, defls), color='#2ECC71', alpha=0.3, label='Safe Zone')
+    # 2.1 Calculate Axis Limits to Normalize Data visually
+    # หาสเกลสูงสุดของแต่ละแกนเพื่อเทียบอัตราส่วน
+    max_span_val = max(max(moments), max(defls)) * 1.1
+    max_shear_val = max(shears) * 1.1
+    
+    # สร้างเส้น Shear จำลอง (Scaled) เพื่อใช้ระบายสีบนแกนซ้าย (เมตร)
+    # สูตร: ค่า Shear เดิม * (Max Span / Max Shear)
+    shear_scale_factor = max_span_val / max_shear_val
+    shears_visual = np.array(shears) * shear_scale_factor
+
+    # 2.2 Plot Limits (Left Axis - Meters)
+    ax1.set_ylabel('Max Span (m)', color='#27AE60', fontweight='bold')
+    ax1.plot(x, moments, 'r--', label='Moment Limit', alpha=0.6, linewidth=1.5)
+    ax1.plot(x, defls, 'b-', label='Deflection Limit', alpha=0.6, linewidth=1.5)
+    
+    # 2.3 Custom Fill Between (Green Zone)
+    # พื้นที่: ด้านล่างคือ Shear (Visual), ด้านบนคือ Min(Moment, Deflect)
+    upper_bound = np.minimum(moments, defls)
+    lower_bound = shears_visual
+    
+    # ระบายสีเฉพาะส่วนที่ Upper > Lower (เพื่อความสวยงาม)
+    ax1.fill_between(
+        x, 
+        lower_bound, 
+        upper_bound, 
+        where=(upper_bound > lower_bound),
+        color='#2ECC71', 
+        alpha=0.4, 
+        label='Optimal Zone (Above Shear Trend)'
+    )
+    
+    # ตั้งค่าแกนซ้าย
+    ax1.set_ylim(0, max_span_val)
     ax1.legend(loc='upper left')
     ax1.set_xticks(x)
     ax1.set_xticklabels(names, rotation=90, fontsize=8)
     ax1.grid(True, linestyle=':', alpha=0.5)
     
-    # Axis 2: Shear Capacity (Reference)
+    # 2.4 Plot Shear Capacity (Right Axis - kg)
     ax2 = ax1.twinx()
     ax2.set_ylabel('Shear Capacity (kg)', color='purple', fontweight='bold')
-    ax2.plot(x, shears, color='purple', linestyle=':', label='Shear Check (Ref)')
+    # Plot เส้นจริง (หน่วย kg) ทับลงไปที่ตำแหน่งเดียวกับเส้น Visual
+    ax2.plot(x, shears, color='purple', linestyle=':', linewidth=2, label='Shear Capacity ($V_n$)')
+    ax2.set_ylim(0, max_shear_val) # Sync scale with the visual factor
+    ax2.legend(loc='upper right')
     
     st.pyplot(fig)
 
@@ -70,14 +107,12 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     # --- 3. Comparative Analysis Table ---
     st.subheader("📋 Comparative Analysis Table")
     
-    # Filter/Sort Controls (Optional extra feature)
     col_sort, col_filter = st.columns(2)
     with col_sort:
         sort_by = st.selectbox("Sort By", ["Section", "Max Span (m)", "Util. (%)"], index=1)
         
     df_compare = pd.DataFrame(batch_results)
     
-    # Sorting Logic
     if sort_by == "Max Span (m)":
         df_compare = df_compare.sort_values(by="Max Span (m)", ascending=False)
     elif sort_by == "Util. (%)":
