@@ -1,6 +1,7 @@
 # report_analytics.py
-# Version: 24.0 (UI/UX Overhaul: Dashboard Metrics, Tabs, Visualized Ratios)
+# Version: 25.0 (Ultimate Structural Engineer Edition)
 # Engineered by: Senior Structural Engineer AI
+# Features: Strict AISC Limit States, Worst-Case Identification, Efficiency Visualization
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +16,7 @@ except ImportError:
     st.error("🚨 Critical Error: Core module 'report_generator.py' is missing.")
     st.stop()
 
-# --- Constants ---
+# --- Engineering Constants (ASD) ---
 E_STEEL_KSC = 2040000  
 FY_PLATE = 2400 
 FU_PLATE = 4000 
@@ -24,207 +25,218 @@ FV_WELD = 1470
 
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
-    Renders the Structural Analytics Dashboard (Pro UI Version).
+    Renders the Ultimate Structural Dashboard.
+    Focus: Explicit Governing Failure Modes & Utilization Ratios.
     """
     
-    # --- 1. Header & Context ---
-    st.markdown("## 🏗️ Structural Optimization Dashboard")
-    st.markdown("Advanced connection design verification (AISC 360) & Governing limit state analysis.")
+    st.markdown("## 🏗️ Structural Integrity & Limit State Analysis")
+    st.markdown("""
+    **Engineering Executive Summary:**
+    Analysis based on **AISC 360** Specification using Allowable Strength Design (ASD).
+    Verifying **6 Limit States**: Bolt Shear, Bearing, Gross Yield, Net Rupture, Block Shear, and Weld Strength.
+    """)
     st.divider()
 
-    # --- 2. Calculation Engine (Same Logic as V23 - Reliable) ---
+    # --- 1. CORE CALCULATION ENGINE ---
     all_sections = get_standard_sections()
-    if not all_sections:
-        st.warning("⚠️ No sections found.")
-        return
+    if not all_sections: return
 
     data_list = []
     
-    # Processing Loop
     for sec in all_sections:
-        full_props = calculate_full_properties(sec) 
-        
-        # Capacities
+        # --- A. Demand Analysis ---
         h_cm = sec['h'] / 10
         tw_cm = sec['tw'] / 10
+        
+        # Beam Web Shear Capacity (Global Limit)
         V_beam_allow = (0.60 * sec['Fy'] * h_cm * tw_cm) / (factor if factor else 1)
-        V_target = V_beam_allow * 0.75
+        
+        # Ultimate Demand for Connection (User defined %)
+        V_demand = V_beam_allow * (load_pct / 100.0) # Corrected to use input pct (e.g. 75%)
 
-        # Zones
-        try:
-            M_allow_kgm = (sec['Fy'] * full_props['Zx (cm3)'] / factor) / 100 if factor else 0
-        except: M_allow_kgm = 0
+        # --- B. Connection Auto-Design & Optimization ---
+        # Constants
+        bolt_d_cm = bolt_dia / 10
+        hole_d_cm = bolt_d_cm + 0.2
+        pitch_cm = 3 * bolt_d_cm
+        edge_cm = 4.0 
         
-        Ix = full_props['Ix (cm4)']
-        K_defl = (384 * E_STEEL_KSC * Ix) / 18000000 
+        # Iterator Setup
+        req_bolts = 2
+        t_plate_cm = 0.9
+        if V_demand > 30000: t_plate_cm = 1.2
         
-        L_sm = (4 * M_allow_kgm) / V_beam_allow if V_beam_allow > 0 else 0
-        L_md = K_defl / (8 * M_allow_kgm) if M_allow_kgm > 0 else 0
+        design_passed = False
+        final_data = {}
         
-        # Auto-Design Logic (Compressed)
-        bolt_d_cm = bolt_dia / 10; hole_d_cm = bolt_d_cm + 0.2
-        pitch_cm = 3 * bolt_d_cm; edge_cm = 4.0 
-        req_bolts = 2; t_plate_cm = 0.9; 
-        if V_target > 30000: t_plate_cm = 1.2
-        is_safe = False; final_info = {}
-        
-        while not is_safe and req_bolts <= 20:
+        # Design Loop: Find minimum bolts/plate to satisfy D/C <= 1.0
+        while not design_passed and req_bolts <= 24:
+            # Geometry
             plate_h_cm = math.ceil(((req_bolts - 1) * pitch_cm) + (2 * edge_cm))
             
-            # 6 Checks
-            Rn_bolt = req_bolts * FV_BOLT * (3.14159 * bolt_d_cm**2 / 4)
-            Rn_bear = (min(1.2*(edge_cm-hole_d_cm/2)*t_plate_cm*FU_PLATE, 2.4*bolt_d_cm*t_plate_cm*FU_PLATE) + 
-                       (req_bolts-1)*min(1.2*(pitch_cm-hole_d_cm)*t_plate_cm*FU_PLATE, 2.4*bolt_d_cm*t_plate_cm*FU_PLATE))
-            Rn_yield = 0.60 * FY_PLATE * plate_h_cm * t_plate_cm
-            Rn_rup = 0.50 * FU_PLATE * (plate_h_cm * t_plate_cm - req_bolts * hole_d_cm * t_plate_cm)
-            Rn_block = (0.6 * FU_PLATE * ((plate_h_cm-edge_cm)*t_plate_cm - (req_bolts-0.5)*hole_d_cm*t_plate_cm)) + (1.0 * FU_PLATE * (4.0-0.5*hole_d_cm)*t_plate_cm)
+            # --- C. Limit State Checks (AISC) ---
+            
+            # 1. Bolt Shear
+            Ab = 3.14159 * bolt_d_cm**2 / 4
+            Rn_bolt = req_bolts * FV_BOLT * Ab
+            
+            # 2. Bolt Bearing (Tearout)
+            # Edge Bolts
+            Lc_edge = edge_cm - (hole_d_cm / 2)
+            Rn_edge = min(1.2 * Lc_edge * t_plate_cm * FU_PLATE, 2.4 * bolt_d_cm * t_plate_cm * FU_PLATE)
+            # Inner Bolts
+            Lc_inner = pitch_cm - hole_d_cm
+            Rn_inner = min(1.2 * Lc_inner * t_plate_cm * FU_PLATE, 2.4 * bolt_d_cm * t_plate_cm * FU_PLATE)
+            
+            Rn_bearing = Rn_edge + ((req_bolts - 1) * Rn_inner)
+            
+            # 3. Plate Gross Yield
+            Ag = plate_h_cm * t_plate_cm
+            Rn_yield = 0.60 * FY_PLATE * Ag
+            
+            # 4. Plate Net Rupture
+            An = Ag - (req_bolts * hole_d_cm * t_plate_cm)
+            Rn_rupture = 0.50 * FU_PLATE * An
+            
+            # 5. Block Shear (Assuming shear path along bolts, tension at bottom)
+            # Path Length = (H - Edge)
+            Agv = (plate_h_cm - edge_cm) * t_plate_cm
+            Anv = Agv - ((req_bolts - 0.5) * hole_d_cm * t_plate_cm)
+            Ant = (4.0 - 0.5 * hole_d_cm) * t_plate_cm # Assume 40mm side edge
+            Rn_block = (0.6 * FU_PLATE * Anv) + (1.0 * FU_PLATE * Ant)
+            
+            # 6. Weld Capacity (Fillet)
             weld_sz = max(0.6, (t_plate_cm*10 - 2)/10)
             Rn_weld = 2 * 0.707 * weld_sz * plate_h_cm * FV_WELD
             
-            min_cap = min(Rn_bolt, Rn_bear, Rn_yield, Rn_rup, Rn_block, Rn_weld)
-            ratio = V_target / min_cap
+            # --- D. Evaluate Ratios ---
+            limit_states = {
+                "Bolt Shear": Rn_bolt,
+                "Bearing": Rn_bearing,
+                "Plate Yield": Rn_yield,
+                "Plate Rupture": Rn_rupture,
+                "Block Shear": Rn_block,
+                "Weld Shear": Rn_weld
+            }
             
-            if ratio <= 1.00:
-                is_safe = True
-                governing = min({k:v for k,v in locals().items() if k.startswith('Rn_')}, key={k:v for k,v in locals().items() if k.startswith('Rn_')}.get).replace('Rn_','')
-                final_info = {
-                    "Bolts": req_bolts, 
-                    "Plate": f"PL-{t_plate_cm*10:.0f}x100x{plate_h_cm*10:.0f}", 
-                    "Weld": f"{weld_sz*10:.0f}mm", 
-                    "Ratio": ratio, 
-                    "Mode": governing
+            # Find the Governing Case (Min Capacity)
+            min_capacity = min(limit_states.values())
+            governing_mode = min(limit_states, key=limit_states.get)
+            
+            # Calculate Max Ratio (Demand / Min Capacity)
+            max_ratio = V_demand / min_capacity
+            
+            if max_ratio <= 1.00:
+                design_passed = True
+                final_data = {
+                    "Bolts": req_bolts,
+                    "Plate": f"PL-{t_plate_cm*10:.0f}x100x{plate_h_cm*10:.0f}",
+                    "Weld": f"{weld_sz*10:.0f}mm",
+                    "Capacity": min_capacity,
+                    "Ratio": max_ratio,
+                    "Mode": governing_mode
                 }
             else:
+                # Upsize for next iteration
                 req_bolts += 1
-                if req_bolts > 12 and t_plate_cm < 1.6: t_plate_cm += 0.3; req_bolts = max(2, req_bolts - 3)
-
+                if req_bolts > 12 and t_plate_cm < 1.6:
+                    t_plate_cm += 0.3 # Increase plate thickness
+                    req_bolts = max(2, req_bolts - 3) # Reset bolts slightly
+        
+        # Append Result
         data_list.append({
             "Section": sec['name'],
-            "Moment Zone": f"{L_sm:.2f} - {L_md:.2f} m",
-            "L_Start": L_sm, "L_End": L_md,
-            "V_Beam": V_beam_allow, "V_Target": V_target,
-            "Bolt Spec": f"{final_info.get('Bolts')} - M{int(bolt_dia)}",
-            "Plate Size": final_info.get('Plate'),
-            "Weld Spec": final_info.get('Weld'),
-            "D/C Ratio": final_info.get('Ratio'),
-            "Governing": final_info.get('Mode')
+            "V_Demand": V_demand,
+            "V_Capacity": final_data.get('Capacity', 0),
+            "Utilization": final_data.get('Ratio', 9.99), # THIS IS THE SAFETY RATIO
+            "Governing Limit State": final_data.get('Mode', 'Design Failed'),
+            "Configuration": f"{final_data.get('Bolts')} - M{int(bolt_dia)}",
+            "Plate Detail": final_data.get('Plate'),
+            "Status": "✅ PASS" if final_data.get('Ratio', 9.99) <= 1.0 else "❌ FAIL"
         })
 
     if not data_list: return
     df = pd.DataFrame(data_list)
 
-    # --- 3. HIGH-LEVEL METRICS ---
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Sections", f"{len(df)} Beams", delta="Verified")
-    with col2:
-        max_ratio = df['D/C Ratio'].max()
-        st.metric("Critical Ratio (Max)", f"{max_ratio:.2f}", 
-                  delta="Safe" if max_ratio <= 1.0 else "Unsafe", 
-                  delta_color="normal" if max_ratio <= 1.0 else "inverse")
-    with col3:
-        avg_bolts = df['Bolt Spec'].apply(lambda x: int(x.split()[0])).mean()
-        st.metric("Avg. Bolt Qty", f"{avg_bolts:.1f} ea", f"M{bolt_dia}")
-    with col4:
-        # Most common failure mode
-        mode = df['Governing'].mode()[0] if not df.empty else "-"
-        st.metric("Governing Mode", mode.replace('_',' ').title())
+    # --- 2. EXECUTIVE DASHBOARD ---
+    
+    # Metrics
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: st.metric("Total Connections", len(df))
+    with c2: 
+        max_ut = df['Utilization'].max()
+        st.metric("Max Utilization (D/C)", f"{max_ut:.2f}", delta="Critical" if max_ut > 0.9 else "Safe", delta_color="inverse")
+    with c3:
+        crit_mode = df['Governing Limit State'].mode()[0]
+        st.metric("Most Frequent Control", crit_mode)
+    with c4:
+        avg_eff = df['Utilization'].mean() * 100
+        st.metric("Avg. Efficiency", f"{avg_eff:.1f}%")
 
     st.markdown("---")
+    
+    # --- 3. VISUALIZATION: Utilization Map ---
+    # This chart helps engineers see the distribution of safety factors
+    st.subheader("📉 Connection Efficiency Map (D/C Ratio Distribution)")
+    
+    fig, ax = plt.subplots(figsize=(10, 4))
+    # Color mapping
+    colors = ['#2ECC71' if x < 0.75 else '#F1C40F' if x < 0.95 else '#E74C3C' for x in df['Utilization']]
+    
+    ax.scatter(df['Section'], df['Utilization'], c=colors, s=100, alpha=0.8, edgecolors='black')
+    ax.axhline(y=1.0, color='red', linestyle='--', linewidth=2, label='Limit (1.0)')
+    ax.axhline(y=0.75, color='green', linestyle=':', linewidth=1, label='Target Efficiency')
+    
+    ax.set_ylabel("D/C Ratio (Demand/Capacity)", fontweight='bold')
+    ax.set_title("Utilization Ratio per Section", fontweight='bold')
+    ax.tick_params(axis='x', rotation=90)
+    ax.set_ylim(0, 1.2)
+    ax.legend(loc='upper right')
+    ax.grid(True, linestyle='--', alpha=0.3)
+    
+    st.pyplot(fig)
+    
+    st.caption("🟢 < 0.75: Conservative | 🟡 0.75 - 0.95: Optimized | 🔴 > 0.95: Critical")
+    
+    st.markdown("---")
 
-    # --- 4. TABS INTERFACE ---
-    tab1, tab2 = st.tabs(["📋 Detailed Specification Table", "📉 Deep Dive Graph Analysis"])
+    # --- 4. DETAILED ENGINEERING TABLE ---
+    st.subheader("📋 Detailed Design Verification Table")
+    st.markdown("Displays the **Governing Case** (Maximum Ratio) derived from 6 failure modes.")
 
-    # === TAB 1: SMART TABLE ===
-    with tab1:
-        st.caption("Auto-generated connection specifications based on 75% Beam Capacity.")
-        
-        # Color styling for Ratio
-        st.dataframe(
-            df[[
-                "Section", "Moment Zone", "V_Target", 
-                "Bolt Spec", "Plate Size", "Weld Spec", 
-                "Governing", "D/C Ratio"
-            ]],
-            use_container_width=True,
-            column_config={
-                "Section": st.column_config.TextColumn("Section", width="small", help="Wide Flange Section"),
-                "Moment Zone": st.column_config.TextColumn("Zone Range", width="small", help="Range where Moment controls design"),
-                "V_Target": st.column_config.NumberColumn("Load (75%)", format="%.0f kg"),
-                "Bolt Spec": st.column_config.TextColumn("Bolts", width="small"),
-                "Plate Size": st.column_config.TextColumn("Plate (mm)", width="medium"),
-                "Weld Spec": st.column_config.TextColumn("Weld", width="small"),
-                "Governing": st.column_config.TextColumn("Critical Limit", width="medium"),
-                
-                # VISUAL PROGRESS BAR FOR RATIO
-                "D/C Ratio": st.column_config.ProgressColumn(
-                    "Safety Ratio",
-                    help="Demand / Capacity Ratio (Must be <= 1.0)",
-                    format="%.2f",
-                    min_value=0,
-                    max_value=1.5, # Cap at 1.5 visually
-                ),
-            },
-            height=600,
-            hide_index=True
-        )
-
-    # === TAB 2: INTERACTIVE GRAPH ===
-    with tab2:
-        col_sel, _ = st.columns([1, 2])
-        with col_sel:
-            selected_name = st.selectbox("Select Beam for Analysis:", df['Section'].unique())
-
-        row = df[df['Section'] == selected_name].iloc[0]
-        
-        # Graph Logic
-        V_allow = row['V_Beam']
-        L_start, L_end = row['L_Start'], row['L_End']
-        M_derived = (L_start * V_allow) / 4 if L_start > 0 else 0
-        K_derived = L_end * 8 * M_derived if M_derived > 0 else 0
-        
-        max_span = max(10, L_end * 1.5)
-        spans = np.linspace(0.1, max_span, 400)
-        ws = (2 * V_allow) / spans
-        wm = (8 * M_derived) / (spans**2)
-        wd = K_derived / (spans**3)
-        w_safe = np.minimum(np.minimum(ws, wm), wd)
-
-        # Plot Styling
-        plt.style.use('bmh') # Professional grid style
-        fig, ax = plt.subplots(figsize=(10, 5))
-        
-        # Plot Lines
-        ax.plot(spans, ws, color='#8E44AD', linestyle=':', label='Shear Limit (Web)')
-        ax.plot(spans, wm, color='#C0392B', linestyle='--', label='Moment Limit')
-        ax.plot(spans, wd, color='#27AE60', linestyle='-.', label='Deflection Limit')
-        ax.plot(spans, w_safe, color='#2C3E50', linewidth=2.5, label='Safe Envelope')
-        
-        # Zones Shading
-        if L_start > 0:
-            ax.fill_between(spans, 0, 100000, where=(spans <= L_start), color='#8E44AD', alpha=0.05)
-            ax.text(L_start/2, max(w_safe)*0.1, "SHEAR ZONE", ha='center', color='#8E44AD', fontsize=9, fontweight='bold', alpha=0.5)
-
-        if L_end > L_start:
-            ax.fill_between(spans, 0, 100000, where=((spans > L_start) & (spans <= L_end)), color='#C0392B', alpha=0.05)
-            ax.axvline(x=L_start, color='#D35400', linestyle='-', linewidth=1)
-            ax.axvline(x=L_end, color='#27AE60', linestyle='-', linewidth=1)
-            ax.text(L_start, max(w_safe)*0.6, f" {L_start:.2f}m", rotation=90, va='bottom', ha='right', color='#D35400', fontweight='bold')
-            ax.text(L_end, max(w_safe)*0.4, f" {L_end:.2f}m", rotation=90, va='bottom', ha='left', color='#219150', fontweight='bold')
-
-        ax.set_ylim(0, max(w_safe)*1.2)
-        ax.set_xlim(0, max_span)
-        ax.set_title(f"Critical Limit State Diagram: {selected_name}", fontsize=12, fontweight='bold')
-        ax.set_xlabel("Span Length (m)")
-        ax.set_ylabel("Safe Load (kg/m)")
-        ax.legend(loc='upper right', frameon=True, fancybox=True, framealpha=1)
-        
-        st.pyplot(fig)
-        
-        # Mini Context
-        c1, c2, c3 = st.columns(3)
-        c1.info(f"**Shear Capacity:** {V_allow:,.0f} kg")
-        c2.info(f"**Moment Controlled:** {L_start:.2f} - {L_end:.2f} m")
-        c3.info(f"**Connection D/C:** {row['D/C Ratio']:.2f}")
-
-    st.success("✅ Analysis Complete. All connections verified against AISC 360 Specification.")
+    # Highlighting Logic for the Table using Pandas Styler or Streamlit Column Config
+    st.dataframe(
+        df[[
+            "Section", "Status", "Utilization", "V_Demand", "V_Capacity", 
+            "Governing Limit State", "Configuration", "Plate Detail"
+        ]].sort_values(by="Utilization", ascending=False),
+        use_container_width=True,
+        column_config={
+            "Section": st.column_config.TextColumn("Beam Section", width="small", help="H-Beam Identifier"),
+            "Status": st.column_config.TextColumn("Status", width="small"),
+            "Utilization": st.column_config.ProgressColumn(
+                "Safety Ratio (D/C)",
+                help="Demand divided by Capacity. Must be <= 1.0",
+                format="%.2f",
+                min_value=0,
+                max_value=1.1,
+            ),
+            "V_Demand": st.column_config.NumberColumn("Demand (kg)", format="%.0f"),
+            "V_Capacity": st.column_config.NumberColumn("Capacity (kg)", format="%.0f", help="Governing Strength"),
+            "Governing Limit State": st.column_config.TextColumn("Governing Mode", width="medium", help="The failure mode that controls the design"),
+            "Configuration": st.column_config.TextColumn("Bolts", width="small"),
+            "Plate Detail": st.column_config.TextColumn("Plate Size", width="medium"),
+        },
+        height=600,
+        hide_index=True
+    )
+    
+    # Download Button for Report
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        "📥 Download Engineering Report (CSV)",
+        csv,
+        "connection_design_report.csv",
+        "text/csv",
+        key='download-csv'
+    )
