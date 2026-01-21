@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 40.1 (Fixed TypeError: Arguments Mismatch)
+# Version: 41.0 (With Shear Line & Data Table)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -251,8 +251,8 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
 # =========================================================
 # 🖥️ 4. RENDER UI & APP LOGIC
 # =========================================================
-def render_report_tab(beam_data=None, conn_data=None): # 🔥 Fixed: Added arguments to match app.py call
-    st.markdown("### 🖨️ Structural Calculation Workbench (v40.1)")
+def render_report_tab(beam_data=None, conn_data=None):
+    st.markdown("### 🖨️ Structural Calculation Workbench (v41.0)")
     
     # 1. Controls
     with st.container(border=True):
@@ -289,10 +289,11 @@ def render_report_tab(beam_data=None, conn_data=None): # 🔥 Fixed: Added argum
 * Strength (Moment): **{res['L_crit_moment']:.2f} m**
 * Stiffness (Deflection): **{res['L_crit_defl']:.2f} m**
 
-**Connection Check (Shear & Bearing):**
-* Load: {res['V_target']:,.0f} kg
-* Capacity: {res['phiRn_bolt']:,.0f} kg/bolt
-* Required: **{res['Bolt Qty']} bolts**
+**Shear & Bolt Check:**
+* Beam Shear Capacity ($V_n$): {res['Vn_beam']:,.0f} kg
+* Load Target ($V_u$): {res['V_target']:,.0f} kg
+* Bolt Capacity per Unit: {res['phiRn_bolt']:,.0f} kg
+* Required Bolts: **{res['Bolt Qty']} pcs**
 """)
 
     with col_draw:
@@ -303,60 +304,107 @@ def render_report_tab(beam_data=None, conn_data=None): # 🔥 Fixed: Added argum
     st.divider()
 
     # =====================================================
-    # 📊 NEW! DUAL LINE CHART (Strength vs Stiffness)
+    # 📊 NEW! DUAL AXIS CHART (Includes Shear)
     # =====================================================
-    st.subheader("📊 แนวโน้มพฤติกรรมหน้าตัด (Strength vs Stiffness Trend)")
+    st.subheader("📊 แนวโน้มพฤติกรรมหน้าตัด (Strength vs Stiffness vs Shear)")
     
     # 1. Prepare Batch Data
     names = []
     moments = []
     defls = []
+    shears = [] # New Shear Data
     
+    batch_results = [] # For Table
+
     for sec in all_sections:
         r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
-        names.append(sec['name'].replace("H-", "")) # Shorten name
+        names.append(sec['name'].replace("H-", "")) 
         moments.append(r['L_crit_moment'])
         defls.append(r['L_crit_defl'])
+        shears.append(r['Vn_beam']) # Collect Shear Capacity
         
-    # 2. Create Dual Line Chart
-    fig2, ax = plt.subplots(figsize=(12, 6))
+        # Data for Table
+        ctrl = "Moment" if r['L_crit_moment'] < r['L_crit_defl'] else "Deflection"
+        batch_results.append({
+            "Section": r['Section'],
+            "Safe Span (m)": r['L_safe'],
+            "Shear Cap (kg)": r['Vn_beam'],
+            "Control": ctrl,
+            "Bolts": r['Bolt Qty']
+        })
+        
+    # 2. Create Dual Axis Plot
+    fig2, ax1 = plt.subplots(figsize=(12, 6))
     
     x_indices = range(len(names))
     
-    # Plot Lines
-    ax.plot(x_indices, moments, color='#E74C3C', linestyle='--', marker='o', markersize=4, label='Moment Limit (Strength)', alpha=0.8)
-    ax.plot(x_indices, defls, color='#3498DB', linestyle='-', marker='s', markersize=4, label='Deflection Limit (Stiffness)', alpha=0.8)
+    # --- Left Axis (Span - meters) ---
+    ax1.set_xlabel('Section Size')
+    ax1.set_ylabel('Safe Span Length (m)', color='#2C3E50', fontweight='bold')
     
-    # Fill Safe Area (The area under the minimum of the two curves)
+    l1 = ax1.plot(x_indices, moments, color='#E74C3C', linestyle='--', marker='o', markersize=4, label='Moment Limit (m)', alpha=0.8)
+    l2 = ax1.plot(x_indices, defls, color='#3498DB', linestyle='-', marker='s', markersize=4, label='Deflection Limit (m)', alpha=0.8)
+    
+    # Fill Safe Area
     min_vals = np.minimum(moments, defls)
-    ax.fill_between(x_indices, 0, min_vals, color='#2ECC71', alpha=0.2, label='Safe Span Zone')
+    ax1.fill_between(x_indices, 0, min_vals, color='#2ECC71', alpha=0.2, label='Safe Span Zone')
 
-    # Highlight Selected Section
+    # --- Right Axis (Shear - kg) ---
+    ax2 = ax1.twinx()
+    ax2.set_ylabel('Shear Capacity (kg)', color='#8E44AD', fontweight='bold')
+    l3 = ax2.plot(x_indices, shears, color='#8E44AD', linestyle=':', linewidth=2, label='Shear Capacity (kg)', alpha=0.6)
+
+    # Highlight Selected
     try:
         current_idx = [s['name'] for s in all_sections].index(selected_sec_name)
-        ax.axvline(x=current_idx, color='#F1C40F', linestyle='-', linewidth=2)
-        ax.text(current_idx, max(moments)*0.95, " SELECTED", color='#F39C12', fontweight='bold', rotation=90)
+        ax1.axvline(x=current_idx, color='#F1C40F', linestyle='-', linewidth=2, alpha=0.5)
     except:
         pass
 
+    # Combine Legends
+    lns = l1 + l2 + l3
+    labs = [l.get_label() for l in lns]
+    ax1.legend(lns, labs, loc='upper left')
+
     # Styling
-    ax.set_xticks(x_indices)
-    ax.set_xticklabels(names, rotation=90, fontsize=8)
-    ax.set_ylabel("Max Span Length (m)", fontweight='bold')
-    ax.set_title(f"Comparison: Moment vs Deflection Control ({load_case})", fontweight='bold')
-    ax.grid(True, linestyle=':', alpha=0.6)
-    ax.legend(loc='upper left')
+    ax1.set_xticks(x_indices)
+    ax1.set_xticklabels(names, rotation=90, fontsize=8)
+    ax1.grid(True, linestyle=':', alpha=0.5)
     
     st.pyplot(fig2)
     
     st.info("""
-    **วิธีอ่านกราฟ:**
-    * 🔴 **เส้นปะสีแดง (Moment):** ถ้าเส้นนี้ต่ำกว่า แปลว่าเหล็กจะพังเพราะรับแรงดัดไม่ไหว (มักเกิดกับหน้าตัดเล็ก)
-    * 🔵 **เส้นทึบสีฟ้า (Deflection):** ถ้าเส้นนี้ต่ำกว่า แปลว่าเหล็กจะแอ่นเกินกำหนด (L/360) (มักเกิดกับหน้าตัดใหญ่และยาว)
-    * 🟩 **พื้นที่สีเขียว (Safe Zone):** คือช่วงความยาวที่คุณใช้งานได้จริง (ค่าที่น้อยกว่าระหว่างสองเส้น)
+    **คำอธิบายกราฟ (2 แกน):**
+    * 🔴🔵 **เส้นแดง/ฟ้า (แกนซ้าย - เมตร):** ดูความยาวที่รับได้ (Moment/Deflection)
+    * 🟣 **เส้นม่วง (แกนขวา - kg):** ดูความสามารถในการรับแรงเฉือน ($V_n$) ยิ่งหน้าตัดใหญ่ เส้นนี้ยิ่งพุ่งสูง
     """)
 
-# Main entry point for standalone testing
+    # =====================================================
+    # 📋 DATA TABLE (Returned!)
+    # =====================================================
+    st.markdown("##### 📋 ตารางสรุปผล (Summary Table)")
+    
+    df = pd.DataFrame(batch_results)
+    
+    def get_icon(val):
+        return "🛑 Strength" if val == "Moment" else "〰️ Stiffness"
+    
+    df["Status"] = df["Control"].apply(get_icon)
+
+    st.dataframe(
+        df[["Section", "Safe Span (m)", "Status", "Shear Cap (kg)", "Bolts"]],
+        use_container_width=True,
+        column_config={
+            "Section": st.column_config.TextColumn("Section", width="medium"),
+            "Safe Span (m)": st.column_config.NumberColumn("Safe Span (m)", format="%.2f"),
+            "Shear Cap (kg)": st.column_config.NumberColumn("Shear Cap ($V_n$)", format="%.0f"),
+            "Bolts": st.column_config.NumberColumn("Bolts Req.", format="%d"),
+            "Status": st.column_config.TextColumn("Limitation"),
+        },
+        hide_index=True,
+        height=400
+    )
+
 if __name__ == "__main__":
     st.set_page_config(page_title="Structural Workbench", layout="wide")
     render_report_tab()
