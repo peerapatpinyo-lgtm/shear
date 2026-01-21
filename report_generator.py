@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 45.0 (Restored Classic - The Safe Zone)
+# Version: 46.0 (Pure Engineering Logic - No Shear Shading)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -194,7 +194,7 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
 # 🖥️ 4. RENDER UI & APP LOGIC
 # =========================================================
 def render_report_tab(beam_data=None, conn_data=None):
-    st.markdown("### 🖨️ Structural Calculation Workbench (Restored)")
+    st.markdown("### 🖨️ Structural Calculation Workbench (Final Logic)")
     
     # 1. Controls
     with st.container(border=True):
@@ -223,16 +223,17 @@ def render_report_tab(beam_data=None, conn_data=None):
             st.markdown(f"""
             **Section:** {res['Section']}
             
-            **1. Safe Span:** `{res['L_safe']:.2f} m` (Governing Check)
+            **1. Safe Span:** `{res['L_safe']:.2f} m` 
+            *(Controlled by {res['Control By'] if res['Control By'] in ['Shear','Bolt'] else 'Moment/Deflection'})*
             
-            **2. Limits:**
+            **2. Span Limits (Geometric Constraints):**
             * Moment Limit: `{res['L_crit_moment']:.2f} m`
             * Deflection Limit: `{res['L_crit_defl']:.2f} m`
             
-            **3. Connection Check:**
-            * Shear Capacity: `{res['Vn_beam']:,.0f} kg`
-            * Load Target: `{res['V_target']:,.0f} kg`
-            * Bolts Required: `{res['Bolt Qty']} - M{int(res['DB'])}`
+            **3. Shear Check (Capacity Constraints):**
+            * Shear Capacity ($V_n$): `{res['Vn_beam']:,.0f} kg`
+            * Current Load ($V_u$): `{res['V_target']:,.0f} kg`
+            * Status: {"✅ OK" if res['V_target'] < res['Vn_beam'] else "❌ FAIL"}
             """)
 
     with col_draw:
@@ -242,7 +243,7 @@ def render_report_tab(beam_data=None, conn_data=None):
     st.divider()
 
     # =====================================================
-    # 📊 GRAPH RESTORED (Green Safe Zone)
+    # 📊 GRAPH UPDATE (Corrected Logic)
     # =====================================================
     st.subheader("📊 Structural Limit States Diagram")
     
@@ -268,15 +269,18 @@ def render_report_tab(beam_data=None, conn_data=None):
     l1 = ax1.plot(x_indices, moments, color='#E74C3C', linestyle='--', marker='o', markersize=4, label='Moment Limit', alpha=0.9)
     l2 = ax1.plot(x_indices, defls, color='#3498DB', linestyle='-', label='Deflection Limit', alpha=0.8)
     
-    # 🔥 GREEN AREA (The "Safe Zone")
-    # ระบายพื้นที่ใต้กราฟที่ต่ำที่สุด (Intersection)
+    # 🔥 GREEN AREA: Only under Moment & Deflection
+    # ไม่มีการระบายสีเขียวที่เกี่ยวข้องกับ Shear เลย
     min_vals = np.minimum(moments, defls)
-    ax1.fill_between(x_indices, 0, min_vals, color='#2ECC71', alpha=0.3, label='Safe Zone (Design Envelope)')
+    ax1.fill_between(x_indices, 0, min_vals, color='#2ECC71', alpha=0.3, label='Safe Span Zone')
     
-    # --- Right Axis (Shear Force - Reference Only) ---
+    # --- Right Axis (Shear Force) ---
     ax2 = ax1.twinx()
     ax2.set_ylabel('Shear Capacity (kg)', color='#8E44AD', fontweight='bold')
-    l3 = ax2.plot(x_indices, shears, color='#8E44AD', linestyle=':', linewidth=1.5, label='Shear Capacity', alpha=0.5)
+    
+    # Shear Plot as Reference (Dashed / Dotted)
+    # แสดงเป็นเส้นอ้างอิงเท่านั้น ไม่มีการ Fill
+    l3 = ax2.plot(x_indices, shears, color='#8E44AD', linestyle=':', linewidth=1.5, label='Shear Capacity Check', alpha=0.5)
 
     # Highlight Current
     try:
@@ -290,18 +294,18 @@ def render_report_tab(beam_data=None, conn_data=None):
         pass
 
     # Legends
-    lns = l1 + l2 + [patches.Patch(color='#2ECC71', alpha=0.3, label='Safe Zone')] + l3
+    lns = l1 + l2 + [patches.Patch(color='#2ECC71', alpha=0.3, label='Safe Span Zone')] + l3
     labs = [l.get_label() for l in lns]
     ax1.legend(lns, labs, loc='upper left')
 
     ax1.set_xticks(x_indices)
     ax1.set_xticklabels(names, rotation=90, fontsize=8)
     ax1.grid(True, linestyle=':', alpha=0.5)
-    ax1.set_title(f"Design Envelope (Safe Zone): {load_case}", fontweight='bold')
+    ax1.set_title(f"Design Envelope (Defined by Moment & Deflection Only)", fontweight='bold')
     
     st.pyplot(fig2)
     
-    st.success("✅ **Design Envelope:** พื้นที่สีเขียวคือโซนปลอดภัยที่ความยาวคาน (Span) เหมาะสมกับการรับน้ำหนัก โดยไม่เกินทั้ง Moment และ Deflection ครับ")
+    st.info("💡 **Note:** พื้นที่สีเขียว (Safe Span Zone) ถูกกำหนดโดย Moment และ Deflection เท่านั้น ส่วน **Shear Capacity** แสดงไว้ในแกนขวาเพื่อใช้ตรวจสอบ (Check) แต่ไม่ได้เป็นตัวกำหนดพื้นที่ปลอดภัยในการใช้งานปกติครับ")
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Structural Workbench", layout="wide")
