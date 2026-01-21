@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 44.0 (Senior Insight - Shear Dominant Zone)
+# Version: 45.0 (Restored Classic - The Safe Zone)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,7 +8,7 @@ import numpy as np
 import math
 
 # =========================================================
-# 🏗️ 1. DATABASE (Standard Sections)
+# 🏗️ 1. DATABASE
 # =========================================================
 def get_standard_sections():
     return [
@@ -182,7 +182,7 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
         ax.hlines(curr_y, bolt_x_center-15, bolt_x_center+15, colors=COLOR_CENTER, linestyles='-.', linewidth=0.5, zorder=3)
         curr_y -= (spacing_cm*10)
 
-    # Simplified Dimensions for brevity
+    # Simplified Dimensions
     ax.set_xlim(0, web_w_draw + 50)
     ax.set_ylim(0, h_draw_area)
     ax.set_aspect('equal')
@@ -194,7 +194,7 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
 # 🖥️ 4. RENDER UI & APP LOGIC
 # =========================================================
 def render_report_tab(beam_data=None, conn_data=None):
-    st.markdown("### 🖨️ Structural Calculation Workbench (v44.0)")
+    st.markdown("### 🖨️ Structural Calculation Workbench (Restored)")
     
     # 1. Controls
     with st.container(border=True):
@@ -221,18 +221,18 @@ def render_report_tab(beam_data=None, conn_data=None):
         st.subheader("📝 รายการคำนวณ")
         with st.container(height=400, border=True):
             st.markdown(f"""
-            **Section:** {res['Section']} | **Load:** {load_pct}% of Capacity
+            **Section:** {res['Section']}
             
-            **1. Shear Check (Brittle Mode):**
-            * Capacity ($V_n$): `{res['Vn_beam']:,.0f} kg`
-            * Target Load ($V_u$): `{res['V_target']:,.0f} kg` (Fixed by user)
+            **1. Safe Span:** `{res['L_safe']:.2f} m` (Governing Check)
             
-            **2. Span Limits (Ductile Mode):**
-            * Max Span for Moment: `{res['L_crit_moment']:.2f} m`
-            * Max Span for Deflection: `{res['L_crit_defl']:.2f} m`
+            **2. Limits:**
+            * Moment Limit: `{res['L_crit_moment']:.2f} m`
+            * Deflection Limit: `{res['L_crit_defl']:.2f} m`
             
-            **3. Connection:**
-            * Bolts: `{res['Bolt Qty']} - M{int(res['DB'])}`
+            **3. Connection Check:**
+            * Shear Capacity: `{res['Vn_beam']:,.0f} kg`
+            * Load Target: `{res['V_target']:,.0f} kg`
+            * Bolts Required: `{res['Bolt Qty']} - M{int(res['DB'])}`
             """)
 
     with col_draw:
@@ -242,23 +242,21 @@ def render_report_tab(beam_data=None, conn_data=None):
     st.divider()
 
     # =====================================================
-    # 📊 GRAHP UPDATE (The "Truth" Diagram)
+    # 📊 GRAPH RESTORED (Green Safe Zone)
     # =====================================================
-    st.subheader("📊 Structural Behavior Diagram (Shear vs Moment Dominance)")
+    st.subheader("📊 Structural Limit States Diagram")
     
     names = []
     moments = []
     defls = []
     shears = [] 
-    shears_75 = [] 
-
+    
     for sec in all_sections:
         r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
         names.append(sec['name'].replace("H-", "")) 
         moments.append(r['L_crit_moment'])
         defls.append(r['L_crit_defl'])
         shears.append(r['Vn_beam']) 
-        shears_75.append(r['Vn_beam'] * 0.75)
 
     fig2, ax1 = plt.subplots(figsize=(12, 6))
     x_indices = range(len(names))
@@ -267,53 +265,43 @@ def render_report_tab(beam_data=None, conn_data=None):
     ax1.set_xlabel('Section Size')
     ax1.set_ylabel('Span Length (m)', color='#2C3E50', fontweight='bold')
     
-    # Plot Limits
-    l1 = ax1.plot(x_indices, moments, color='#E74C3C', linestyle='--', marker='o', markersize=4, label='Moment Limit (Ductile Yield)', alpha=0.9)
-    # l2 = ax1.plot(x_indices, defls, color='#3498DB', linestyle='-', label='Deflection Limit', alpha=0.5) # Hide to focus on Shear/Moment
+    l1 = ax1.plot(x_indices, moments, color='#E74C3C', linestyle='--', marker='o', markersize=4, label='Moment Limit', alpha=0.9)
+    l2 = ax1.plot(x_indices, defls, color='#3498DB', linestyle='-', label='Deflection Limit', alpha=0.8)
     
-    # 🔥 FILL AREA (The "Shear Dominant" Zone)
-    # ระบายสีเหลือง/ส้ม เพื่อสื่อว่าเป็นโซนที่ Shear Load สูงมากเมื่อเทียบกับ Span
-    ax1.fill_between(x_indices, 0, moments, color='#F39C12', alpha=0.3, label='Shear Dominant Zone (Brittle Risk)')
+    # 🔥 GREEN AREA (The "Safe Zone")
+    # ระบายพื้นที่ใต้กราฟที่ต่ำที่สุด (Intersection)
+    min_vals = np.minimum(moments, defls)
+    ax1.fill_between(x_indices, 0, min_vals, color='#2ECC71', alpha=0.3, label='Safe Zone (Design Envelope)')
     
-    # --- Right Axis (Shear Force) ---
+    # --- Right Axis (Shear Force - Reference Only) ---
     ax2 = ax1.twinx()
-    ax2.set_ylabel('Shear Load (kg)', color='#8E44AD', fontweight='bold')
-    l3 = ax2.plot(x_indices, shears, color='#8E44AD', linestyle=':', linewidth=2, label='Shear Capacity (Vn)', alpha=0.6)
-    l4 = ax2.plot(x_indices, shears_75, color='#D2B4DE', linestyle='-.', linewidth=1, label='75% Vn', alpha=0.8)
+    ax2.set_ylabel('Shear Capacity (kg)', color='#8E44AD', fontweight='bold')
+    l3 = ax2.plot(x_indices, shears, color='#8E44AD', linestyle=':', linewidth=1.5, label='Shear Capacity', alpha=0.5)
 
     # Highlight Current
     try:
         current_idx = [s['name'] for s in all_sections].index(selected_sec_name)
-        ax1.axvline(x=current_idx, color='black', linestyle='-', linewidth=1, alpha=0.3)
-        # Mark the critical point
-        limit_val = moments[current_idx]
-        ax1.plot(current_idx, limit_val, 'r*', markersize=15, zorder=10)
-        ax1.text(current_idx, limit_val + 0.2, "Transition Point", color='#C0392B', fontsize=9, ha='center')
+        ax1.axvline(x=current_idx, color='#F1C40F', linestyle='-', linewidth=2, alpha=0.6)
+        
+        safe_val = res['L_safe']
+        ax1.plot(current_idx, safe_val, 'g*', markersize=15, zorder=10)
+        ax1.text(current_idx, safe_val + 0.5, f" {safe_val:.2f}m", color='green', fontweight='bold')
     except:
         pass
 
     # Legends
-    lns = l1 + [patches.Patch(color='#F39C12', alpha=0.3, label='Shear Dominant Zone')] + l3 + l4
+    lns = l1 + l2 + [patches.Patch(color='#2ECC71', alpha=0.3, label='Safe Zone')] + l3
     labs = [l.get_label() for l in lns]
     ax1.legend(lns, labs, loc='upper left')
 
     ax1.set_xticks(x_indices)
     ax1.set_xticklabels(names, rotation=90, fontsize=8)
     ax1.grid(True, linestyle=':', alpha=0.5)
-    ax1.set_title(f"Behavior Mode: Shear Dominant vs Moment Limit (Load = {load_pct}% Vn)", fontweight='bold')
+    ax1.set_title(f"Design Envelope (Safe Zone): {load_case}", fontweight='bold')
     
     st.pyplot(fig2)
     
-    st.warning(f"""
-    **⚠️ วิเคราะห์เชิงลึก (Senior Engineer Insight):**
-    
-    กราฟนี้แสดงให้เห็นว่า ถ้าคุณใส่ Load เข้าไป **{load_pct}% ของ Shear Capacity ($V_n$)**:
-    
-    1.  **พื้นที่สีส้ม (Shear Dominant):** คือช่วงความยาวที่ "รับได้" ในทางทฤษฎี (Moment ไม่เกิน) **แต่น่ากลัวมาก** * เพราะคานจะรับแรงเฉือนมหาศาล (Shear Critical) 
-        * หากวิบัติ จะเป็นการวิบัติแบบเปราะ (Sudden/Brittle Failure)
-    2.  **จุดตัด (Transition Point):** คือจุดที่ Moment เริ่มเข้ามามีบทบาท
-    3.  **คำแนะนำ:** ถ้าจำเป็นต้องใช้คานช่วงสั้นในโซนสีส้ม **ควรลด Load ลง** หรือ **เสริมเหล็กรับแรงเฉือนเป็นพิเศษ** ไม่ควรใช้งานที่ 100% Shear Capacity ในโซนนี้ครับ
-    """)
+    st.success("✅ **Design Envelope:** พื้นที่สีเขียวคือโซนปลอดภัยที่ความยาวคาน (Span) เหมาะสมกับการรับน้ำหนัก โดยไม่เกินทั้ง Moment และ Deflection ครับ")
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Structural Workbench", layout="wide")
