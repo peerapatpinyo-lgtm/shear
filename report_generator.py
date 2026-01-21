@@ -1,14 +1,14 @@
 # report_generator.py
-# Version: 40.0 (Full Code: Dual Line Chart Strength vs Stiffness)
+# Version: 40.1 (Fixed TypeError: Arguments Mismatch)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-import numpy as np  # Required for chart fill logic
+import numpy as np 
 import math
 
 # =========================================================
-# 🏗️ 1. FULL DATABASE (TIS Standard Wide Flange)
+# 🏗️ 1. DATABASE
 # =========================================================
 def get_standard_sections():
     return [
@@ -251,8 +251,8 @@ def draw_connection_sketch(h_beam, n_bolts, bolt_dia, plate_len_mm, le_cm, spaci
 # =========================================================
 # 🖥️ 4. RENDER UI & APP LOGIC
 # =========================================================
-def render_report_tab():
-    st.markdown("### 🖨️ Structural Calculation Workbench (v40.0)")
+def render_report_tab(beam_data=None, conn_data=None): # 🔥 Fixed: Added arguments to match app.py call
+    st.markdown("### 🖨️ Structural Calculation Workbench (v40.1)")
     
     # 1. Controls
     with st.container(border=True):
@@ -356,7 +356,7 @@ def render_report_tab():
     * 🟩 **พื้นที่สีเขียว (Safe Zone):** คือช่วงความยาวที่คุณใช้งานได้จริง (ค่าที่น้อยกว่าระหว่างสองเส้น)
     """)
 
-# Main entry point
+# Main entry point for standalone testing
 if __name__ == "__main__":
     st.set_page_config(page_title="Structural Workbench", layout="wide")
     render_report_tab()
