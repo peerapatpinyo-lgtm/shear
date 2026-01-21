@@ -21,9 +21,10 @@ FV_WELD = 1470
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
     Renders the Structural Analytics Dashboard.
-    - Version 33.1: 
-        1. Fixed 'ValueError: Invalid annotation position' in Plotly.
-        2. Changed 'top center' to 'inside top right' for Moment Zone label.
+    - Version 34.0: 
+        1. Fixed 'Zoom' functionality (enabled scrollZoom).
+        2. Fixed 'Distorted Graph' by capping the Y-axis view to reasonable limits
+           (preventing infinity values at span=0 from flattening the curve).
     """
     
     st.markdown("## 🏗️ Structural Optimization Dashboard")
@@ -46,7 +47,6 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         Aw = h_cm * tw_cm
         V_beam_nominal = 0.60 * sec['Fy'] * Aw 
         
-        # Target Load
         V_target = V_beam_nominal * (load_pct / 100.0)
 
         # --- B. ZONES ---
@@ -74,7 +74,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         while not is_safe and req_bolts <= 24:
             plate_h_cm = math.ceil(((req_bolts - 1) * pitch_cm) + (2 * edge_cm))
             
-            # 6 Checks
+            # Simplified Checks
             Rn_bolt = req_bolts * FV_BOLT * (3.14159 * bolt_d_cm**2 / 4)
             Lc_edge = edge_cm - hole_d_cm/2; Lc_inner = pitch_cm - hole_d_cm
             Rn_bear = (min(1.2*Lc_edge*t_plate_cm*FU_PLATE, 2.4*bolt_d_cm*t_plate_cm*FU_PLATE) + 
@@ -127,7 +127,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         use_container_width=True,
         column_config={
             "Section": st.column_config.TextColumn("Section", width="small"),
-            "V_Nominal": st.column_config.NumberColumn("Shear Capacity (Vn)", format="%.0f kg"),
+            "V_Nominal": st.column_config.NumberColumn("Shear Cap (Vn)", format="%.0f kg"),
             "V_Target": st.column_config.NumberColumn(f"Load ({load_pct}%)", format="%.0f kg"),
             "Bolt Spec": st.column_config.TextColumn("Bolts", width="small"),
             "Plate Size": st.column_config.TextColumn("Plate", width="medium"),
@@ -139,7 +139,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         hide_index=True
     )
 
-    # --- 3. INTERACTIVE PLOTLY GRAPH ---
+    # --- 3. INTERACTIVE GRAPH (FIXED) ---
     st.divider()
     st.subheader("🔬 Interactive Analysis Graph")
     
@@ -157,7 +157,8 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     K_derived = L_end * 8 * M_derived if M_derived > 0 else 0
 
     max_span = max(10, L_end * 1.5)
-    spans = np.linspace(0.1, max_span, 500)
+    # Start form 0.2m to avoid infinity spike at 0
+    spans = np.linspace(0.2, max_span, 500) 
     
     ws = (2 * V_graph) / spans 
     wm = (8 * M_derived) / (spans**2) 
@@ -167,60 +168,46 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     # === PLOTLY SETUP ===
     fig = go.Figure()
 
-    # 1. Limit Lines
-    fig.add_trace(go.Scatter(x=spans, y=ws, mode='lines', name='Shear Limit (Web)', 
-                             line=dict(color='#9B59B6', dash='dot')))
-    fig.add_trace(go.Scatter(x=spans, y=wm, mode='lines', name='Moment Limit', 
-                             line=dict(color='#E74C3C', dash='dash')))
-    fig.add_trace(go.Scatter(x=spans, y=wd, mode='lines', name='Deflection Limit', 
-                             line=dict(color='#2ECC71', dash='dashdot')))
+    # Limit Lines
+    fig.add_trace(go.Scatter(x=spans, y=ws, mode='lines', name='Shear Limit (Web)', line=dict(color='#9B59B6', dash='dot')))
+    fig.add_trace(go.Scatter(x=spans, y=wm, mode='lines', name='Moment Limit', line=dict(color='#E74C3C', dash='dash')))
+    fig.add_trace(go.Scatter(x=spans, y=wd, mode='lines', name='Deflection Limit', line=dict(color='#2ECC71', dash='dashdot')))
     
-    # 2. Safe Envelope
-    fig.add_trace(go.Scatter(x=spans, y=w_safe, mode='lines', name='Safe Load Envelope', 
-                             line=dict(color='#2C3E50', width=4)))
+    # Safe Envelope
+    fig.add_trace(go.Scatter(x=spans, y=w_safe, mode='lines', name='Safe Load Envelope', line=dict(color='#2C3E50', width=4)))
 
-    # 3. Highlight Zones (FIXED ERROR HERE)
-    # Shear Zone (0 to L_start)
+    # Zones
     if L_start > 0:
         fig.add_vrect(x0=0, x1=L_start, fillcolor="#9B59B6", opacity=0.1, 
-                      layer="below", line_width=0, 
-                      annotation_text="Shear Zone", 
-                      annotation_position="top left") # "top left" is valid
+                      layer="below", line_width=0, annotation_text="Shear", annotation_position="top left")
     
-    # Moment Zone (L_start to L_end)
     if L_end > L_start:
+        # Fixed 'inside top right'
         fig.add_vrect(x0=L_start, x1=L_end, fillcolor="#E74C3C", opacity=0.15, 
-                      layer="below", line_width=0, 
-                      annotation_text="Moment Zone", 
-                      annotation_position="inside top right") # CHANGED from "top center" (invalid) to "inside top right" (valid)
-        
-        # Add Vertical Line Markers
-        fig.add_vline(x=L_start, line_width=1, line_dash="dash", line_color="#E74C3C")
-        fig.add_vline(x=L_end, line_width=1, line_dash="dash", line_color="#2ECC71")
+                      layer="below", line_width=0, annotation_text="Moment", annotation_position="inside top right")
 
-    # 4. Layout
+    # === INTELLIGENT Y-AXIS SCALING ===
+    # Calculate a reasonable Y-Max so the graph doesn't look flat
+    # We take the safe load at Span = 1.0m as a reference benchmark
+    y_benchmark = np.interp(1.0, spans, w_safe)
+    y_max_view = y_benchmark * 1.5 if y_benchmark > 0 else V_graph
+    
     fig.update_layout(
         title=f"Critical Limit State Diagram: {selected_name}",
         xaxis_title="<b>Span Length (m)</b>",
         yaxis_title="<b>Safe Uniform Load (kg/m)</b>",
-        yaxis_range=[0, max(w_safe)*1.2],
+        yaxis_range=[0, y_max_view],  # <-- CLIP Y-AXIS HERE
         xaxis_range=[0, max_span],
         template="plotly_white",
-        hovermode="x unified", 
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        ),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         height=550
     )
 
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption("💡 **Tip:** Click and drag on the graph to **Zoom**. Double-click to **Reset**. Hover to see values.")
+    # === ENABLE ZOOM & TOOLS ===
+    # 'scrollZoom': True makes the mouse wheel zoom in/out
+    st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
     
-    # Summary
     c1, c2, c3 = st.columns(3)
     c1.info(f"**Max Capacity (Vn):** {row['V_Nominal']:,.0f} kg")
     c2.info(f"**Moment Zone:** {L_start:.2f} - {L_end:.2f} m")
