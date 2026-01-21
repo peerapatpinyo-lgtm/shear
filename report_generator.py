@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 38.0 (Zone Chart: Moment vs Deflection Control)
+# Version: 39.0 (Easy Read Chart - Color Coded by Failure Mode)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -73,17 +73,6 @@ def get_load_case_factor(case_name):
         "Cantilever (Point Load @Tip)": 1.0
     }
     return cases.get(case_name, 4.0)
-
-def get_derivation_text(case_name):
-    if case_name == "Simple Beam (Uniform Load)":
-        return ("* **Support:** Simple Support\n* **Load:** Uniform Distributed Load\n* **Proof:** $V = wL/2 \\rightarrow M = wL^2/8 \\rightarrow \\mathbf{M = VL/4}$")
-    elif case_name == "Simple Beam (Point Load @Center)":
-        return ("* **Support:** Simple Support\n* **Load:** Point Load at Center\n* **Proof:** $V = P/2 \\rightarrow M = PL/4 \\rightarrow \\mathbf{M = VL/2}$")
-    elif case_name == "Cantilever (Uniform Load)":
-        return ("* **Support:** Cantilever (Fixed)\n* **Load:** Uniform Distributed Load\n* **Proof:** $V = wL \\rightarrow M = wL^2/2 \\rightarrow \\mathbf{M = VL/2}$")
-    elif case_name == "Cantilever (Point Load @Tip)":
-        return ("* **Support:** Cantilever (Fixed)\n* **Load:** Point Load at Tip\n* **Proof:** $V = P \\rightarrow M = PL \\rightarrow \\mathbf{M = VL}$")
-    return ""
 
 def calculate_zx(h, b, tw, tf):
     h, b, tw, tf = h/10, b/10, tw/10, tf/10 
@@ -282,8 +271,7 @@ def render_report_tab(beam_data_ignored, conn_data_ignored):
     selected_props = next(s for s in all_sections if s['name'] == selected_sec_name)
     factor = get_load_case_factor(load_case)
     res = calculate_connection(selected_props, load_pct, bolt_dia, factor, load_case)
-    proof_text = get_derivation_text(load_case)
-
+    
     st.divider()
 
     # 2. Detailed Report Layout
@@ -331,11 +319,11 @@ $$ L_{{safe}} = \\min({res['L_crit_moment']:.2f}, {res['L_crit_defl']:.2f}) = \\
     st.divider()
 
     # =====================================================
-    # 📊 NEW! COMPARISON CHART & TABLE
+    # 📊 NEW! SIMPLIFIED CHART & TABLE
     # =====================================================
-    st.subheader("📊 ตารางเปรียบเทียบ (Strength vs Stiffness)")
+    st.subheader("📊 เปรียบเทียบระยะปลอดภัย (Safe Span Analysis)")
     
-    # 1. Prepare Batch Data
+    # 1. Prepare Data
     batch_results = []
     for sec in all_sections:
         r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
@@ -343,46 +331,58 @@ $$ L_{{safe}} = \\min({res['L_crit_moment']:.2f}, {res['L_crit_defl']:.2f}) = \\
         
         batch_results.append({
             "Section": r['Section'],
-            "Moment Limit (m)": r['L_crit_moment'],
-            "Deflection Limit (m)": r['L_crit_defl'],
             "Safe Span (m)": r['L_safe'],
             "Control": ctrl
         })
     df = pd.DataFrame(batch_results)
+    
+    # 2. Sort by Safe Span (Step-ladder look)
+    df = df.sort_values(by="Safe Span (m)", ascending=True)
 
-    # 2. Zone Chart (Bar Chart Comparison)
-    st.markdown("##### 📈 Span Capability: Moment vs Deflection")
-    st.caption("กราฟนี้แสดงช่วงความยาวที่ **Moment (สีแดง)** และ **Deflection (สีฟ้า)** ยอมรับได้ (ค่าที่ต่ำกว่าคือค่าที่ปลอดภัย)")
+    # 3. Create Simplified Plot
+    st.markdown("##### 📈 กราฟแสดงความยาวที่ทำได้ (เรียงจากสั้นไปยาว)")
+    st.caption("🔴 **สีแดง = Moment Control** (พังที่แรงดัด) | 🔵 **สีฟ้า = Deflection Control** (พังที่การแอ่นตัว)")
     
-    # Transform data for plotting
-    chart_df = df.set_index("Section")[["Moment Limit (m)", "Deflection Limit (m)"]]
-    st.bar_chart(chart_df, height=300, color=["#FF4B4B", "#1C83E1"]) # Red for Moment, Blue for Deflection
+    fig2, ax2 = plt.subplots(figsize=(10, 6))
+    
+    # Color mapping
+    colors = ['#FF4B4B' if x == 'Moment' else '#1C83E1' for x in df['Control']]
+    
+    bars = ax2.bar(df['Section'], df['Safe Span (m)'], color=colors, alpha=0.9)
+    
+    # Clean up Chart
+    ax2.set_ylabel("Max Safe Span (m)", fontsize=10, fontweight='bold')
+    ax2.set_xlabel("Section Size (Sorted)", fontsize=10, fontweight='bold')
+    plt.xticks(rotation=90, fontsize=8)
+    ax2.grid(axis='y', linestyle='--', alpha=0.5)
+    
+    # Add Legend Manually
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color='#FF4B4B', lw=4, label='Moment Limit (Strength)'),
+        Line2D([0], [0], color='#1C83E1', lw=4, label='Deflection Limit (Stiffness)')
+    ]
+    ax2.legend(handles=legend_elements, loc='upper left')
+    
+    st.pyplot(fig2)
 
-    # 3. Highlighted Table
-    st.markdown("##### 📋 Detailed Data Table")
+    # 4. Table with Status Icons
+    st.markdown("##### 📋 ตารางสรุปผล")
     
-    # Filter Toggle
-    show_moment_only = st.checkbox("🎯 Show ONLY Moment Controlled Sections", value=False)
+    # Add readable icons
+    def get_icon(val):
+        return "🛑 Strength" if val == "Moment" else "〰️ Stiffness"
     
-    if show_moment_only:
-        df_display = df[df["Control"] == "Moment"]
-    else:
-        df_display = df
-        
+    df["Status"] = df["Control"].apply(get_icon)
+    
     st.dataframe(
-        df_display,
+        df[["Section", "Safe Span (m)", "Status"]],
         use_container_width=True,
         column_config={
-            "Section": st.column_config.TextColumn("Steel Section", width="medium"),
-            "Moment Limit (m)": st.column_config.NumberColumn("L-Moment (m)", format="%.2f", help="Max Length limited by Bending Strength"),
-            "Deflection Limit (m)": st.column_config.NumberColumn("L-Deflect (m)", format="%.2f", help="Max Length limited by L/360"),
-            "Safe Span (m)": st.column_config.NumberColumn("Safe Span (m)", format="%.2f", help="The final allowable length"),
-            "Control": st.column_config.TextColumn(
-                "Control By",
-                help="Which factor limits the span?",
-                validate="^Moment$" # This is just a regex validator, essentially highlights valid text
-            ),
+            "Section": st.column_config.TextColumn("Section", width="medium"),
+            "Safe Span (m)": st.column_config.NumberColumn("Safe Span (m)", format="%.2f"),
+            "Status": st.column_config.TextColumn("Limitation Factor"),
         },
         hide_index=True,
-        height=500
+        height=400
     )
