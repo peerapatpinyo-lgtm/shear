@@ -1,12 +1,11 @@
 # report_analytics.py
-# Version: 1.1 (Custom Green Zone: Shear to Min-Limit)
+# Version: 1.2 (Corrected Logic: Safe Zone starts from 0)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
 # Import Logic from main file
-# (ตรวจสอบให้แน่ใจว่าไฟล์ report_generator.py อยู่ในโฟลเดอร์เดียวกัน)
 try:
     from report_generator import get_standard_sections, calculate_connection
 except ImportError:
@@ -16,7 +15,7 @@ except ImportError:
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
     แสดงผลกราฟและตารางเปรียบเทียบ
-    Updated: ปรับการระบายสีเขียวให้อยู่ระหว่างเส้น Shear (Scaled) กับ Min(Limit)
+    Updated: แก้ไข Green Zone ให้เริ่มจาก 0 (Area Under Curve) เพื่อความถูกต้องทางฟิสิกส์
     """
     st.markdown("## 📊 Analytics Dashboard")
     
@@ -48,56 +47,43 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
             "Util. (%)": util
         })
 
-    # --- 2. Structural Limit States Diagram (Updated Zone) ---
+    # --- 2. Structural Limit States Diagram (Corrected) ---
     st.subheader("📈 Structural Limit States Diagram")
     
     fig, ax1 = plt.subplots(figsize=(12, 6))
     x = np.arange(len(names))
     
-    # 2.1 Calculate Axis Limits to Normalize Data visually
-    # หาสเกลสูงสุดของแต่ละแกนเพื่อเทียบอัตราส่วน
-    max_span_val = max(max(moments), max(defls)) * 1.1
-    max_shear_val = max(shears) * 1.1
+    # 2.1 Plot Span Limits (Left Axis - Meters)
+    ax1.set_ylabel('Safe Span (m)', color='#27AE60', fontweight='bold')
     
-    # สร้างเส้น Shear จำลอง (Scaled) เพื่อใช้ระบายสีบนแกนซ้าย (เมตร)
-    # สูตร: ค่า Shear เดิม * (Max Span / Max Shear)
-    shear_scale_factor = max_span_val / max_shear_val
-    shears_visual = np.array(shears) * shear_scale_factor
-
-    # 2.2 Plot Limits (Left Axis - Meters)
-    ax1.set_ylabel('Max Span (m)', color='#27AE60', fontweight='bold')
+    # Plot เส้น Limit
     ax1.plot(x, moments, 'r--', label='Moment Limit', alpha=0.6, linewidth=1.5)
     ax1.plot(x, defls, 'b-', label='Deflection Limit', alpha=0.6, linewidth=1.5)
     
-    # 2.3 Custom Fill Between (Green Zone)
-    # พื้นที่: ด้านล่างคือ Shear (Visual), ด้านบนคือ Min(Moment, Deflect)
-    upper_bound = np.minimum(moments, defls)
-    lower_bound = shears_visual
-    
-    # ระบายสีเฉพาะส่วนที่ Upper > Lower (เพื่อความสวยงาม)
+    # ✅ FIX: Safe Zone คือพื้นที่ใต้กราฟ (จาก 0 ถึงค่าต่ำสุดของ Limit)
+    safe_limit = np.minimum(moments, defls)
     ax1.fill_between(
         x, 
-        lower_bound, 
-        upper_bound, 
-        where=(upper_bound > lower_bound),
+        0, # เริ่มจากพื้น (0 เมตร)
+        safe_limit, # ถึงเพดาน (Limit)
         color='#2ECC71', 
-        alpha=0.4, 
-        label='Optimal Zone (Above Shear Trend)'
+        alpha=0.3, 
+        label='Safe Operating Zone'
     )
     
     # ตั้งค่าแกนซ้าย
-    ax1.set_ylim(0, max_span_val)
+    ax1.set_ylim(bottom=0)
     ax1.legend(loc='upper left')
     ax1.set_xticks(x)
     ax1.set_xticklabels(names, rotation=90, fontsize=8)
     ax1.grid(True, linestyle=':', alpha=0.5)
     
-    # 2.4 Plot Shear Capacity (Right Axis - kg)
+    # 2.2 Plot Shear Capacity (Right Axis - kg)
+    # แสดงเป็นเส้น Reference แยกต่างหาก ไม่ให้ตีกันกับพื้นที่สีเขียว
     ax2 = ax1.twinx()
     ax2.set_ylabel('Shear Capacity (kg)', color='purple', fontweight='bold')
-    # Plot เส้นจริง (หน่วย kg) ทับลงไปที่ตำแหน่งเดียวกับเส้น Visual
     ax2.plot(x, shears, color='purple', linestyle=':', linewidth=2, label='Shear Capacity ($V_n$)')
-    ax2.set_ylim(0, max_shear_val) # Sync scale with the visual factor
+    ax2.set_ylim(bottom=0)
     ax2.legend(loc='upper right')
     
     st.pyplot(fig)
