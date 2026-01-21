@@ -1,5 +1,5 @@
 # report_generator.py
-# Version: 50.0 (The Ultimate Merge: V49 Logic + V36 Dimensions + Section View)
+# Version: 51.0 (Ultimate Merge + Restored Comparison Table)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,7 +11,7 @@ import math
 # 🏗️ 1. DATABASE & PROPERTIES
 # =========================================================
 def get_standard_sections():
-    # ข้อมูลดิบ (Raw Data) - ครบทุก Series ตามมาตรฐาน TIS
+    # ข้อมูลดิบ (Raw Data)
     return [
         {"name": "H-100x50x5x7",    "h": 100, "b": 50,  "tw": 5,  "tf": 7,  "Fy": 2500, "Fu": 4100},
         {"name": "H-100x100x6x8",   "h": 100, "b": 100, "tw": 6,  "tf": 8,  "Fy": 2500, "Fu": 4100},
@@ -64,7 +64,7 @@ def get_full_database_df():
     return pd.DataFrame(data)
 
 # =========================================================
-# ⚙️ 2. CALCULATION ENGINE (Logic V.49)
+# ⚙️ 2. CALCULATION ENGINE (V50)
 # =========================================================
 def get_load_case_factor(case_name):
     cases = {"Simple Beam (Uniform Load)": 4.0, "Simple Beam (Point Load @Center)": 2.0, "Cantilever (Uniform Load)": 2.0, "Cantilever (Point Load @Tip)": 1.0}
@@ -127,34 +127,24 @@ def calculate_connection(props, load_percent, bolt_dia, span_factor, case_name):
     }
 
 # =========================================================
-# 🎨 3. DRAWING LOGIC (Merged V36 Dimensions + V49 Views)
+# 🎨 3. DRAWING LOGIC (V50 - Dimensions + Views)
 # =========================================================
 def draw_professional_shop_drawing(res):
-    # Setup 2 Views: Elevation (Left) + Section (Right)
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 7), gridspec_kw={'width_ratios': [2, 1]})
     
-    # --- COMMON STYLES ---
-    COLOR_OBJ = '#2C3E50'
-    COLOR_DIM = '#E74C3C'
-    COLOR_CENTER = '#95A5A6'
-    LW_OBJ = 1.5
-    LW_DIM = 0.8
+    # Styles
+    COLOR_OBJ = '#2C3E50'; COLOR_DIM = '#E74C3C'; COLOR_CENTER = '#95A5A6'
+    LW_OBJ = 1.5; LW_DIM = 0.8
     
-    # ==========================
-    # VIEW 1: ELEVATION (LEFT)
-    # ==========================
+    # --- VIEW 1: ELEVATION ---
     h, tw, L_plate_mm = res['h'], res['tw'], res['Plate Len']*10
-    web_w_draw = 220 
-    h_draw_area = h + 150
-    plate_w = 100
-    plate_x = (web_w_draw - plate_w) / 2
+    web_w_draw = 220; h_draw_area = h + 150
+    plate_w = 100; plate_x = (web_w_draw - plate_w) / 2
     plate_y_start = (h - L_plate_mm) / 2 + 75
     
-    # 1.1 Objects
     ax1.add_patch(patches.Rectangle((0, 0), web_w_draw, h_draw_area, facecolor='#ECF0F1', zorder=0))
     ax1.add_patch(patches.Rectangle((plate_x, plate_y_start), plate_w, L_plate_mm, linewidth=LW_OBJ, edgecolor=COLOR_OBJ, facecolor='#D6EAF8', zorder=2))
     
-    # 1.2 Bolts
     bolt_x = plate_x + plate_w/2
     bolt_y_top = plate_y_start + L_plate_mm - (res['Le']*10)
     bolt_ys = []
@@ -162,69 +152,49 @@ def draw_professional_shop_drawing(res):
     for i in range(res['Bolt Qty']):
         bolt_ys.append(curr_y)
         ax1.add_patch(patches.Circle((bolt_x, curr_y), (res['DB']+2)/2, edgecolor=COLOR_OBJ, facecolor='white', linewidth=1.2, zorder=3))
-        # Centerline
         ax1.hlines(curr_y, bolt_x-10, bolt_x+10, colors=COLOR_CENTER, linestyles='-.', linewidth=0.5)
         curr_y -= (res['S']*10)
-    
     ax1.vlines(bolt_x, plate_y_start-20, plate_y_start+L_plate_mm+20, colors=COLOR_CENTER, linestyles='-.', linewidth=0.5)
 
-    # 1.3 DIMENSION FUNCTION (From V36)
     def draw_dim_arrow(ax, y_start, y_end, x_pos, text_val, label_prefix="", orient='v'):
         if orient == 'v':
             ax.annotate(text='', xy=(x_pos, y_start), xytext=(x_pos, y_end), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM))
             mid_y = (y_start + y_end) / 2
             txt = f"{label_prefix} {int(text_val)}" if label_prefix else f"{int(text_val)}"
             ax.text(x_pos + 5, mid_y, txt, color=COLOR_DIM, fontsize=8, va='center')
-            # Extension lines
             ax.plot([plate_x+plate_w, x_pos], [y_start, y_start], color=COLOR_DIM, lw=0.5, ls=':')
             ax.plot([plate_x+plate_w, x_pos], [y_end, y_end], color=COLOR_DIM, lw=0.5, ls=':')
-        else: # Horizontal
+        else:
             ax.annotate(text='', xy=(y_start, x_pos), xytext=(y_end, x_pos), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=LW_DIM))
             mid_x = (y_start + y_end) / 2
             txt = f"{int(text_val)}"
             ax.text(mid_x, x_pos - 8, txt, color=COLOR_DIM, fontsize=8, ha='center', va='top')
-            # Extensions
             ax.plot([y_start, y_start], [plate_y_start, x_pos], color=COLOR_DIM, lw=0.5, ls=':')
             ax.plot([y_end, y_end], [plate_y_start, x_pos], color=COLOR_DIM, lw=0.5, ls=':')
 
-    # 1.4 Draw Dimensions
-    # Vertical (Right side of plate)
     dim_x_offset = plate_x + plate_w + 15
     draw_dim_arrow(ax1, plate_y_start + L_plate_mm, bolt_ys[0], dim_x_offset, res['Le']*10, "Le", 'v')
     for i in range(len(bolt_ys)-1):
         draw_dim_arrow(ax1, bolt_ys[i], bolt_ys[i+1], dim_x_offset, res['S']*10, "S", 'v')
     draw_dim_arrow(ax1, bolt_ys[-1], plate_y_start, dim_x_offset, res['Le']*10, "Le", 'v')
     
-    # Horizontal (Bottom)
     dim_y_horz = plate_y_start - 30
     draw_dim_arrow(ax1, plate_x, bolt_x, dim_y_horz, plate_w/2, "", 'h')
     draw_dim_arrow(ax1, bolt_x, plate_x+plate_w, dim_y_horz, plate_w/2, "", 'h')
 
-    ax1.set_xlim(0, web_w_draw + 60)
-    ax1.set_ylim(0, h_draw_area)
+    ax1.set_xlim(0, web_w_draw + 60); ax1.set_ylim(0, h_draw_area); ax1.axis('off')
     ax1.set_title("ELEVATION", fontweight='bold', color=COLOR_OBJ)
-    ax1.axis('off')
 
-    # ==========================
-    # VIEW 2: SECTION (RIGHT)
-    # ==========================
-    b, tf = res['b'], res['tf']
-    cx = 100 
-    
-    # Flanges
+    # --- VIEW 2: SECTION ---
+    b, tf = res['b'], res['tf']; cx = 100 
     ax2.add_patch(patches.Rectangle((cx - b/2, h_draw_area/2 + h/2 - tf), b, tf, facecolor='#7F8C8D', edgecolor='black')) 
     ax2.add_patch(patches.Rectangle((cx - b/2, h_draw_area/2 - h/2), b, tf, facecolor='#7F8C8D', edgecolor='black')) 
-    # Web
     ax2.add_patch(patches.Rectangle((cx - tw/2, h_draw_area/2 - h/2 + tf), tw, h - 2*tf, facecolor='#95A5A6', edgecolor='black'))
-    # Plate (Side View)
     pl_thk = 10
     ax2.add_patch(patches.Rectangle((cx + tw/2, h_draw_area/2 - L_plate_mm/2), pl_thk, L_plate_mm, facecolor='#3498DB', edgecolor='black'))
-    # Bolt Line
     ax2.plot([cx-20, cx+50], [h_draw_area/2, h_draw_area/2], 'k-.', linewidth=0.5)
-    
-    ax2.set_xlim(0, 200); ax2.set_ylim(0, h_draw_area)
+    ax2.set_xlim(0, 200); ax2.set_ylim(0, h_draw_area); ax2.axis('off')
     ax2.set_title("SECTION", fontweight='bold', color=COLOR_OBJ)
-    ax2.axis('off')
 
     plt.suptitle(f"SHOP DRAWING: {res['Section']} (PL-100x{int(L_plate_mm)}x10mm)", fontsize=12, fontweight='bold', color=COLOR_OBJ)
     return fig
@@ -235,12 +205,11 @@ def draw_professional_shop_drawing(res):
 def render_report_tab(beam_data=None, conn_data=None, *args, **kwargs):
     st.markdown("### 🖨️ Structural Calculation Workbench (Ultimate)")
     
-    # --- 1. Database Table ---
+    # 1. Database Table
     with st.expander("📂 ดูตารางเหล็กทั้งหมด (Standard Sections Database)", expanded=False):
-        df_full = get_full_database_df()
-        st.dataframe(df_full, use_container_width=True, hide_index=True)
+        st.dataframe(get_full_database_df(), use_container_width=True, hide_index=True)
 
-    # --- 2. Controls ---
+    # 2. Controls
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns([2, 1, 1, 1.5])
         all_sections = get_standard_sections()
@@ -256,29 +225,20 @@ def render_report_tab(beam_data=None, conn_data=None, *args, **kwargs):
     
     st.divider()
 
-    # --- 3. Results & Drawing ---
+    # 3. Results & Drawing
     c_left, c_right = st.columns([1, 1.5])
-    
     with c_left:
         st.subheader("📝 Summary Result")
         st.success(f"✅ **Safe Span Limit: {res['L_safe']:.2f} m**")
         st.caption(f"Controlled by: {'Moment' if res['L_crit_moment'] < res['L_crit_defl'] else 'Deflection'}")
-        
-        st.markdown("---")
-        st.markdown("**Design Checks:**")
-        st.markdown(f"- Moment Span: `{res['L_crit_moment']:.2f} m`")
-        st.markdown(f"- Deflection Span: `{res['L_crit_defl']:.2f} m`")
         st.markdown(f"- Shear Load: `{res['V_target']:,.0f} kg`")
         st.markdown(f"- Bolts Req: `{res['Bolt Qty']} pcs` (M{int(res['DB'])})")
-        
     with c_right:
-        # ใช้ Drawing แบบใหม่ที่รวมร่างกันแล้ว
-        fig = draw_professional_shop_drawing(res)
-        st.pyplot(fig)
+        st.pyplot(draw_professional_shop_drawing(res))
 
     st.divider()
 
-    # --- 4. Graph ---
+    # 4. Graph
     st.subheader("📊 Structural Limit States Diagram")
     names, moments, defls, shears = [], [], [], []
     for sec in all_sections:
@@ -290,7 +250,6 @@ def render_report_tab(beam_data=None, conn_data=None, *args, **kwargs):
 
     fig2, ax1 = plt.subplots(figsize=(12, 5))
     x = range(len(names))
-    
     ax1.set_ylabel('Span (m)', color='#27AE60', fontweight='bold')
     ax1.plot(x, moments, 'r--', label='Moment Limit', alpha=0.5)
     ax1.plot(x, defls, 'b-', label='Deflection Limit', alpha=0.5)
@@ -303,12 +262,42 @@ def render_report_tab(beam_data=None, conn_data=None, *args, **kwargs):
     idx = [s['name'] for s in all_sections].index(selected_sec_name)
     ax1.plot(idx, res['L_safe'], 'g*', markersize=15)
     ax1.axvline(x=idx, color='orange', alpha=0.5)
-
-    ax1.legend(loc='upper left')
-    ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=90, fontsize=8)
-    ax1.grid(True, linestyle=':', alpha=0.5)
-    
+    ax1.legend(loc='upper left'); ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=90, fontsize=8); ax1.grid(True, linestyle=':', alpha=0.5)
     st.pyplot(fig2)
+
+    st.divider()
+
+    # 5. Full Comparison Table (Restored!)
+    st.subheader("📋 Comparative Analysis Table")
+    if st.checkbox("Show Detail Table", value=True):
+        batch_results = []
+        for sec in all_sections:
+            r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
+            actual_cap = r['Bolt Qty'] * r['phiRn_bolt']
+            util = (r['V_target'] / actual_cap) * 100 if actual_cap > 0 else 0
+            
+            batch_results.append({
+                "Section": r['Section'],
+                "Design Vu (kg)": r['V_target'],
+                "Max Span (m)": r['L_safe'],  # Use L_safe from V50
+                "Limit State": "Moment" if r['L_crit_moment'] < r['L_crit_defl'] else "Deflection",
+                "Bolt Qty": r['Bolt Qty'],
+                "Plate H (mm)": int(r['Plate Len']*10),
+                "Util. (%)": util
+            })
+            
+        df_compare = pd.DataFrame(batch_results)
+        st.dataframe(
+            df_compare,
+            use_container_width=True,
+            column_config={
+                "Design Vu (kg)": st.column_config.NumberColumn("Load (kg)", format="%.0f"),
+                "Max Span (m)": st.column_config.NumberColumn("Safe Span (m)", format="%.2f"),
+                "Bolt Qty": st.column_config.NumberColumn("Bolts", format="%d"),
+                "Util. (%)": st.column_config.ProgressColumn("Capacity Usage", format="%.0f%%", min_value=0, max_value=100),
+            },
+            hide_index=True, height=500
+        )
 
 if __name__ == "__main__":
     st.set_page_config(page_title="Structural Workbench", layout="wide")
