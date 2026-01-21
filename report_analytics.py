@@ -1,5 +1,5 @@
 # report_analytics.py
-# Version: 8.0 (Full Suite: Range + Efficiency + 3-Line Limits)
+# Version: 8.1 (Fix: Restore Graph 1 Full Details + All New Graphs)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,10 +15,10 @@ except ImportError:
 
 def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     """
-    Dashboard Updated V.8.0:
-    1. Graph 1: Range Analysis (Original)
-    2. Graph 2: Efficiency (W Capacity vs Weight) - (Restored)
-    3. Graph 3: 3-Lines Limits (Shear/Moment/Defl vs Span) - (New)
+    Dashboard V.8.1 Fixed:
+    1. Graph 1: Optimization Gap (RESTORED Dual Axis: Span vs Shear)
+    2. Graph 2: Efficiency (W vs Weight)
+    3. Graph 3: 3-Lines Limits (Shear/Moment/Defl vs Span)
     """
     st.markdown("## 📊 Structural Analysis Dashboard")
     
@@ -27,38 +27,31 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     data_list = []
     
     for sec in all_sections:
-        # 1. Basic Calculations
         r = calculate_connection(sec, load_pct, bolt_dia, factor, load_case)
         full_props = calculate_full_properties(sec) 
         
-        # 2. Calculate W (Safe Uniform Load)
+        # Calculate Safe W (Governing Load)
         L_m = r['L_safe']
         L_cm = L_m * 100
         safe_w_load = 0
         
-        # Intermediate W capacities
         w_shear_cap, w_moment_cap, w_defl_cap = 0, 0, 0
         
         if L_m > 0:
-            # Shear (w = 2V/L)
+            # Shear
             w_shear_cap = (2 * r['Vn_beam']) / L_m
-            
-            # Moment (w = 8M/L^2)
+            # Moment
             phi_Mn_kgm = (0.90 * sec['Fy'] * full_props['Zx (cm3)']) / 100
             w_moment_cap = (8 * phi_Mn_kgm) / (L_m**2)
-            
-            # Deflection (derived from delta = L/360)
+            # Deflection
             E_ksc = 2040000; Ix = full_props['Ix (cm4)']; delta_allow_cm = L_cm / 360
             w_defl_kg_cm = (384 * E_ksc * Ix * delta_allow_cm) / (5 * (L_cm**4))
             w_defl_cap = w_defl_kg_cm * 100
             
-            # Governing W
             safe_w_load = min(w_shear_cap, w_moment_cap, w_defl_cap)
 
-        # 3. Reverse Calculate Span Limits based on safe_w_load
-        # "If W is fixed at safe_w_load, what is the max theoretical span for each force?"
-        try:
-            l_limit_shear = (2 * r['Vn_beam']) / safe_w_load if safe_w_load > 0 else 0
+        # Reverse Calculate Span Limits
+        try: l_limit_shear = (2 * r['Vn_beam']) / safe_w_load if safe_w_load > 0 else 0
         except: l_limit_shear = 0
 
         try:
@@ -67,14 +60,11 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
         except: l_limit_moment = 0
 
         try:
-            E = 2040000; Ix = full_props['Ix (cm4)']
-            w_cm = safe_w_load / 100
-            # From delta = 5wL^4/384EI and delta=L/360 -> L^3 = ...
+            E = 2040000; Ix = full_props['Ix (cm4)']; w_cm = safe_w_load / 100
             l_cube_cm = (384 * E * Ix) / (1800 * w_cm) if w_cm > 0 else 0
             l_limit_defl = (l_cube_cm**(1/3)) / 100 
         except: l_limit_defl = 0
 
-        # Steel Weight
         weight_kg_m = full_props['Area (cm2)'] * 0.785 
         
         data_list.append({
@@ -96,33 +86,53 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     x = np.arange(len(names))
 
     # ==================================================
-    # 📈 GRAPH 1: OPTIMIZATION GAP (Overview)
+    # 📈 GRAPH 1: OPTIMIZATION OVERVIEW (Fixed Full Version)
     # ==================================================
-    st.subheader("1️⃣ Optimization Overview (Span & Shear)")
-    fig1, ax1 = plt.subplots(figsize=(12, 4))
-    ax1.grid(which='major', axis='y', linestyle='--', linewidth=0.5, alpha=0.3)
+    st.subheader("1️⃣ Optimization Overview (Span vs Shear)")
     
-    # Scale calculation for visual
+    # Scale Calculation for Aesthetics
     max_moment_defl = max(df['Moment Limit'].max(), df['Deflection Limit'].max())
     max_span_val = max_moment_defl * 1.10
+    max_shear_val = df['Shear Cap'].max() * 1.10
+    scale_factor = max_span_val / max_shear_val # Used to align visual fill
+
+    fig1, ax1 = plt.subplots(figsize=(12, 5.5))
+    ax1.grid(which='major', axis='y', linestyle='--', linewidth=0.5, alpha=0.3)
     
+    # Plot Span Limits (Axis 1 - Left)
     ax1.plot(x, df['Moment Limit'], color='#E74C3C', linestyle='--', label='Moment Limit')
     ax1.plot(x, df['Deflection Limit'], color='#2980B9', linestyle='-', label='Deflection Limit')
     
-    # Fill Safe Zone
-    upper = np.minimum(df['Moment Limit'], df['Deflection Limit'])
-    ax1.fill_between(x, 0, upper, color='#2ECC71', alpha=0.2, label='Safe Zone')
+    # Safe Zone Fill
+    # Note: Shear visual is scaled just for the fill intersection
+    shears_visual = df['Shear Cap'] * scale_factor
+    upper_bound = np.minimum(df['Moment Limit'], df['Deflection Limit'])
+    lower_bound = shears_visual
+    # Fill only where Span Limits > Scaled Shear (Visual logic)
+    ax1.fill_between(x, 0, upper_bound, color='#2ECC71', alpha=0.2, label='Safe Zone')
+
+    ax1.set_ylabel('Span Range (m)', fontweight='bold', color='#333333')
+    ax1.set_ylim(0, max_span_val)
+    ax1.set_xlim(-0.5, len(names)-0.5)
+    ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=90, fontsize=9)
     
-    ax1.set_ylabel('Span (m)', fontweight='bold')
-    ax1.set_xticks(x); ax1.set_xticklabels(names, rotation=90, fontsize=8)
-    ax1.set_ylim(0, max_span_val); ax1.set_xlim(-0.5, len(names)-0.5)
-    ax1.legend(loc='upper left', fontsize=8)
+    # Plot Shear Capacity (Axis 2 - Right) <-- RESTORED
+    ax2 = ax1.twinx()
+    ax2.plot(x, df['Shear Cap'], color='#663399', linestyle=':', linewidth=2, label='Shear Capacity ($V_n$)')
+    ax2.set_ylabel('Shear Capacity (kg)', fontweight='bold', color='#663399')
+    ax2.set_ylim(0, max_shear_val)
+
+    # Combine Legends
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=9)
+    
     st.pyplot(fig1)
     
     st.divider()
 
     # ==================================================
-    # ⚖️ GRAPH 2: EFFICIENCY (W vs Weight) <-- RESTORED
+    # ⚖️ GRAPH 2: EFFICIENCY (W vs Weight)
     # ==================================================
     st.subheader("2️⃣ Load Efficiency (Capacity $W$ vs Weight)")
     st.caption("ความคุ้มค่า: กราฟแท่ง (W) ยิ่งสูงยิ่งดี / กราฟเส้น (นน.) ยิ่งต่ำยิ่งดี")
@@ -156,7 +166,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     st.divider()
 
     # ==================================================
-    # 📉 GRAPH 3: THEORETICAL LIMITS (3 Lines) <-- NEW!
+    # 📉 GRAPH 3: THEORETICAL LIMITS (3 Lines)
     # ==================================================
     st.subheader("3️⃣ Theoretical Limits (Shear/Moment/Deflection)")
     st.caption("เจาะลึก: เปรียบเทียบขีดจำกัดของแต่ละแรง (แปลงเป็นระยะ Span) เส้นต่ำสุดคือ Governing")
@@ -173,7 +183,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     ax5.set_xticks(x); ax5.set_xticklabels(names, rotation=90, fontsize=8)
     ax5.set_xlim(-0.5, len(names)-0.5)
 
-    # Auto Y-Limit (Cut extremely high shear values for readability)
+    # Auto Y-Limit
     max_reasonable = max(df['L_Moment'].max(), df['L_Defl'].max()) * 1.4
     ax5.set_ylim(0, max_reasonable)
     
@@ -181,7 +191,7 @@ def render_analytics_section(load_pct, bolt_dia, load_case, factor):
     ax6 = ax5.twinx()
     ax6.plot(x, df['Weight (kg/m)'], color='gray', linestyle='--', alpha=0.4, linewidth=1, label='Weight (Ref)')
     ax6.set_ylabel('Weight Ref (kg/m)', color='gray', fontsize=8)
-    ax6.set_ylim(0, df['Weight (kg/m)'].max() * 2) # Push it down
+    ax6.set_ylim(0, df['Weight (kg/m)'].max() * 2)
 
     # Legend
     lines5, labels5 = ax5.get_legend_handles_labels()
