@@ -2,7 +2,7 @@
 # 🏗️ BEAM INSIGHT HYBRID ENGINE - FULL VERSION
 # ==========================================
 # Filename: app.py
-# Description: Structural Steel Beam Analysis with LTB, Connection, and Base Plate
+# Description: Structural Steel Beam Analysis with LTB, Connection, Base Plate, and Summary Dashboard
 # Development Year: 2026
 # ==========================================
 
@@ -40,15 +40,16 @@ init_session_state()
 # 1. IMPORT MODULES WITH ERROR HANDLING
 # ==========================================
 try:
-    import steel_db               
-    import connection_design      
+    import steel_db                
+    import connection_design       
     import report_generator
     import tab1_analysis
     import tab3_ltb
-    import tab5_baseplate # Ensuring Tab 5 is imported
+    import tab5_baseplate
+    import tab_summary  # <--- Added New Module
 except ImportError as e:
     st.error(f"❌ CRITICAL ERROR: Modules missing: {e}")
-    st.info("Please ensure all helper scripts (steel_db.py, etc.) are in the same directory.")
+    st.info("Please ensure all helper scripts (steel_db.py, tab_summary.py, etc.) are in the same directory.")
     st.stop()
 
 # ==========================================
@@ -525,9 +526,10 @@ st.session_state.cal_success = True
 # ==========================================
 # 6. TABBED UI RENDERING
 # ==========================================
-# Defining 5 Tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 Analysis & Graphs", 
+# Defining 6 Tabs (Added Summary Check)
+tab1, tab_sum, tab2, tab3, tab4, tab5 = st.tabs([
+    "📊 Analysis & Graphs",
+    "🏁 Summary Check",   # <--- New Tab Here
     "🔩 Connection Detail", 
     "🛡️ LTB Insight", 
     "📝 Detailed Report",
@@ -537,6 +539,11 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 # --- TAB 1: PRIMARY ANALYSIS ---
 with tab1:
     tab1_analysis.render(results_context)
+
+# --- TAB NEW: SUMMARY CHECK ---
+with tab_sum:
+    # Calls the new module created
+    tab_summary.render(results_context)
 
 # --- TAB 2: SHEAR CONNECTION ---
 with tab2:
@@ -612,8 +619,7 @@ with tab5:
         This module calculates the required thickness and dimensions for a base plate 
         based on the reaction forces calculated from the beam analysis.
         """)
-        # Image for engineering context
-        # 
+         
         
         # Calling Tab 5 Module
         try:
