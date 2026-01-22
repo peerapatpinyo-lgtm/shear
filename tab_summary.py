@@ -1,94 +1,86 @@
 # tab_summary.py
 import streamlit as st
 import plotly.graph_objects as go
+import pandas as pd
 
 def render(data):
+    # --- 1. การกางวิธีทำแบบมีหน่วย (คงเดิมจากที่คุยกัน) ---
     st.subheader(f"🏁 Governing Analysis: {data['gov_cause']}")
     
-    # --- 1. เตรียมตัวแปรและหน่วย ---
-    # ตรวจสอบ Load ตามโหมดที่ใช้งาน
-    w_to_use = data['w_load'] if data['is_check_mode'] else data['w_safe']
-    w_kgcm = w_to_use / 100  # แปลง kg/m เป็น kg/cm
-    
-    L_m = data['user_span']
-    L_cm = L_m * 100
-    E = data['E']       # 2,040,000 kg/cm²
-    Ix = data['Ix']     # cm⁴
-    
-    # --- 2. ส่วนแสดงวิธีทำแบบละเอียด ---
-    with st.container(border=True):
-        st.markdown("### 📝 รายละเอียดการคำนวณการแอ่นตัว (Deflection Trace)")
-        
-        # กางสูตรมาตรฐาน
-        st.markdown("**1. สูตรคำนวณมาตรฐาน (Simple Span, UDL):**")
-        st.latex(r"\Delta_{act} = \frac{5 \cdot w \cdot L^4}{384 \cdot E \cdot I_x}")
-        
-        # แสดงรายการตัวแปรพร้อมหน่วย
-        st.markdown("**2. รายการตัวแปรที่ใช้ (Input Variables):**")
-        col_v1, col_v2 = st.columns(2)
-        with col_v1:
-            st.markdown(f"""
-            - $w$ = `{w_kgcm:.4f}` kg/cm
-            - $L$ = `{L_cm:,.0f}` cm
-            """)
-        with col_v2:
-            st.markdown(f"""
-            - $E$ = `{E:,.0f}` kg/cm²
-            - $I_x$ = `{Ix:,.2f}` cm⁴
-            """)
+    # ดึงค่าพื้นฐาน
+    w_fixed = data['w_load'] if data['is_check_mode'] else data['w_safe']
+    E = data['E']
+    Ix = data['Ix']
+    M_cap = data['M_cap']
+    V_cap = data['V_cap']
+    defl_limit_denom = data['defl_denom']
 
-        # แสดงการแทนค่าแบบมีหน่วยกำกับ
-        st.markdown("**3. การแทนค่าลงในสมการ (Substitution with Units):**")
+    # --- 2. สร้างตารางวิเคราะห์ความไว (Sensitivity Analysis Table) ---
+    st.markdown("### 📊 ตารางวิเคราะห์ผลกระทบของระยะ Span (Span Sensitivity)")
+    st.write("ตารางนี้แสดงให้เห็นว่าเมื่อระยะ Span เปลี่ยนไป ตัวแปรไหนจะเริ่มวิกฤตก่อนกัน (คำนวณที่ Load คงที่)")
+
+    span_scenarios = [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
+    # แทรกระยะปัจจุบันเข้าไปในตารางด้วยเพื่อให้เทียบง่าย
+    if data['user_span'] not in span_scenarios:
+        span_scenarios.append(data['user_span'])
+    span_scenarios.sort()
+
+    rows = []
+    for s in span_scenarios:
+        # คำนวณ Moment Ratio
+        m_act = (w_fixed * s**2) / 8
+        r_m = m_act / M_cap
         
-        # ใช้ LaTeX แสดงการแทนค่าพร้อมหน่วย
+        # คำนวณ Deflection Ratio
+        # Δ_act = (5 * (w/100) * (s*100)^4) / (384 * E * Ix)
+        d_act = (5 * (w_fixed/100) * (s*100)**4) / (384 * E * Ix)
+        d_all = (s * 100) / defl_limit_denom
+        r_d = d_act / d_all
+        
+        # Determine Governing
+        gov = "Moment" if r_m > r_d else "Deflection"
+        status = "🔴 FAIL" if max(r_m, r_d) > 1.0 else "🟢 PASS"
+        
+        rows.append({
+            "Span (m)": f"{s:.2f} m",
+            "Moment Ratio": f"{r_m:.2%}",
+            "Deflection Ratio": f"{r_d:.2%}",
+            "Governing Criteria": gov,
+            "Status": status
+        })
+
+    df = pd.DataFrame(rows)
+    
+    # แสดงตารางพร้อมการไฮไลท์แถวปัจจุบัน
+    st.table(df)
+
+    st.info("""
+    **💡 วิธีอ่านตาราง:** จะสังเกตได้ว่าเมื่อ Span สั้น **Moment** มักจะเป็นตัวคุม แต่พอ Span ยาวขึ้นเรื่อยๆ 
+    **Deflection Ratio** จะพุ่งแซงหน้าไปอย่างรวดเร็วเนื่องจากผลของ $L^4$
+    """)
+
+    # --- 3. ส่วนการกางวิธีทำ (Substitution Trace) ---
+    with st.expander("📝 ดูวิธีแทนค่าและหน่วยละเอียด (Calculation Trace)", expanded=False):
+        w_kgcm = w_fixed / 100
+        L_cm = data['user_span'] * 100
+        
+        st.latex(r"\Delta_{act} = \frac{5 \cdot w \cdot L^4}{384 \cdot E \cdot I_x}")
         formula_with_units = rf"""
-        \Delta_{{act}} = \frac{{5 \cdot ({w_kgcm:.4f} \text{{ kg/cm}}) \cdot ({L_cm:,.0f} \text{{ cm}})^4}}{{384 \cdot ({E:,.0f} \text{{ kg/cm}}^2) \cdot ({Ix:,.2f} \text{{ cm}}^4)}}
+        \Delta_{{act}} = \frac{{5 \cdot ({w_kgcm:.4f} \text{{ kg/cm}}) \cdot ({L_cm:,.0f} \text{{ cm}})^4}}{{384 \cdot ({E:,.0f} \text{{ kg/cm}}^2) \cdot ({Ix:,.2f} \text{{ cm}}^4)}} = {data['d_act']:.3f} \text{{ cm}}
         """
         st.latex(formula_with_units)
-
-        # สรุปผลลัพธ์การตัดหน่วย
-        st.markdown("**4. ผลลัพธ์สุดท้าย (Final Result):**")
-        d_act = data['d_act']
-        d_all = data['d_allow']
         
-        # แสดงผลลัพธ์การคำนวณ
-        st.markdown(f"""
-        <div style="background-color: #f8fafc; padding: 15px; border-radius: 10px; border: 1px solid #e2e8f0;">
-            <table style="width:100%">
-                <tr>
-                    <td><b>Actual Deflection ($\Delta_{{act}}$):</b></td>
-                    <td style="text-align:right; color:#2563eb; font-size:1.2em;"><b>{d_act:.3f} cm</b></td>
-                </tr>
-                <tr>
-                    <td><b>Allowable Deflection ($\Delta_{{all}}$):</b></td>
-                    <td style="text-align:right;">{d_all:.3f} cm (L/{data['defl_denom']})</td>
-                </tr>
-                <tr style="border-top: 1px solid #cbd5e1;">
-                    <td><b>Utilization Ratio:</b></td>
-                    <td style="text-align:right; font-weight:bold;">{data['ratio_d']:.2%}</td>
-                </tr>
-            </table>
-        </div>
-        """, unsafe_allow_html=True)
+        st.latex(rf"\Delta_{{all}} = \frac{{L}}{{{defl_limit_denom}}} = \frac{{{L_cm:,.0f} \text{{ cm}}}}{{{defl_limit_denom}}} = {data['d_allow']:.3f} \text{{ cm}}")
 
-    # --- 3. การตรวจสอบความแข็งแรง (Moment Check) ---
-    with st.expander("⚖️ ตรวจสอบค่าโมเมนต์ดัด (Moment Check Detail)"):
-        st.markdown("**การแทนค่าโมเมนต์:**")
-        st.latex(rf"M_{{max}} = \frac{{w \cdot L^2}}{{8}} = \frac{{{w_to_use:,.2f} \text{{ kg/m}} \cdot ({L_m} \text{{ m}})^2}}{{8}}")
-        st.latex(rf"M_{{act}} = {data['m_act']:,.2f} \text{{ kg-m}}")
-        st.write(f"Capacity ($M_{{cap}}$) = **{data['M_cap']:,.2f} kg-m**")
-
-    # --- 4. กราฟเปรียบเทียบ Utilization ---
-    st.divider()
+    # --- 4. กราฟ Utilization (เดิม) ---
     ratios = [data['ratio_v'], data['ratio_m'], data['ratio_d']]
-    labels = ['Shear (V)', 'Moment (M)', 'Deflection (Δ)']
-    
+    labels = ['Shear', 'Moment', 'Deflection']
     fig = go.Figure(go.Bar(
         x=labels, y=ratios,
         marker_color=['#3b82f6' if r <= 1.0 else '#ef4444' for r in ratios],
         text=[f"{r:.1%}" for r in ratios],
         textposition='outside'
     ))
-    fig.add_hline(y=1.0, line_dash="dash", line_color="red", annotation_text="Limit")
-    fig.update_layout(yaxis_range=[0, max(max(ratios)*1.3, 1.2)], template="simple_white")
+    fig.add_hline(y=1.0, line_dash="dash", line_color="red")
+    fig.update_layout(title="Current Span Utilization", yaxis_tickformat='.0%')
     st.plotly_chart(fig, use_container_width=True)
