@@ -1,143 +1,133 @@
 # tab_summary.py
 import streamlit as st
 import plotly.graph_objects as go
-import pandas as pd
-import math
 
 def render(data):
     """
-    Render Tab: Governing Criteria Analysis with Detailed Calculation Trace
+    Render Tab: Governing Criteria with Detailed Mathematical Trace
     """
-    # --- 1. UNPACK DATA ---
-    # เราดึงค่าจาก results_context ที่ถูกส่งมาจาก app.py
+    # --- 1. ข้อมูลพื้นฐาน ---
     is_lrfd = data['is_lrfd']
     method = "LRFD" if is_lrfd else "ASD"
     
-    # Loads & Geometry
+    # ดึงค่าจาก results_context
     L_m = data['user_span']
     L_cm = L_m * 100
     w_kgm = data['w_load']
-    w_kgcm = w_kgm / 100 # เปลี่ยนหน่วยเป็น kg/cm เพื่อใช้ในสูตร deflection
-    
-    # Properties
+    w_kgcm = w_kgm / 100 
     Ix = data['Ix']
     E = data['E']
     defl_denom = data['defl_denom']
     
-    # Results
+    # อัตราส่วน
     r_m = data['ratio_m']
     r_v = data['ratio_v']
     r_d = data['ratio_d']
     gov_ratio = data['gov_ratio']
     gov_cause = data['gov_cause']
+
+    # --- 2. สรุปผลการออกแบบ (Executive Summary) ---
+    st.subheader("🏁 Design Verdict")
     
-    # --- 2. UI HEADER ---
-    st.subheader("🏁 Governing Criteria & Calculation Trace")
-    
-    # Status Card
     is_pass = gov_ratio <= 1.0
+    status_text = "PASS ✅" if is_pass else "FAIL ❌"
     status_color = "#16a34a" if is_pass else "#dc2626"
+    
     st.markdown(f"""
-    <div style="background-color: #f8fafc; padding: 15px; border-radius: 10px; border-left: 10px solid {status_color};">
-        <span style="color: #64748b; font-size: 0.9em; font-weight: bold;">GOVERNING STATUS:</span><br>
-        <span style="font-size: 1.8em; font-weight: 800; color: {status_color};">
-            {gov_cause.upper()} @ {gov_ratio:.2% Utilization}
-        </span>
+    <div style="background-color: {status_color}15; padding: 20px; border-radius: 12px; border-left: 8px solid {status_color};">
+        <h3 style="margin:0; color: {status_color};">{status_text} - Controlled by {gov_cause}</h3>
+        <p style="margin:5px 0 0 0; font-size: 1.2em;">Max Utilization Ratio: <b>{gov_ratio:.2%}</b></p>
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 3. THE "WHY" - CALCULATION STEPS ---
-    st.markdown("### 📝 Detailed Calculation Trace")
+    # --- 3. แสดงวิธีทำ (Detailed Calculation Trace) ---
+    st.divider()
+    st.markdown("### 📝 Calculation Trace (กางสูตรคำนวณ)")
     
     col1, col2 = st.columns(2)
 
     with col1:
+        # --- ส่วนของ DEFLECTION ---
         with st.container(border=True):
-            st.markdown("#### 📏 Deflection Check (Serviceability)")
-            st.markdown("ทำไมค่านี้ถึงแปลก? มาดูตัวเลขกันครับ:")
+            st.markdown("#### 📏 1. Deflection Serviceability")
+            st.write("ตรวจสอบการแอ่นตัว (ใช้ Service Load ไม่คูณ Factor)")
             
-            # สูตรการคำนวณ Deflection
-            st.latex(r"\Delta_{actual} = \frac{5 \cdot w \cdot L^4}{384 \cdot E \cdot I_x}")
+            # แสดงสมการหลัก
+            st.latex(r"\Delta_{act} = \frac{5 w L^4}{384 E I_x}")
             
-            # แสดงแทนค่าตัวเลข
-            st.markdown("**Step 1: Actual Deflection**")
-            st.code(f"""
-w = {w_kgcm:.4f} kg/cm (Service Load)
-L = {L_cm:,.0f} cm
-E = {E:,.0f} kg/cm²
-Ix = {Ix:,.2f} cm⁴
-
-Calculation:
-Δ = (5 * {w_kgcm:.4f} * {L_cm:,.0f}⁴) / (384 * {E:,.0f} * {Ix:,.2f})
-Δ_actual = {data['d_act']:.3f} cm
-            """)
+            # แทนค่า
+            st.markdown("**Substitution:**")
+            st.write(f"- $w$ = {w_kgcm:.4f} kg/cm (Uniform Load)")
+            st.write(f"- $L$ = {L_cm:,.0f} cm (Span)")
+            st.write(f"- $E$ = {E:,.0f} kg/cm² (Elastic Modulus)")
+            st.write(f"- $I_x$ = {Ix:,.2f} cm⁴ (Inertia)")
             
-            st.markdown("**Step 2: Allowable Limit**")
-            st.latex(rf"\Delta_{{allow}} = \frac{{L}}{{{defl_denom}}}")
-            st.code(f"""
-L = {L_cm:,.0f} cm / {defl_denom}
-Δ_allow = {data['d_allow']:.3f} cm
-            """)
+            # ผลลัพธ์ Actual
+            st.info(f"**Δ_actual** = {data['d_act']:.3f} cm")
+            
+            # ขีดจำกัด
+            st.latex(rf"\Delta_{{all}} = \frac{{L}}{{{defl_denom}}}")
+            st.write(f"**Δ_allow** = {L_cm:,.0f} / {defl_denom} = **{data['d_allow']:.3f} cm**")
             
             # สรุป Ratio
-            d_ratio = data['d_act'] / data['d_allow']
-            st.markdown(f"**Utilization Ratio (Δ):** `{d_ratio:.4f}`")
+            st.markdown(f"**Ratio (Δ) = {data['d_act']:.3f} / {data['d_allow']:.3f} = `{r_d:.4f}`**")
 
     with col2:
+        # --- ส่วนของ MOMENT ---
         with st.container(border=True):
-            st.markdown("#### ⚖️ Strength Check (Moment/Shear)")
-            st.markdown(f"เปรียบเทียบกับกำลังของหน้าตัด ({method}):")
+            st.markdown(f"#### ⚖️ 2. Flexural Strength ({method})")
+            st.write("ตรวจสอบแรงดัด (Strength Limit State)")
             
+            # สมการ Demand
+            st.latex(r"M_{req} = \frac{w_{fact} L^2}{8}")
+            st.write(f"- $M_{{req}}$ (Demand) = **{data['m_act']:,.0f} kg-m**")
+            
+            # สมการ Capacity
             if is_lrfd:
-                st.latex(r"M_u \leq \phi M_n")
+                st.latex(r"\phi M_n = 0.90 \times F_y \times Z_x \text{ (Simplified)}")
             else:
-                st.latex(r"M_a \leq M_n / \Omega")
+                st.latex(r"M_n / \Omega = (F_y \times Z_x) / 1.67 \text{ (Simplified)}")
+                
+            st.write(f"- $M_{{cap}}$ (Capacity) = **{data['M_cap']:,.0f} kg-m**")
             
-            st.markdown("**Moment Summary:**")
-            st.write(f"- Demand ($M_{{act}}$): `{data['m_act']:,.0f}` kg-m")
-            st.write(f"- Capacity ($M_{{cap}}$): `{data['M_cap']:,.0f}` kg-m")
-            st.progress(min(r_m, 1.0), text=f"Moment Ratio: {r_m:.2f}")
+            # สรุป Ratio
+            st.markdown(f"**Ratio (M) = {data['m_act']:,.0f} / {data['M_cap']:,.0f} = `{r_m:.4f}`**")
 
-            st.markdown("---")
-            st.markdown("**Shear Summary:**")
-            st.write(f"- Demand ($V_{{act}}$): `{data['v_act']:,.0f}` kg")
-            st.write(f"- Capacity ($V_{{cap}}$): `{data['V_cap']:,.0f}` kg")
-            st.progress(min(r_v, 1.0), text=f"Shear Ratio: {r_v:.2f}")
+            st.divider()
+            # Shear Ratio (สรุปสั้น)
+            st.markdown(f"**Shear Ratio (V):** `{r_v:.4f}`")
 
-    # --- 4. VISUAL DASHBOARD ---
+    # --- 4. กราฟเปรียบเทียบ (Comparison Chart) ---
     st.divider()
+    st.markdown("### 📊 Utilization Comparison")
     
-    # Comparison Chart
-    categories = ['Shear', 'Moment', 'Deflection']
-    ratios = [r_v, r_m, r_d]
+    labels = ['Shear (V)', 'Moment (M)', 'Deflection (Δ)']
+    values = [r_v, r_m, r_d]
+    colors = ['#94a3b8', '#94a3b8', '#94a3b8']
     
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=categories,
-        y=ratios,
-        marker_color=[status_color if r == gov_ratio else '#cbd5e1' for r in ratios],
-        text=[f"{r:.2%}" for r in ratios],
+    # ไฮไลท์ตัวที่สูงที่สุด
+    max_idx = values.index(max(values))
+    colors[max_idx] = status_color
+
+    fig = go.Figure(go.Bar(
+        x=labels, y=values,
+        marker_color=colors,
+        text=[f"{v:.1%}" for v in values],
         textposition='outside'
     ))
     
-    fig.add_hline(y=1.0, line_dash="dash", line_color="red", annotation_text="Limit 100%")
-    
-    fig.update_layout(
-        title="Comparison of Utilization Ratios",
-        yaxis_title="Ratio (Actual / Limit)",
-        yaxis_range=[0, max(max(ratios)*1.2, 1.1)],
-        template="plotly_white"
-    )
+    fig.add_hline(y=1.0, line_dash="dash", line_color="red", annotation_text="Limit (1.0)")
+    fig.update_layout(yaxis_range=[0, max(max(values)*1.3, 1.1)], height=400, template="plotly_white")
     
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- 5. ADVICE SECTION ---
-    st.markdown("### 💡 วิเคราะห์ผล")
-    if r_d > 1.0 and r_m < 0.8:
-        st.warning("""
-        **กรณี Deflection เกิน แต่ Moment ยังเหลือเยอะ:**
-        - แสดงว่าคานของคุณมี 'Strength' พอ แต่ 'Stiffness' ไม่พอ
-        - **วิธีแก้:** อย่าเลือกเหล็กที่หน้ากว้างขึ้น (b) ให้เลือกเหล็กที่ **'ลึก' (h)** ขึ้นแทน เพราะค่า $I_x$ จะเพิ่มขึ้นมหาศาลเมื่อความลึกเพิ่มขึ้น ($h^3$)
+    # --- 5. สรุปบทวิเคราะห์ ---
+    st.markdown("#### 💡 Engineering Insight")
+    if r_d > r_m:
+        st.warning(f"""
+        **ผลการวิเคราะห์:** คานนี้ถูกควบคุมด้วย **Deflection** (การแอ่นตัว) 
+        ซึ่งหมายความว่าแม้เหล็กจะยังไม่พังในเชิงโครงสร้าง แต่การใช้งานจริงจะพบการแอ่นตัวที่มากเกินพิกัด L/{defl_denom}
+        \n**วิธีแก้ไขที่ประหยัดที่สุด:** ให้เพิ่มความลึกหน้าตัด (Depth) แทนการเพิ่มความกว้าง เพราะค่า $I_x$ เพิ่มขึ้นเป็นกำลังสามของความสูง
         """)
-    elif r_m > 1.0:
-        st.error("**กรณี Moment เกิน:** ต้องเพิ่มขนาดเหล็ก หรือลดระยะ Lb เพื่อลดผลของ LTB")
+    else:
+        st.info("**ผลการวิเคราะห์:** คานนี้ถูกควบคุมด้วย **Strength** (กำลังของวัสดุ) เป็นการออกแบบที่มีประสิทธิภาพด้านความแข็งแรง")
