@@ -3,101 +3,104 @@ import streamlit as st
 import plotly.graph_objects as go
 
 def render(data):
-    # --- 1. ข้อมูลพื้นฐาน ---
+    # --- 1. ข้อมูลนำเข้า (Input Data) ---
+    L_m = data['user_span']
+    L_cm = L_m * 100
     is_lrfd = data.get('is_lrfd', False)
-    method_name = "LRFD" if is_lrfd else "ASD"
-    
-    # หน้าตัดและสมบัติ
-    name = data.get('section_name', 'H-Beam')
-    d = data.get('d', 40) # depth (cm)
-    tw = data.get('tw', 0.8) # web thickness (cm)
     Fy = data.get('Fy', 2500)
     E = data.get('E', 2040000)
     
-    # Loads
-    L_m = data['user_span']
-    w_live = data.get('w_live', 0) # สมมติว่ามี key นี้ใน data
-    w_dead = data.get('w_dead', 0) # สมมติว่ามี key นี้ใน data
-    w_self = data.get('w_self_weight', 0)
-    w_total = data['w_load'] if data.get('is_check_mode', True) else data.get('w_safe', 0)
+    # ดึงค่าพิกัดหน้าตัด (Geometry)
+    name = data.get('section_name', 'H-Beam')
+    d_cm = data.get('d', 0)    # ความลึกหน้าตัด (cm)
+    tw_cm = data.get('tw', 0)  # ความหนาเอว (cm)
+    Ix = data.get('Ix', 0)
+    
+    st.title("📄 รายการคำนวณโครงสร้าง (Detailed Calculation Sheet)")
 
-    st.title("📑 รายการคำนวณโดยละเอียด (Full Structural Report)")
-
-    # --- ส่วนที่ 1: ที่มาของน้ำหนักบรรทุก (Load Identification) ---
+    # --- ส่วนที่ 1: ที่มาของน้ำหนักบรรทุก (Load Calculation) ---
+    st.subheader("1️⃣ การวิเคราะห์น้ำหนักบรรทุก (Total Design Load, $W$)")
     with st.container(border=True):
-        st.markdown("### 1️⃣ การวิเคราะห์น้ำหนักบรรทุก (Load Analysis)")
-        st.write(f"น้ำหนักบรรทุกแผ่สม่ำเสมอ ($w$) คำนวณจาก:")
+        st.markdown("**1.1 องค์ประกอบของน้ำหนัก (Load Components):**")
         
-        # กรณี Check Design (User ใส่โหลดเอง)
+        # กรณี Check Design
         if data.get('is_check_mode', True):
+            w_dead = data.get('w_dead_input', 0)
+            w_live = data.get('w_live_input', 0)
+            w_self = data.get('w_self_weight', 0)
+            w_total = w_dead + w_live + w_self
+            
+            st.write(f"- $w_{{dead}}$ (น้ำหนักบรรทุกคงที่เพิ่มเติม): `{w_dead:,.2f}` kg/m")
+            st.write(f"- $w_{{live}}$ (น้ำหนักบรรทุกจร): `{w_live:,.2f}` kg/m")
+            st.write(f"- $w_{{self\_weight}}$ (น้ำหนักหน้าตัดเหล็ก {name}): `{w_self:,.2f}` kg/m")
+            
+            st.markdown("**รวมน้ำหนักบรรทุกแผ่ (Total Uniform Load):**")
             st.latex(r"w_{total} = w_{dead} + w_{live} + w_{self\_weight}")
-            st.write(f"- $w_{{dead}}$ (น้ำหนักบรรทุกคงที่เพิ่มเติม): `{data.get('w_dead_input', 0):,.2f}` kg/m")
-            st.write(f"- $w_{{live}}$ (น้ำหนักบรรทุกจร): `{data.get('w_live_input', 0):,.2f}` kg/m")
-            st.write(f"- $w_{{self\_weight}}$ (น้ำหนักเหล็กจากการเปิดตาราง): `{w_self:,.2f}` kg/m")
-            st.latex(rf"w_{{total}} = {w_total:,.2f} \text{{ kg/m}}")
+            st.latex(rf"w_{{total}} = {w_dead:,.2f} + {w_live:,.2f} + {w_self:,.2f} = {w_total:,.2f} \text{{ kg/m}}")
         else:
             # กรณี Find Capacity
-            st.info(f"อยู่ในโหมด **Find Capacity**: ค่า $w$ คือน้ำหนักบรรทุกปลอดภัยสูงสุดที่หน้าตัดรับได้")
-            st.latex(rf"w_{{safe}} = {w_total:,.2f} \text{{ kg/m}}")
+            w_total = data.get('w_safe', 0)
+            st.info(f"โหมดคำนวณกลับ: น้ำหนักบรรทุกปลอดภัยสูงสุดที่ยอมให้ ($w_{{safe}}$)")
+            st.latex(rf"w_{{total}} = {w_total:,.2f} \text{{ kg/m}}")
 
     # --- ส่วนที่ 2: การตรวจสอบแรงเฉือน (Shear Strength Check) ---
     st.markdown("---")
-    st.subheader("2️⃣ การตรวจสอบกำลังรับแรงเฉือน (Shear Strength)")
+    st.subheader("2️⃣ การตรวจสอบกำลังรับแรงเฉือน (Shear Strength Analysis)")
     with st.container(border=True):
-        st.markdown("**2.1 แรงเฉือนที่เกิดขึ้นจริง (Shear Demand, $V_{max}$):**")
-        st.latex(r"V_{act} = \frac{w \cdot L}{2}")
+        # 2.1 หาแรงเฉือนสูงสุด
+        st.markdown("**2.1 แรงเฉือนที่เกิดจากน้ำหนักบรรทุก (Shear Demand):**")
+        st.latex(r"V_{act} = \frac{w_{total} \cdot L}{2}")
         st.latex(rf"V_{{act}} = \frac{{{w_total:,.2f} \text{{ kg/m}} \cdot {L_m:,.2f} \text{{ m}}}}{{2}} = {data['v_act']:,.2f} \text{{ kg}}")
 
-        st.markdown("**2.2 กำลังรับแรงเฉือนของหน้าตัด (Shear Capacity, $V_n$):**")
-        st.write("คำนวณตามมาตรฐาน AISC (Simplified):")
+        # 2.2 กำลังรับแรงเฉือนของหน้าตัด
+        st.markdown("**2.2 กำลังรับแรงเฉือนของหน้าตัด (Shear Capacity Calculation):**")
+        st.write(f"คำนวณจากพื้นที่หน้าตัดส่วนเอว (Web Area) ของเหล็ก `{name}`:")
         
-        # คำนวณ Area of Web (Aw)
-        Aw = d * tw
-        st.latex(rf"A_w = d \cdot t_w = {d} \text{{ cm}} \cdot {tw} \text{{ cm}} = {Aw:,.2f} \text{{ cm}}^2")
+        # สมการพื้นที่ Web
+        st.latex(rf"A_w = d \cdot t_w = {d_cm:,.1f} \text{{ cm}} \cdot {tw_cm:,.2f} \text{{ cm}} = {d_cm*tw_cm:,.2f} \text{{ cm}}^2")
         
-        # กำลังเฉือนวิกฤต (Vn)
-        Vn = 0.6 * Fy * Aw
+        # กำลังเฉือนที่สภาวะขีดจำกัด
         st.latex(r"V_n = 0.6 \cdot F_y \cdot A_w")
-        st.latex(rf"V_n = 0.6 \cdot {Fy:,.0f} \cdot {Aw:,.2f} = {Vn:,.2f} \text{{ kg}}")
+        Vn = 0.6 * Fy * (d_cm * tw_cm)
+        st.latex(rf"V_n = 0.6 \cdot {Fy:,.0f} \cdot {d_cm*tw_cm:,.2f} = {Vn:,.2f} \text{{ kg}}")
 
-        # แยกตาม Method
+        # การประยุกต์ใช้ตัวคูณลดกำลัง (Factor)
         if is_lrfd:
-            phi_v = 1.0 # สำหรับหน้าตัดส่วนใหญ่ใน AISC
+            phi_v = 1.0
             V_cap = phi_v * Vn
-            st.markdown(f"**ตามวิธี LRFD ($\phi_v = {phi_v}$):**")
+            st.markdown(f"**ตามมาตรฐาน LRFD ($\phi_v = {phi_v}$):**")
             st.latex(rf"\phi_v V_n = {phi_v} \cdot {Vn:,.2f} = {V_cap:,.2f} \text{{ kg}}")
         else:
             omega_v = 1.67
             V_cap = Vn / omega_v
-            st.markdown(f"**ตามวิธี ASD ($\Omega_v = {omega_v}$):**")
+            st.markdown(f"**ตามมาตรฐาน ASD ($\Omega_v = {omega_v}$):**")
             st.latex(rf"V_n / \Omega_v = \frac{{{Vn:,.2f}}}{{{omega_v}}} = {V_cap:,.2f} \text{{ kg}}")
 
-        st.markdown("**2.3 อัตราส่วนแรงเฉือน (Shear Utilization Ratio):**")
+        # สรุป Ratio แรงเฉือน
         st.latex(rf"Ratio_V = \frac{{V_{{act}}}}{{V_{{cap}}}} = \frac{{{data['v_act']:,.2f}}}{{{V_cap:,.2f}}} = {data['ratio_v']:.4f}")
 
-    # --- ส่วนที่ 3: การแอ่นตัว (Deflection - ละเอียดพิเศษ) ---
+    # --- ส่วนที่ 3: การตรวจสอบการแอ่นตัว (Deflection Check) ---
     st.markdown("---")
-    st.subheader("3️⃣ การตรวจสอบการแอ่นตัว (Deflection Check)")
+    st.subheader("3️⃣ การตรวจสอบการแอ่นตัว (Deflection Serviceability)")
     with st.container(border=True):
-        # แปลงหน่วย W ให้ดูอีกรอบ
         w_kgcm = w_total / 100
-        L_cm = L_m * 100
+        st.markdown("**3.1 พารามิเตอร์ที่ใช้คำนวณ:**")
+        st.write(f"- $w$ (หน่วย cm) = `{w_kgcm:.4f}` kg/cm")
+        st.write(f"- $L$ (หน่วย cm) = `{L_cm:,.0f}` cm")
         
-        st.markdown("**3.1 การแทนค่าลงในสมการโก่งตัว:**")
-        st.latex(rf"""
-        \Delta_{{act}} = \frac{{5 \cdot ({w_kgcm:.4f} \text{{ kg/cm}}) \cdot ({L_cm:,.0f} \text{{ cm}})^4}}{{384 \cdot ({E:,.0f} \text{{ kg/cm}}^2) \cdot ({data['Ix']:,.2f} \text{{ cm}}^4)}}
-        """)
+        st.markdown("**3.2 การคำนวณค่าการแอ่นตัวจริง:**")
+        st.latex(rf"\Delta_{{act}} = \frac{{5 \cdot {w_kgcm:.4f} \cdot {L_cm:,.0f}^4}}{{384 \cdot {E:,.0f} \cdot {Ix:,.2f}}} = {data['d_act']:.4f} \text{{ cm}}")
         
-        # ผลลัพธ์
-        st.latex(rf"\Delta_{{act}} = {data['d_act']:.4f} \text{{ cm}}")
-        
-        st.markdown("**3.2 พิกัดที่ยอมให้และการเปรียบเทียบ:**")
+        st.markdown("**3.3 การเปรียบเทียบกับพิกัดที่ยอมให้:**")
         st.latex(rf"\Delta_{{all}} = \frac{{{L_cm:,.0f}}}{{{data['defl_denom']}}} = {data['d_allow']:.4f} \text{{ cm}}")
         st.latex(rf"Ratio_\Delta = \frac{{{data['d_act']:.4f}}}{{{data['d_allow']:.4f}}} = {data['ratio_d']:.4f}")
 
-    # --- สรุปปิดท้าย ---
+    # --- ส่วนท้าย: สรุปผล ---
     st.divider()
-    if data['gov_ratio'] <= 1.0:
-        st.success(f"✔️ สรุปผล: หน้าตัด {name} **ผ่านเกณฑ์** ด้วยค่า Ratio {data['gov_ratio']:.2%} (ควบคุมโดย {data['gov_cause']})")
-    else:
-        st.error(f"❌ สรุปผล: หน้าตัด {name} **ไม่ผ่านเกณฑ์** (Ratio {data['gov_ratio']:.2%})")
+    gov_color = "red" if data['gov_ratio'] > 1.0 else "green"
+    st.markdown(f"""
+    <div style="text-align:center; padding:20px; border:3px solid {gov_color}; border-radius:15px;">
+        <h2 style="color:{gov_color}; margin-bottom:0;">Governing Ratio: {data['gov_ratio']:.2%}</h2>
+        <p style="font-size:1.2em;">สาเหตุที่ควบคุม: <b>{data['gov_cause']}</b></p>
+    </div>
+    """, unsafe_allow_html=True)
